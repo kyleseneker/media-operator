@@ -41,56 +41,56 @@ dockers:
   # servarr
   - image_templates: ["ghcr.io/kyleseneker/media-operator-servarr:{{ .Version }}-amd64"]
     use: buildx
-    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=servarr"]
+    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=media-operator-servarr"]
     goarch: amd64
     ids: [media-operator-servarr]
   - image_templates: ["ghcr.io/kyleseneker/media-operator-servarr:{{ .Version }}-arm64"]
     use: buildx
-    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=servarr"]
+    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=media-operator-servarr"]
     goarch: arm64
     ids: [media-operator-servarr]
   # downloads
   - image_templates: ["ghcr.io/kyleseneker/media-operator-downloads:{{ .Version }}-amd64"]
     use: buildx
-    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=downloads"]
+    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=media-operator-downloads"]
     goarch: amd64
     ids: [media-operator-downloads]
   - image_templates: ["ghcr.io/kyleseneker/media-operator-downloads:{{ .Version }}-arm64"]
     use: buildx
-    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=downloads"]
+    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=media-operator-downloads"]
     goarch: arm64
     ids: [media-operator-downloads]
   # mediaservers
   - image_templates: ["ghcr.io/kyleseneker/media-operator-mediaservers:{{ .Version }}-amd64"]
     use: buildx
-    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=mediaservers"]
+    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=media-operator-mediaservers"]
     goarch: amd64
     ids: [media-operator-mediaservers]
   - image_templates: ["ghcr.io/kyleseneker/media-operator-mediaservers:{{ .Version }}-arm64"]
     use: buildx
-    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=mediaservers"]
+    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=media-operator-mediaservers"]
     goarch: arm64
     ids: [media-operator-mediaservers]
   # requests
   - image_templates: ["ghcr.io/kyleseneker/media-operator-requests:{{ .Version }}-amd64"]
     use: buildx
-    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=requests"]
+    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=media-operator-requests"]
     goarch: amd64
     ids: [media-operator-requests]
   - image_templates: ["ghcr.io/kyleseneker/media-operator-requests:{{ .Version }}-arm64"]
     use: buildx
-    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=requests"]
+    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=media-operator-requests"]
     goarch: arm64
     ids: [media-operator-requests]
   # transcode
   - image_templates: ["ghcr.io/kyleseneker/media-operator-transcode:{{ .Version }}-amd64"]
     use: buildx
-    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=transcode"]
+    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=media-operator-transcode"]
     goarch: amd64
     ids: [media-operator-transcode]
   - image_templates: ["ghcr.io/kyleseneker/media-operator-transcode:{{ .Version }}-arm64"]
     use: buildx
-    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=transcode"]
+    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=media-operator-transcode"]
     goarch: arm64
     ids: [media-operator-transcode]
 
