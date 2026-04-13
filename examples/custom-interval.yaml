@@ -1,0 +1,52 @@
+# Example: per-resource reconcile interval and pruning.
+# Useful when some apps change config more often than others,
+# or when you want to reduce API calls to a slow/overloaded app.
+#
+# prune: true enables deletion of resources in the app that are not declared in the CRD.
+# For example, if you remove a download client from the CRD, it will be deleted from the app.
+# Root folders and tags are never pruned. Only resource types with at least one declared item
+# are eligible for pruning — omitting a section entirely means "don't manage this."
+---
+apiVersion: media-operator.dev/v1alpha1
+kind: SonarrConfig
+metadata:
+  name: sonarr
+  namespace: media
+spec:
+  connection:
+    url: http://sonarr:8989
+    apiKeySecretRef:
+      name: sonarr-credentials
+      key: api-key
+  # Check every 10 minutes instead of the default 5, enable pruning
+  reconcile:
+    interval: 10m
+    prune: true
+  rootFolders:
+    - path: /media/tv
+---
+apiVersion: media-operator.dev/v1alpha1
+kind: JellyfinConfig
+metadata:
+  name: jellyfin
+  namespace: media
+spec:
+  connection:
+    url: http://jellyfin:8096
+  adminUser:
+    usernameSecretRef:
+      name: jellyfin-credentials
+      key: username
+    passwordSecretRef:
+      name: jellyfin-credentials
+      key: password
+  # Jellyfin config rarely changes, check every 30 minutes
+  reconcile:
+    interval: 30m
+  server:
+    serverName: "Homelab Media"
+  libraries:
+    - name: Movies
+      collectionType: movies
+      paths:
+        - /media/movies

@@ -1,0 +1,333 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: sabnzbdconfigs.media-operator.dev
+spec:
+  group: media-operator.dev
+  names:
+    kind: SabnzbdConfig
+    listKind: SabnzbdConfigList
+    plural: sabnzbdconfigs
+    singular: sabnzbdconfig
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Synced")].status
+      name: Synced
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.lastSyncTime
+      name: Last Sync
+      type: date
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: SabnzbdConfig is the Schema for the sabnzbdconfigs API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: SabnzbdConfigSpec defines the desired state of SabnzbdConfig.
+            properties:
+              categories:
+                description: categories defines download categories.
+                items:
+                  description: SabnzbdCategory defines a download category.
+                  properties:
+                    dir:
+                      description: dir is the subdirectory for this category (relative
+                        to complete dir).
+                      type: string
+                    name:
+                      description: name is the category name.
+                      type: string
+                    priority:
+                      description: priority is the download priority. -100=default,
+                        -2=paused, -1=low, 0=normal, 1=high, 2=force.
+                      type: integer
+                    script:
+                      description: script is the post-processing script for this category.
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+              connection:
+                description: connection defines how to connect to the SABnzbd instance.
+                properties:
+                  apiKeySecretRef:
+                    description: apiKeySecretRef references a Secret containing the
+                      API key.
+                    properties:
+                      key:
+                        description: key is the key within the Secret.
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  tls:
+                    description: |-
+                      tls configures TLS settings for the connection.
+                      Only needed when the app uses HTTPS with self-signed or private CA certificates.
+                    properties:
+                      caSecretRef:
+                        description: |-
+                          caSecretRef references a Secret containing a PEM-encoded CA certificate bundle
+                          used to verify the target app's TLS certificate.
+                          The Secret must contain the CA certificate under the specified key.
+                        properties:
+                          key:
+                            description: key is the key within the Secret.
+                            type: string
+                          name:
+                            description: name is the name of the Secret.
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      insecureSkipVerify:
+                        description: |-
+                          insecureSkipVerify disables TLS certificate verification.
+                          WARNING: This makes the connection susceptible to machine-in-the-middle attacks.
+                          Only use for testing or when the target app uses a self-signed certificate and
+                          providing a CA is not practical.
+                        type: boolean
+                    type: object
+                  url:
+                    description: url is the base URL of the app (e.g., http://arr-sonarr.arr.svc.cluster.local:8989).
+                    type: string
+                required:
+                - apiKeySecretRef
+                - url
+                type: object
+              folders:
+                description: folders configures download and temp folder paths.
+                properties:
+                  completeDir:
+                    description: completeDir is the path for completed downloads.
+                    type: string
+                  incompleteDir:
+                    description: incompleteDir is the path for incomplete downloads.
+                    type: string
+                  nzbBackupDir:
+                    description: nzbBackupDir is the path for NZB backups.
+                    type: string
+                  scriptDir:
+                    description: scriptDir is the path for scripts.
+                    type: string
+                  tempDownloadDir:
+                    description: tempDownloadDir is the temporary download path.
+                    type: string
+                type: object
+              general:
+                description: general configures general SABnzbd settings.
+                properties:
+                  autoSort:
+                    description: autoSort enables automatic sorting of downloads.
+                    type: boolean
+                  downloadSpeedLimit:
+                    description: downloadSpeedLimit is the download speed limit (e.g.,
+                      "100M", "0" for unlimited).
+                    type: string
+                  pauseOnPostProcessing:
+                    description: pauseOnPostProcessing pauses downloading during post-processing.
+                    type: boolean
+                  preCheck:
+                    description: preCheck enables NZB pre-check for completion.
+                    type: boolean
+                  scriptDir:
+                    description: scriptDir is the path to the scripts directory.
+                    type: string
+                type: object
+              reconcile:
+                description: reconcile configures reconciliation behavior (e.g., sync
+                  interval).
+                properties:
+                  interval:
+                    description: |-
+                      interval overrides the default reconciliation interval (default: 5m).
+                      Uses standard Kubernetes duration format (e.g., "30s", "5m", "1h").
+                    type: string
+                  prune:
+                    description: |-
+                      prune enables deletion of resources that exist in the app but are not declared in the CRD.
+                      When true, for each resource type where at least one item is specified, any existing
+                      resources not matching a declared item will be removed from the app.
+                      Root folders and tags are never pruned.
+                      Default: false (only create/update, never delete).
+                    type: boolean
+                type: object
+              servers:
+                description: servers defines Usenet server connections.
+                items:
+                  description: SabnzbdServer defines a Usenet server connection.
+                  properties:
+                    connections:
+                      description: connections is the number of simultaneous connections.
+                      type: integer
+                    enable:
+                      default: true
+                      description: enable controls whether this server is active.
+                      type: boolean
+                    host:
+                      description: host is the hostname of the Usenet server.
+                      type: string
+                    name:
+                      description: name is the display name of the server.
+                      type: string
+                    passwordSecretRef:
+                      description: passwordSecretRef references a Secret containing
+                        the password.
+                      properties:
+                        key:
+                          description: key is the key within the Secret.
+                          type: string
+                        name:
+                          description: name is the name of the Secret.
+                          type: string
+                      required:
+                      - key
+                      - name
+                      type: object
+                    port:
+                      description: port is the port number.
+                      type: integer
+                    priority:
+                      description: priority is the server priority. 0 = highest.
+                      type: integer
+                    retention:
+                      description: retention is the server retention in days. 0 =
+                        unlimited.
+                      type: integer
+                    ssl:
+                      description: ssl enables SSL/TLS connection.
+                      type: boolean
+                    usernameSecretRef:
+                      description: usernameSecretRef references a Secret containing
+                        the username.
+                      properties:
+                        key:
+                          description: key is the key within the Secret.
+                          type: string
+                        name:
+                          description: name is the name of the Secret.
+                          type: string
+                      required:
+                      - key
+                      - name
+                      type: object
+                  required:
+                  - host
+                  - name
+                  - port
+                  type: object
+                type: array
+            required:
+            - connection
+            type: object
+          status:
+            description: SabnzbdConfigStatus defines the observed state of SabnzbdConfig.
+            properties:
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              lastSyncTime:
+                format: date-time
+                type: string
+              observedGeneration:
+                format: int64
+                type: integer
+            type: object
+        required:
+        - metadata
+        - spec
+        - status
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

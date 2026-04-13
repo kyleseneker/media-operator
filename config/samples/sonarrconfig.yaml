@@ -1,0 +1,178 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: SonarrConfig
+metadata:
+  name: sonarr
+  namespace: arr
+spec:
+  connection:
+    url: http://arr-sonarr.arr.svc.cluster.local:8989
+    apiKeySecretRef:
+      name: arr-config-secrets
+      key: SONARR_API_KEY
+  mediaManagement:
+    copyUsingHardlinks: true
+    deleteEmptyFolders: true
+    importExtraFiles: true
+    extraFileExtensions: srt
+    downloadPropersAndRepacks: preferAndUpgrade
+    enableMediaInfo: true
+    rescanAfterRefresh: always
+    episodeTitleRequired: always
+    minimumFreeSpaceWhenImporting: 100
+  naming:
+    renameEpisodes: true
+    replaceIllegalCharacters: true
+    colonReplacementFormat: 4
+    standardEpisodeFormat: "{Series TitleYear} - S{season:00}E{episode:00} - {Episode CleanTitle} [{Custom Formats }{Quality Full}]{[MediaInfo VideoDynamicRangeType]}{[Mediainfo AudioCodec}{ Mediainfo AudioChannels]}{[MediaInfo VideoCodec]}{-Release Group}"
+    dailyEpisodeFormat: "{Series TitleYear} - {Air-Date} - {Episode CleanTitle} [{Custom Formats }{Quality Full}]{[MediaInfo VideoDynamicRangeType]}{[Mediainfo AudioCodec}{ Mediainfo AudioChannels]}{[MediaInfo VideoCodec]}{-Release Group}"
+    animeEpisodeFormat: "{Series TitleYear} - S{season:00}E{episode:00} - {absolute:000} - {Episode CleanTitle} [{Custom Formats }{Quality Full}]{[MediaInfo VideoDynamicRangeType]}{[MediaInfo AudioCodec}{ MediaInfo AudioChannels]}{[MediaInfo VideoCodec]}{-Release Group}"
+    seriesFolderFormat: "{Series TitleYear} [tvdbid-{TvdbId}]"
+    seasonFolderFormat: "Season {season:00}"
+    specialsFolderFormat: Specials
+  indexerConfig:
+    minimumAge: 0
+    retention: 0
+    maximumSize: 0
+    rssSyncInterval: 15
+  downloadClientConfig:
+    enableCompletedDownloadHandling: true
+    autoRedownloadFailed: true
+    autoRedownloadFailedFromInteractiveSearch: true
+  ui:
+    firstDayOfWeek: 0
+    shortDateFormat: "MMM D YYYY"
+    longDateFormat: "dddd, MMMM D YYYY"
+    timeFormat: "h(:mm)a"
+    showRelativeDates: true
+    theme: auto
+    uiLanguage: 1
+  rootFolders:
+    - path: /data/media/tv
+  downloadClients:
+    - name: qBittorrent
+      protocol: torrent
+      implementation: QBittorrent
+      host: arr-vpn-downloads.arr.svc.cluster.local
+      port: 8080
+      category: tv
+      usernameSecretRef:
+        name: arr-config-secrets
+        key: QBITTORRENT_USERNAME
+      passwordSecretRef:
+        name: arr-config-secrets
+        key: QBITTORRENT_PASSWORD
+  customFormats:
+    - name: x265 (HD)
+      includeCustomFormatWhenRenaming: false
+      specifications:
+        - name: x265
+          implementation: ReleaseTitleSpecification
+          negate: false
+          required: true
+          fields:
+            - name: value
+              value: "[xh]\\.?265|HEVC"
+        - name: Not 4K
+          implementation: ResolutionSpecification
+          negate: true
+          required: true
+          fields:
+            - name: value
+              value: 2160
+    - name: WEBDL
+      specifications:
+        - name: WEBDL
+          implementation: SourceSpecification
+          fields:
+            - name: value
+              value: 3
+  qualityProfiles:
+    - name: HD-1080p
+      upgradeAllowed: true
+      cutoff: Bluray-1080p
+      minFormatScore: 0
+      cutoffFormatScore: 10000
+      items:
+        - quality:
+            id: 0
+            name: Unknown
+          allowed: false
+        - quality:
+            id: 1
+            name: SDTV
+          allowed: false
+        - name: WEB 720p
+          allowed: false
+          items:
+            - quality:
+                id: 5
+                name: WEBDL-720p
+            - quality:
+                id: 14
+                name: WEBRip-720p
+        - name: WEB 1080p
+          allowed: true
+          items:
+            - quality:
+                id: 3
+                name: WEBDL-1080p
+            - quality:
+                id: 15
+                name: WEBRip-1080p
+        - quality:
+            id: 7
+            name: Bluray-1080p
+          allowed: true
+        - quality:
+            id: 20
+            name: Bluray-1080p Remux
+          allowed: true
+      formatItems:
+        - name: x265 (HD)
+          score: -5000
+        - name: WEBDL
+          score: 1000
+  tags:
+    - label: anime
+    - label: hdr
+  indexers:
+    - name: NZBgeek
+      protocol: usenet
+      implementation: Newznab
+      enableRss: true
+      enableAutomaticSearch: true
+      enableInteractiveSearch: true
+      fields:
+        - name: baseUrl
+          value: "https://api.nzbgeek.info"
+        - name: apiPath
+          value: "/api"
+        - name: apiKey
+          value: "your-api-key"
+        - name: categories
+          value: "5000,5040,5045"
+  notifications:
+    - name: Discord
+      implementation: Discord
+      onGrab: true
+      onDownload: true
+      onUpgrade: true
+      onHealthIssue: true
+      includeHealthWarnings: true
+      fields:
+        - name: webHookUrl
+          value: "https://discord.com/api/webhooks/your-webhook-url"
+  importLists:
+    - name: Trakt Popular
+      implementation: TraktPopularImport
+      enableAutomaticAdd: true
+      monitor: all
+      qualityProfileName: HD-1080p
+      rootFolderPath: /data/media/tv
+      seriesType: standard
+      seasonFolder: true
+      fields:
+        - name: accessToken
+          value: "your-trakt-token"
+        - name: limit
+          value: 100

@@ -1,0 +1,52 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "media-operator.fullname" . }}
+  labels:
+    {{- include "media-operator.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - media-operator.dev
+    resources:
+      - autobrrconfigs
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - media-operator.dev
+    resources:
+      - autobrrconfigs/status
+    verbs:
+      - get
+      - update
+      - patch
+  - apiGroups:
+      - media-operator.dev
+    resources:
+      - autobrrconfigs/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch

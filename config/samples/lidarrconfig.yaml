@@ -1,0 +1,32 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: LidarrConfig
+metadata:
+  name: lidarr
+  namespace: media
+spec:
+  connection:
+    url: http://lidarr.media.svc.cluster.local:8686
+    apiKeySecretRef:
+      name: arr-secrets
+      key: LIDARR_API_KEY
+  mediaManagement:
+    copyUsingHardlinks: true
+    deleteEmptyFolders: true
+    rescanAfterRefresh: always
+  naming:
+    renameTracks: true
+    replaceIllegalCharacters: true
+    standardTrackFormat: "{Artist Name} - {Album Title} - {track:00} - {Track Title}"
+    artistFolderFormat: "{Artist Name}"
+  rootFolders:
+    - path: /music
+  downloadClients:
+    - name: SABnzbd
+      protocol: usenet
+      implementation: Sabnzbd
+      host: sabnzbd.media.svc.cluster.local
+      port: 8080
+      category: music
+      apiKeySecretRef:
+        name: arr-secrets
+        key: SABNZBD_API_KEY

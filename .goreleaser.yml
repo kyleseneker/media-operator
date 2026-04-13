@@ -1,0 +1,152 @@
+version: 2
+
+builds:
+  - id: media-operator-servarr
+    main: ./cmd/servarr
+    binary: media-operator-servarr
+    env: [CGO_ENABLED=0]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    ldflags: ["-s -w -X main.version={{.Version}} -X main.commit={{.Commit}}"]
+  - id: media-operator-downloads
+    main: ./cmd/downloads
+    binary: media-operator-downloads
+    env: [CGO_ENABLED=0]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    ldflags: ["-s -w -X main.version={{.Version}} -X main.commit={{.Commit}}"]
+  - id: media-operator-mediaservers
+    main: ./cmd/mediaservers
+    binary: media-operator-mediaservers
+    env: [CGO_ENABLED=0]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    ldflags: ["-s -w -X main.version={{.Version}} -X main.commit={{.Commit}}"]
+  - id: media-operator-requests
+    main: ./cmd/requests
+    binary: media-operator-requests
+    env: [CGO_ENABLED=0]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    ldflags: ["-s -w -X main.version={{.Version}} -X main.commit={{.Commit}}"]
+  - id: media-operator-transcode
+    main: ./cmd/transcode
+    binary: media-operator-transcode
+    env: [CGO_ENABLED=0]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    ldflags: ["-s -w -X main.version={{.Version}} -X main.commit={{.Commit}}"]
+
+dockers:
+  # servarr
+  - image_templates: ["ghcr.io/kyleseneker/media-operator-servarr:{{ .Version }}-amd64"]
+    use: buildx
+    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=servarr"]
+    goarch: amd64
+    ids: [media-operator-servarr]
+  - image_templates: ["ghcr.io/kyleseneker/media-operator-servarr:{{ .Version }}-arm64"]
+    use: buildx
+    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=servarr"]
+    goarch: arm64
+    ids: [media-operator-servarr]
+  # downloads
+  - image_templates: ["ghcr.io/kyleseneker/media-operator-downloads:{{ .Version }}-amd64"]
+    use: buildx
+    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=downloads"]
+    goarch: amd64
+    ids: [media-operator-downloads]
+  - image_templates: ["ghcr.io/kyleseneker/media-operator-downloads:{{ .Version }}-arm64"]
+    use: buildx
+    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=downloads"]
+    goarch: arm64
+    ids: [media-operator-downloads]
+  # mediaservers
+  - image_templates: ["ghcr.io/kyleseneker/media-operator-mediaservers:{{ .Version }}-amd64"]
+    use: buildx
+    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=mediaservers"]
+    goarch: amd64
+    ids: [media-operator-mediaservers]
+  - image_templates: ["ghcr.io/kyleseneker/media-operator-mediaservers:{{ .Version }}-arm64"]
+    use: buildx
+    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=mediaservers"]
+    goarch: arm64
+    ids: [media-operator-mediaservers]
+  # requests
+  - image_templates: ["ghcr.io/kyleseneker/media-operator-requests:{{ .Version }}-amd64"]
+    use: buildx
+    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=requests"]
+    goarch: amd64
+    ids: [media-operator-requests]
+  - image_templates: ["ghcr.io/kyleseneker/media-operator-requests:{{ .Version }}-arm64"]
+    use: buildx
+    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=requests"]
+    goarch: arm64
+    ids: [media-operator-requests]
+  # transcode
+  - image_templates: ["ghcr.io/kyleseneker/media-operator-transcode:{{ .Version }}-amd64"]
+    use: buildx
+    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=transcode"]
+    goarch: amd64
+    ids: [media-operator-transcode]
+  - image_templates: ["ghcr.io/kyleseneker/media-operator-transcode:{{ .Version }}-arm64"]
+    use: buildx
+    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=transcode"]
+    goarch: arm64
+    ids: [media-operator-transcode]
+
+docker_manifests:
+  - name_template: "ghcr.io/kyleseneker/media-operator-servarr:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/kyleseneker/media-operator-servarr:{{ .Version }}-amd64"
+      - "ghcr.io/kyleseneker/media-operator-servarr:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/kyleseneker/media-operator-servarr:latest"
+    image_templates:
+      - "ghcr.io/kyleseneker/media-operator-servarr:{{ .Version }}-amd64"
+      - "ghcr.io/kyleseneker/media-operator-servarr:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/kyleseneker/media-operator-downloads:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/kyleseneker/media-operator-downloads:{{ .Version }}-amd64"
+      - "ghcr.io/kyleseneker/media-operator-downloads:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/kyleseneker/media-operator-downloads:latest"
+    image_templates:
+      - "ghcr.io/kyleseneker/media-operator-downloads:{{ .Version }}-amd64"
+      - "ghcr.io/kyleseneker/media-operator-downloads:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/kyleseneker/media-operator-mediaservers:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/kyleseneker/media-operator-mediaservers:{{ .Version }}-amd64"
+      - "ghcr.io/kyleseneker/media-operator-mediaservers:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/kyleseneker/media-operator-mediaservers:latest"
+    image_templates:
+      - "ghcr.io/kyleseneker/media-operator-mediaservers:{{ .Version }}-amd64"
+      - "ghcr.io/kyleseneker/media-operator-mediaservers:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/kyleseneker/media-operator-requests:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/kyleseneker/media-operator-requests:{{ .Version }}-amd64"
+      - "ghcr.io/kyleseneker/media-operator-requests:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/kyleseneker/media-operator-requests:latest"
+    image_templates:
+      - "ghcr.io/kyleseneker/media-operator-requests:{{ .Version }}-amd64"
+      - "ghcr.io/kyleseneker/media-operator-requests:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/kyleseneker/media-operator-transcode:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/kyleseneker/media-operator-transcode:{{ .Version }}-amd64"
+      - "ghcr.io/kyleseneker/media-operator-transcode:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/kyleseneker/media-operator-transcode:latest"
+    image_templates:
+      - "ghcr.io/kyleseneker/media-operator-transcode:{{ .Version }}-amd64"
+      - "ghcr.io/kyleseneker/media-operator-transcode:{{ .Version }}-arm64"
+
+archives:
+  - formats: ['tar.gz']
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+
+release:
+  extra_files:
+    - glob: config/crd/bases/*.yaml

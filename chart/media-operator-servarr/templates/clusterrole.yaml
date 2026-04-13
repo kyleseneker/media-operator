@@ -1,0 +1,67 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "media-operator.fullname" . }}
+  labels:
+    {{- include "media-operator.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - media-operator.dev
+    resources:
+      - sonarrconfigs
+      - radarrconfigs
+      - lidarrconfigs
+      - readarrconfigs
+      - prowlarrconfigs
+      - bazarrconfigs
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - media-operator.dev
+    resources:
+      - sonarrconfigs/status
+      - radarrconfigs/status
+      - lidarrconfigs/status
+      - readarrconfigs/status
+      - prowlarrconfigs/status
+      - bazarrconfigs/status
+    verbs:
+      - get
+      - update
+      - patch
+  - apiGroups:
+      - media-operator.dev
+    resources:
+      - sonarrconfigs/finalizers
+      - radarrconfigs/finalizers
+      - lidarrconfigs/finalizers
+      - readarrconfigs/finalizers
+      - prowlarrconfigs/finalizers
+      - bazarrconfigs/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch

@@ -1,0 +1,322 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: prowlarrconfigs.media-operator.dev
+spec:
+  group: media-operator.dev
+  names:
+    kind: ProwlarrConfig
+    listKind: ProwlarrConfigList
+    plural: prowlarrconfigs
+    singular: prowlarrconfig
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Synced")].status
+      name: Synced
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.lastSyncTime
+      name: Last Sync
+      type: date
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: ProwlarrConfig is the Schema for the prowlarrconfigs API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ProwlarrConfigSpec defines the desired state of ProwlarrConfig.
+            properties:
+              applications:
+                description: applications defines application connections managed
+                  by Prowlarr.
+                items:
+                  description: ProwlarrApplication defines an application connection
+                    managed by Prowlarr.
+                  properties:
+                    apiKeySecretRef:
+                      description: apiKeySecretRef references a Secret containing
+                        the application's API key.
+                      properties:
+                        key:
+                          description: key is the key within the Secret.
+                          type: string
+                        name:
+                          description: name is the name of the Secret.
+                          type: string
+                      required:
+                      - key
+                      - name
+                      type: object
+                    baseUrl:
+                      description: baseUrl is the base URL of the application.
+                      type: string
+                    configContract:
+                      description: configContract is the configuration contract name
+                        for the implementation.
+                      type: string
+                    implementation:
+                      description: implementation is the application type (e.g., Sonarr,
+                        Radarr).
+                      type: string
+                    name:
+                      description: name is the display name of the application.
+                      type: string
+                    prowlarrUrl:
+                      description: prowlarrUrl is the URL Prowlarr uses to reach itself
+                        (for callbacks).
+                      type: string
+                    syncCategories:
+                      description: syncCategories is the list of category IDs to sync
+                        to this application.
+                      items:
+                        type: integer
+                      type: array
+                    syncLevel:
+                      description: syncLevel controls how indexers are synced to this
+                        application.
+                      enum:
+                      - disabled
+                      - addOnly
+                      - fullSync
+                      type: string
+                    tags:
+                      description: tags is the list of tag IDs to associate with this
+                        application.
+                      items:
+                        type: integer
+                      type: array
+                  required:
+                  - apiKeySecretRef
+                  - baseUrl
+                  - configContract
+                  - implementation
+                  - name
+                  type: object
+                type: array
+              connection:
+                description: connection defines how to connect to the Prowlarr instance.
+                properties:
+                  apiKeySecretRef:
+                    description: apiKeySecretRef references a Secret containing the
+                      API key.
+                    properties:
+                      key:
+                        description: key is the key within the Secret.
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  url:
+                    description: url is the base URL of the app (e.g., http://arr-sonarr.arr.svc.cluster.local:8989).
+                    type: string
+                required:
+                - apiKeySecretRef
+                - url
+                type: object
+              indexers:
+                description: indexers defines indexer configurations managed by Prowlarr.
+                items:
+                  description: ProwlarrIndexer defines an indexer configuration in
+                    Prowlarr.
+                  properties:
+                    appProfileId:
+                      description: appProfileId is the application profile ID for
+                        this indexer.
+                      type: integer
+                    configContract:
+                      description: configContract is the configuration contract name
+                        for the implementation.
+                      type: string
+                    enable:
+                      default: true
+                      description: enable controls whether this indexer is active.
+                      type: boolean
+                    fields:
+                      description: fields defines configuration fields for the indexer.
+                      items:
+                        description: ProwlarrField represents a key-value configuration
+                          field.
+                        properties:
+                          name:
+                            description: name is the field name.
+                            type: string
+                          value:
+                            description: value is the field value. Use "ENV:VAR_NAME"
+                              convention for secret references.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      type: array
+                    implementation:
+                      description: implementation is the indexer type (e.g., Newznab,
+                        Torznab).
+                      type: string
+                    name:
+                      description: name is the display name of the indexer.
+                      type: string
+                    priority:
+                      description: priority is the indexer priority. Lower values
+                        are higher priority.
+                      type: integer
+                    tags:
+                      description: tags is the list of tag IDs to associate with this
+                        indexer.
+                      items:
+                        type: integer
+                      type: array
+                  required:
+                  - configContract
+                  - implementation
+                  - name
+                  type: object
+                type: array
+              proxies:
+                description: proxies defines proxy configurations for Prowlarr.
+                items:
+                  description: ProwlarrProxy defines a proxy configuration for Prowlarr.
+                  properties:
+                    configContract:
+                      description: configContract is the configuration contract name
+                        for the implementation.
+                      type: string
+                    host:
+                      description: host is the hostname or IP of the proxy.
+                      type: string
+                    implementation:
+                      description: implementation is the proxy type (e.g., Http, Socks4,
+                        Socks5).
+                      type: string
+                    name:
+                      description: name is the display name of the proxy.
+                      type: string
+                    requestTimeout:
+                      description: requestTimeout is the request timeout in seconds.
+                      type: integer
+                    tags:
+                      description: tags is the list of tag IDs to associate with this
+                        proxy.
+                      items:
+                        type: integer
+                      type: array
+                  required:
+                  - configContract
+                  - host
+                  - implementation
+                  - name
+                  type: object
+                type: array
+            required:
+            - connection
+            type: object
+          status:
+            description: ProwlarrConfigStatus defines the observed state of ProwlarrConfig.
+            properties:
+              conditions:
+                description: conditions represent the current state of the ProwlarrConfig
+                  resource.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              lastSyncTime:
+                description: lastSyncTime is the timestamp of the last successful
+                  reconciliation.
+                format: date-time
+                type: string
+              observedGeneration:
+                description: observedGeneration is the most recent generation observed.
+                format: int64
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -1,0 +1,25 @@
+# Minimal example: just Sonarr with the basics.
+# Good starting point to verify the operator is working.
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sonarr-credentials
+  namespace: media
+type: Opaque
+stringData:
+  api-key: "your-sonarr-api-key"
+---
+apiVersion: media-operator.dev/v1alpha1
+kind: SonarrConfig
+metadata:
+  name: sonarr
+  namespace: media
+spec:
+  connection:
+    url: http://sonarr:8989
+    apiKeySecretRef:
+      name: sonarr-credentials
+      key: api-key
+  rootFolders:
+    - path: /media/tv

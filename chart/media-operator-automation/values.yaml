@@ -1,0 +1,46 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/kyleseneker/media-operator-automation
+  tag: ""
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: true
+  name: media-operator-automation
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+watchNamespace: ""  # Empty watches all namespaces. Set to restrict (e.g., "arr")
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
+  capabilities:
+    drop:
+      - ALL
+
+# Metrics & observability.
+# The operator exposes Prometheus metrics on :8443 over HTTPS with k8s TokenReview auth.
+# Built-in controller-runtime metrics and custom media_operator_* metrics are both served
+# on the same endpoint. See README's "Metrics & Observability" section for details.
+metrics:
+  enabled: true
+  serviceMonitor:
+    # Requires the Prometheus Operator CRDs (monitoring.coreos.com/v1) to be installed.
+    # Leave disabled on clusters that don't use prometheus-operator.
+    enabled: false
+    interval: 30s
+    # Additional labels applied to the ServiceMonitor (e.g., for Prometheus selector matching).
+    labels: {}
+
+nodeSelector: {}
+tolerations: []

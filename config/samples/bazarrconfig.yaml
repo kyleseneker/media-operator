@@ -1,0 +1,69 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: BazarrConfig
+metadata:
+  name: bazarr
+  namespace: arr
+spec:
+  connection:
+    url: http://arr-bazarr.arr.svc.cluster.local:6767
+    apiKeySecretRef:
+      name: arr-config-secrets
+      key: BAZARR_API_KEY
+  general:
+    useSonarr: true
+    useRadarr: true
+    minimumScore: 90
+    minimumScoreMovie: 70
+    useScenename: true
+    multithreading: true
+    utf8Encode: true
+    embeddedSubtitlesParser: ffprobe
+    hiExtension: hi
+    upgradeFrequency: 12
+    wantedSearchFrequency: 12
+  sonarrConnection:
+    host: arr-sonarr.arr.svc.cluster.local
+    port: 8989
+    apiKeySecretRef:
+      name: arr-config-secrets
+      key: SONARR_API_KEY
+    httpTimeout: 300
+    fullUpdate: Daily
+    syncInterval: 60
+  radarrConnection:
+    host: arr-radarr.arr.svc.cluster.local
+    port: 7878
+    apiKeySecretRef:
+      name: arr-config-secrets
+      key: RADARR_API_KEY
+    httpTimeout: 300
+    fullUpdate: Daily
+    syncInterval: 60
+  subSync:
+    useSubsync: false
+    subsyncThreshold: 90
+    subsyncMovieThreshold: 70
+  providers:
+    - name: opensubtitlescom
+      enabled: true
+      settings:
+        username: "ENV:OPENSUBTITLES_USERNAME"
+        password: "ENV:OPENSUBTITLES_PASSWORD"
+        use_hash: "true"
+    - name: podnapisi
+      enabled: true
+    - name: yifysubtitles
+      enabled: true
+    - name: supersubtitles
+      enabled: true
+  languages:
+    enabled:
+      - en
+    profiles:
+      - profileId: 1
+        name: English
+        items:
+          - language: en
+            hi: false
+            forced: false
+            audioExclude: false

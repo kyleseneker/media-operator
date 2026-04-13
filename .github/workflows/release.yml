@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  helm:
+    runs-on: ubuntu-latest
+    needs: release
+    permissions:
+      packages: write
+    strategy:
+      matrix:
+        chart:
+          - media-operator-servarr
+          - media-operator-downloads
+          - media-operator-mediaservers
+          - media-operator-requests
+          - media-operator-transcode
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update chart version
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          sed -i "s/^version:.*/version: ${VERSION}/" chart/${{ matrix.chart }}/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" chart/${{ matrix.chart }}/Chart.yaml
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Package and push Helm chart
+        run: |
+          helm package chart/${{ matrix.chart }}
+          helm push ${{ matrix.chart }}-*.tgz oci://ghcr.io/kyleseneker/media-operator

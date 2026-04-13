@@ -1,0 +1,646 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: autobrrconfigs.media-operator.dev
+spec:
+  group: media-operator.dev
+  names:
+    kind: AutobrrConfig
+    listKind: AutobrrConfigList
+    plural: autobrrconfigs
+    singular: autobrrconfig
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Synced")].status
+      name: Synced
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.lastSyncTime
+      name: Last Sync
+      type: date
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: AutobrrConfig is the Schema for the autobrrconfigs API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: AutobrrConfigSpec defines the desired state of AutobrrConfig.
+            properties:
+              connection:
+                description: connection defines how to connect to the Autobrr instance.
+                properties:
+                  apiKeySecretRef:
+                    description: apiKeySecretRef references a Secret containing the
+                      API key.
+                    properties:
+                      key:
+                        description: key is the key within the Secret.
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  tls:
+                    description: |-
+                      tls configures TLS settings for the connection.
+                      Only needed when the app uses HTTPS with self-signed or private CA certificates.
+                    properties:
+                      caSecretRef:
+                        description: |-
+                          caSecretRef references a Secret containing a PEM-encoded CA certificate bundle
+                          used to verify the target app's TLS certificate.
+                          The Secret must contain the CA certificate under the specified key.
+                        properties:
+                          key:
+                            description: key is the key within the Secret.
+                            type: string
+                          name:
+                            description: name is the name of the Secret.
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      insecureSkipVerify:
+                        description: |-
+                          insecureSkipVerify disables TLS certificate verification.
+                          WARNING: This makes the connection susceptible to machine-in-the-middle attacks.
+                          Only use for testing or when the target app uses a self-signed certificate and
+                          providing a CA is not practical.
+                        type: boolean
+                    type: object
+                  url:
+                    description: url is the base URL of the app (e.g., http://arr-sonarr.arr.svc.cluster.local:8989).
+                    type: string
+                required:
+                - apiKeySecretRef
+                - url
+                type: object
+              downloadClients:
+                description: downloadClients defines download client connections in
+                  Autobrr.
+                items:
+                  description: AutobrrDownloadClient defines a download client connection
+                    in Autobrr.
+                  properties:
+                    apiKeySecretRef:
+                      description: apiKeySecretRef references a Secret containing
+                        the API key (for *arr apps, SABnzbd).
+                      properties:
+                        key:
+                          description: key is the key within the Secret.
+                          type: string
+                        name:
+                          description: name is the name of the Secret.
+                          type: string
+                      required:
+                      - key
+                      - name
+                      type: object
+                    enable:
+                      default: true
+                      description: enable controls whether this download client is
+                        active.
+                      type: boolean
+                    host:
+                      description: host is the hostname or URL of the download client.
+                      type: string
+                    name:
+                      description: name is the display name of the download client.
+                      type: string
+                    passwordSecretRef:
+                      description: passwordSecretRef references a Secret containing
+                        the password.
+                      properties:
+                        key:
+                          description: key is the key within the Secret.
+                          type: string
+                        name:
+                          description: name is the name of the Secret.
+                          type: string
+                      required:
+                      - key
+                      - name
+                      type: object
+                    port:
+                      description: port is the port of the download client.
+                      type: integer
+                    settings:
+                      description: settings contains additional client-specific settings.
+                      properties:
+                        category:
+                          description: category is the default download category/label.
+                          type: string
+                        contentLayout:
+                          description: contentLayout controls the content layout (Original,
+                            Subfolder, NoSubfolder).
+                          type: string
+                        prioritizeProperRepacks:
+                          description: prioritizeProperRepacks prioritizes proper/repack
+                            releases.
+                          type: boolean
+                        savePath:
+                          description: savePath overrides the default save path.
+                          type: string
+                      type: object
+                    tls:
+                      description: tls enables TLS for the connection.
+                      type: boolean
+                    type:
+                      description: type is the download client type.
+                      enum:
+                      - qBittorrent
+                      - Deluge
+                      - Transmission
+                      - rTorrent
+                      - SABnzbd
+                      - Sonarr
+                      - Radarr
+                      - Lidarr
+                      - Readarr
+                      - Whisparr
+                      type: string
+                    usernameSecretRef:
+                      description: usernameSecretRef references a Secret containing
+                        the username.
+                      properties:
+                        key:
+                          description: key is the key within the Secret.
+                          type: string
+                        name:
+                          description: name is the name of the Secret.
+                          type: string
+                      required:
+                      - key
+                      - name
+                      type: object
+                  required:
+                  - host
+                  - name
+                  - type
+                  type: object
+                type: array
+              feeds:
+                description: feeds defines RSS/Torznab feed sources.
+                items:
+                  description: AutobrrFeed defines an RSS or Torznab feed source.
+                  properties:
+                    apiKeySecretRef:
+                      description: apiKeySecretRef references a Secret containing
+                        the feed API key (for Torznab/Newznab).
+                      properties:
+                        key:
+                          description: key is the key within the Secret.
+                          type: string
+                        name:
+                          description: name is the name of the Secret.
+                          type: string
+                      required:
+                      - key
+                      - name
+                      type: object
+                    enable:
+                      default: true
+                      description: enable controls whether this feed is active.
+                      type: boolean
+                    indexerRef:
+                      description: indexerRef is the name of the indexer this feed
+                        belongs to.
+                      type: string
+                    interval:
+                      default: 15
+                      description: interval is the feed polling interval in minutes.
+                      type: integer
+                    name:
+                      description: name is the display name of the feed.
+                      type: string
+                    type:
+                      description: type is the feed type.
+                      enum:
+                      - RSS
+                      - Torznab
+                      - Newznab
+                      type: string
+                    url:
+                      description: url is the feed URL.
+                      type: string
+                  required:
+                  - name
+                  - type
+                  - url
+                  type: object
+                type: array
+              filters:
+                description: filters defines release filters with match criteria and
+                  actions.
+                items:
+                  description: AutobrrFilter defines a release filter with match criteria
+                    and actions.
+                  properties:
+                    actions:
+                      description: actions defines what to do when a release matches
+                        this filter.
+                      items:
+                        description: AutobrrFilterAction defines an action to take
+                          when a filter matches.
+                        properties:
+                          category:
+                            description: category overrides the download client's
+                              default category.
+                            type: string
+                          clientRef:
+                            description: clientRef is the name of the download client
+                              to use (must match a downloadClients entry).
+                            type: string
+                          enable:
+                            default: true
+                            description: enable controls whether this action is active.
+                            type: boolean
+                          execArgs:
+                            description: execArgs is the arguments for the exec command.
+                            type: string
+                          execCommand:
+                            description: execCommand is the command to execute (for
+                              Exec action type).
+                            type: string
+                          name:
+                            description: name is the display name of the action.
+                            type: string
+                          savePath:
+                            description: savePath overrides the download client's
+                              default save path.
+                            type: string
+                          type:
+                            description: type is the action type.
+                            enum:
+                            - qBittorrent
+                            - Deluge
+                            - Transmission
+                            - rTorrent
+                            - SABnzbd
+                            - Sonarr
+                            - Radarr
+                            - Lidarr
+                            - Readarr
+                            - Whisparr
+                            - Webhook
+                            - Exec
+                            - WatchFolder
+                            type: string
+                          watchFolder:
+                            description: watchFolder is the folder path (for WatchFolder
+                              action type).
+                            type: string
+                          webhookURL:
+                            description: webhookURL is the webhook URL (for Webhook
+                              action type).
+                            type: string
+                        required:
+                        - name
+                        - type
+                        type: object
+                      type: array
+                    codecs:
+                      description: codecs is a list of acceptable codecs (e.g., "x264",
+                        "x265", "HEVC").
+                      items:
+                        type: string
+                      type: array
+                    delay:
+                      description: delay is the delay in seconds before grabbing a
+                        matched release.
+                      type: integer
+                    enable:
+                      default: true
+                      description: enable controls whether this filter is active.
+                      type: boolean
+                    exceptReleases:
+                      description: exceptReleases is a comma-separated list of release
+                        name patterns to exclude.
+                      type: string
+                    indexers:
+                      description: indexers is a list of indexer names this filter
+                        applies to. Empty means all.
+                      items:
+                        type: string
+                      type: array
+                    matchCategories:
+                      description: matchCategories is a comma-separated list of categories
+                        to match.
+                      type: string
+                    matchReleases:
+                      description: matchReleases is a comma-separated list of release
+                        name patterns to match (supports wildcards).
+                      type: string
+                    maxSize:
+                      description: maxSize is the maximum release size (e.g., "50GB").
+                      type: string
+                    minSize:
+                      description: minSize is the minimum release size (e.g., "100MB",
+                        "1GB").
+                      type: string
+                    name:
+                      description: name is the display name of the filter.
+                      type: string
+                    priority:
+                      description: priority controls filter evaluation order. Lower
+                        values are evaluated first.
+                      type: integer
+                    resolutions:
+                      description: resolutions is a list of acceptable resolutions.
+                      items:
+                        type: string
+                      type: array
+                    sources:
+                      description: sources is a list of acceptable sources (e.g.,
+                        "BluRay", "WEB-DL").
+                      items:
+                        type: string
+                      type: array
+                    tags:
+                      description: tags is a list of tags for organizational purposes.
+                      items:
+                        type: string
+                      type: array
+                    useRegex:
+                      description: useRegex enables regex matching for release patterns.
+                      type: boolean
+                  required:
+                  - name
+                  type: object
+                type: array
+              indexers:
+                description: indexers defines indexer/tracker connections.
+                items:
+                  description: AutobrrIndexer defines an indexer/tracker connection
+                    in Autobrr.
+                  properties:
+                    apiKeySecretRef:
+                      description: apiKeySecretRef references a Secret containing
+                        the indexer API key or passkey.
+                      properties:
+                        key:
+                          description: key is the key within the Secret.
+                          type: string
+                        name:
+                          description: name is the name of the Secret.
+                          type: string
+                      required:
+                      - key
+                      - name
+                      type: object
+                    baseURL:
+                      description: baseURL is the indexer's base URL.
+                      type: string
+                    enable:
+                      default: true
+                      description: enable controls whether this indexer is active.
+                      type: boolean
+                    feedURL:
+                      description: feedURL is the RSS/Torznab feed URL for this indexer.
+                      type: string
+                    implementation:
+                      description: |-
+                        implementation is the indexer implementation name (e.g., "ipt", "btn", "ptp").
+                        This must match a known Autobrr indexer definition.
+                      type: string
+                    name:
+                      description: name is the display name of the indexer.
+                      type: string
+                  required:
+                  - implementation
+                  - name
+                  type: object
+                type: array
+              ircNetworks:
+                description: ircNetworks defines IRC network connections for announce
+                  channel monitoring.
+                items:
+                  description: AutobrrIRCNetwork defines an IRC network connection
+                    for announce monitoring.
+                  properties:
+                    authAccountSecretRef:
+                      description: authAccountSecretRef references a Secret containing
+                        the auth account name.
+                      properties:
+                        key:
+                          description: key is the key within the Secret.
+                          type: string
+                        name:
+                          description: name is the name of the Secret.
+                          type: string
+                      required:
+                      - key
+                      - name
+                      type: object
+                    authMechanism:
+                      default: None
+                      description: authMechanism is the authentication mechanism (SASL_PLAIN,
+                        NickServ, None).
+                      enum:
+                      - SASL_PLAIN
+                      - NickServ
+                      - None
+                      type: string
+                    authPasswordSecretRef:
+                      description: authPasswordSecretRef references a Secret containing
+                        the auth password.
+                      properties:
+                        key:
+                          description: key is the key within the Secret.
+                          type: string
+                        name:
+                          description: name is the name of the Secret.
+                          type: string
+                      required:
+                      - key
+                      - name
+                      type: object
+                    channels:
+                      description: channels defines the IRC channels to join.
+                      items:
+                        description: AutobrrIRCChannel defines an IRC channel to monitor.
+                        properties:
+                          name:
+                            description: name is the channel name (e.g., "#announce").
+                            type: string
+                          passwordSecretRef:
+                            description: passwordSecretRef references a Secret containing
+                              the channel password/key.
+                            properties:
+                              key:
+                                description: key is the key within the Secret.
+                                type: string
+                              name:
+                                description: name is the name of the Secret.
+                                type: string
+                            required:
+                            - key
+                            - name
+                            type: object
+                        required:
+                        - name
+                        type: object
+                      type: array
+                    enable:
+                      default: true
+                      description: enable controls whether this IRC network connection
+                        is active.
+                      type: boolean
+                    inviteCommand:
+                      description: inviteCommand is the IRC command to send to request
+                        channel invites.
+                      type: string
+                    name:
+                      description: name is the display name of the IRC network.
+                      type: string
+                    nick:
+                      description: nick is the IRC nickname to use.
+                      type: string
+                    port:
+                      description: port is the IRC server port.
+                      type: integer
+                    server:
+                      description: server is the IRC server address (e.g., "irc.example.com").
+                      type: string
+                    tls:
+                      description: tls enables TLS for the IRC connection.
+                      type: boolean
+                  required:
+                  - name
+                  - nick
+                  - port
+                  - server
+                  type: object
+                type: array
+              reconcile:
+                description: reconcile configures reconciliation behavior (e.g., sync
+                  interval).
+                properties:
+                  interval:
+                    description: |-
+                      interval overrides the default reconciliation interval (default: 5m).
+                      Uses standard Kubernetes duration format (e.g., "30s", "5m", "1h").
+                    type: string
+                  prune:
+                    description: |-
+                      prune enables deletion of resources that exist in the app but are not declared in the CRD.
+                      When true, for each resource type where at least one item is specified, any existing
+                      resources not matching a declared item will be removed from the app.
+                      Root folders and tags are never pruned.
+                      Default: false (only create/update, never delete).
+                    type: boolean
+                type: object
+            required:
+            - connection
+            type: object
+          status:
+            description: AutobrrConfigStatus defines the observed state of AutobrrConfig.
+            properties:
+              conditions:
+                description: conditions represent the current state of the AutobrrConfig
+                  resource.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              lastSyncTime:
+                description: lastSyncTime is the timestamp of the last successful
+                  reconciliation.
+                format: date-time
+                type: string
+              observedGeneration:
+                description: observedGeneration is the most recent generation observed.
+                format: int64
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

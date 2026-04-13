@@ -1,0 +1,32 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: ReadarrConfig
+metadata:
+  name: readarr
+  namespace: media
+spec:
+  connection:
+    url: http://readarr.media.svc.cluster.local:8787
+    apiKeySecretRef:
+      name: arr-secrets
+      key: READARR_API_KEY
+  mediaManagement:
+    copyUsingHardlinks: true
+    deleteEmptyFolders: true
+    rescanAfterRefresh: always
+  naming:
+    renameBooks: true
+    replaceIllegalCharacters: true
+    standardBookFormat: "{Author Name} - {Book Title}"
+    authorFolderFormat: "{Author Name}"
+  rootFolders:
+    - path: /books
+  downloadClients:
+    - name: SABnzbd
+      protocol: usenet
+      implementation: Sabnzbd
+      host: sabnzbd.media.svc.cluster.local
+      port: 8080
+      category: books
+      apiKeySecretRef:
+        name: arr-secrets
+        key: SABNZBD_API_KEY

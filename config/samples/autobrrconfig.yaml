@@ -1,0 +1,41 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: AutobrrConfig
+metadata:
+  name: autobrr
+  namespace: media
+  labels:
+    app.kubernetes.io/name: media-operator
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  connection:
+    url: http://autobrr:7474
+    apiKeySecretRef:
+      name: autobrr-secrets
+      key: api-key
+  downloadClients:
+    - name: qBittorrent
+      type: qBittorrent
+      host: qbittorrent.media.svc.cluster.local
+      port: 8080
+      usernameSecretRef:
+        name: qbittorrent-secrets
+        key: username
+      passwordSecretRef:
+        name: qbittorrent-secrets
+        key: password
+      settings:
+        category: autobrr
+  filters:
+    - name: "TV Shows - 1080p"
+      priority: 1
+      resolutions:
+        - "1080p"
+      sources:
+        - "BluRay"
+        - "WEB-DL"
+        - "WEB"
+      actions:
+        - name: "Send to qBittorrent"
+          type: qBittorrent
+          clientRef: qBittorrent
+          category: tv

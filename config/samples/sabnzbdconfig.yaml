@@ -1,0 +1,35 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: SabnzbdConfig
+metadata:
+  name: sabnzbd
+  namespace: media
+spec:
+  connection:
+    url: http://sabnzbd.media.svc.cluster.local:8080
+    apiKeySecretRef:
+      name: sabnzbd-secrets
+      key: API_KEY
+  general:
+    preCheck: true
+  folders:
+    completeDir: /data/usenet/complete
+    incompleteDir: /data/usenet/incomplete
+  servers:
+    - name: Primary
+      host: news.example.com
+      port: 563
+      ssl: true
+      connections: 20
+      usernameSecretRef:
+        name: usenet-secrets
+        key: USERNAME
+      passwordSecretRef:
+        name: usenet-secrets
+        key: PASSWORD
+  categories:
+    - name: tv
+      dir: tv
+    - name: movies
+      dir: movies
+    - name: music
+      dir: music

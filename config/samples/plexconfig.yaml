@@ -1,0 +1,44 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: PlexConfig
+metadata:
+  name: plex
+  namespace: media
+spec:
+  connection:
+    url: http://plex.media.svc.cluster.local:32400
+    tokenSecretRef:
+      name: plex-secrets
+      key: PLEX_TOKEN
+  server:
+    friendlyName: Plex
+    language: en
+    scanMyLibraryAutomatically: true
+    scanMyLibraryPeriodically: true
+    autoEmptyTrash: true
+  transcoder:
+    transcodeHwRequested: true
+    transcodeHwDecodingEnabled: true
+    transcodeHwEncodingEnabled: true
+    maxSimultaneousVideoTranscodes: 0
+  libraries:
+    - name: Movies
+      type: movie
+      paths:
+        - /data/movies
+      language: en
+      agent: tv.plex.agents.movie
+      scanner: Plex Movie
+    - name: TV Shows
+      type: show
+      paths:
+        - /data/tv
+      language: en
+      agent: tv.plex.agents.series
+      scanner: Plex TV Series
+    - name: Music
+      type: artist
+      paths:
+        - /data/music
+      language: en
+  network:
+    secureConnections: 1

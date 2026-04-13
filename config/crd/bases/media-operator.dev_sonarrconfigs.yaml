@@ -1,0 +1,1037 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: sonarrconfigs.media-operator.dev
+spec:
+  group: media-operator.dev
+  names:
+    kind: SonarrConfig
+    listKind: SonarrConfigList
+    plural: sonarrconfigs
+    singular: sonarrconfig
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Synced")].status
+      name: Synced
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.lastSyncTime
+      name: Last Sync
+      type: date
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: SonarrConfig is the Schema for the sonarrconfigs API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: SonarrConfigSpec defines the desired state of SonarrConfig.
+            properties:
+              connection:
+                description: connection defines how to connect to the Sonarr instance.
+                properties:
+                  apiKeySecretRef:
+                    description: apiKeySecretRef references a Secret containing the
+                      API key.
+                    properties:
+                      key:
+                        description: key is the key within the Secret.
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  tls:
+                    description: |-
+                      tls configures TLS settings for the connection.
+                      Only needed when the app uses HTTPS with self-signed or private CA certificates.
+                    properties:
+                      caSecretRef:
+                        description: |-
+                          caSecretRef references a Secret containing a PEM-encoded CA certificate bundle
+                          used to verify the target app's TLS certificate.
+                          The Secret must contain the CA certificate under the specified key.
+                        properties:
+                          key:
+                            description: key is the key within the Secret.
+                            type: string
+                          name:
+                            description: name is the name of the Secret.
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      insecureSkipVerify:
+                        description: |-
+                          insecureSkipVerify disables TLS certificate verification.
+                          WARNING: This makes the connection susceptible to machine-in-the-middle attacks.
+                          Only use for testing or when the target app uses a self-signed certificate and
+                          providing a CA is not practical.
+                        type: boolean
+                    type: object
+                  url:
+                    description: url is the base URL of the app (e.g., http://arr-sonarr.arr.svc.cluster.local:8989).
+                    type: string
+                required:
+                - apiKeySecretRef
+                - url
+                type: object
+              customFormats:
+                description: customFormats defines custom format scoring rules for
+                  release selection.
+                items:
+                  description: |-
+                    CustomFormat defines a custom format with matching specifications.
+                    Custom formats score releases based on matching conditions and are used
+                    within quality profiles to guide upgrade decisions.
+                  properties:
+                    includeCustomFormatWhenRenaming:
+                      description: |-
+                        includeCustomFormatWhenRenaming includes this format's name in renamed filenames
+                        via the {Custom Formats} naming token.
+                      type: boolean
+                    name:
+                      description: name is the display name of the custom format.
+                      type: string
+                    specifications:
+                      description: |-
+                        specifications defines the matching conditions for this custom format.
+                        A release matches if all required specs match and at least one non-required spec matches.
+                      items:
+                        description: CustomFormatSpecification defines a single matching
+                          condition within a custom format.
+                        properties:
+                          fields:
+                            description: |-
+                              fields defines the specification's configuration values.
+                              Most specs have a single field named "value" (e.g., a regex pattern or enum int).
+                              SizeSpecification has "min" and "max" fields (floats in GB).
+                            items:
+                              description: ConfigField represents a key-value field
+                                in a download client configuration.
+                              properties:
+                                name:
+                                  description: name is the field name.
+                                  type: string
+                                value:
+                                  description: value is the field value. Can be a
+                                    string, number, or boolean.
+                                  x-kubernetes-preserve-unknown-fields: true
+                              required:
+                              - name
+                              type: object
+                            type: array
+                          implementation:
+                            description: |-
+                              implementation is the specification type.
+                              Common values: ReleaseTitleSpecification, SourceSpecification, ResolutionSpecification,
+                              QualityModifierSpecification, LanguageSpecification, ReleaseGroupSpecification,
+                              EditionSpecification (Radarr), ReleaseTypeSpecification (Sonarr), SizeSpecification,
+                              IndexerFlagSpecification.
+                            type: string
+                          name:
+                            description: name is a human-readable label for this condition.
+                            type: string
+                          negate:
+                            description: negate inverts the match logic. If true,
+                              the spec matches when the condition is NOT met.
+                            type: boolean
+                          required:
+                            description: |-
+                              required makes this spec mandatory. If true, the custom format only matches when
+                              this spec matches. If false, this spec participates in OR logic with other non-required specs.
+                            type: boolean
+                        required:
+                        - implementation
+                        - name
+                        type: object
+                      type: array
+                  required:
+                  - name
+                  type: object
+                type: array
+              downloadClientConfig:
+                description: downloadClientConfig configures global download client
+                  behavior.
+                properties:
+                  autoRedownloadFailed:
+                    default: true
+                    description: autoRedownloadFailed automatically searches when
+                      a download fails.
+                    type: boolean
+                  autoRedownloadFailedFromInteractiveSearch:
+                    description: autoRedownloadFailedFromInteractiveSearch auto-searches
+                      failed interactive searches.
+                    type: boolean
+                  enableCompletedDownloadHandling:
+                    default: true
+                    description: enableCompletedDownloadHandling auto-imports completed
+                      downloads.
+                    type: boolean
+                type: object
+              downloadClients:
+                description: downloadClients defines download client connections.
+                items:
+                  description: DownloadClient defines a download client connection.
+                  properties:
+                    apiKeySecretRef:
+                      description: apiKeySecretRef references a Secret containing
+                        the API key (for Usenet clients like SABnzbd/NzbGet).
+                      properties:
+                        key:
+                          description: key is the key within the Secret.
+                          type: string
+                        name:
+                          description: name is the name of the Secret.
+                          type: string
+                      required:
+                      - key
+                      - name
+                      type: object
+                    category:
+                      description: category is the download category to use.
+                      type: string
+                    configContract:
+                      description: |-
+                        configContract overrides the default config contract name.
+                        Defaults to "<implementation>Settings" if not set.
+                      type: string
+                    enable:
+                      default: true
+                      description: enable controls whether this download client is
+                        active.
+                      type: boolean
+                    fields:
+                      description: |-
+                        fields defines additional implementation-specific configuration fields.
+                        Use these for settings not covered by first-class fields (e.g., initialState, sequentialOrder).
+                      items:
+                        description: ConfigField represents a key-value field in a
+                          download client configuration.
+                        properties:
+                          name:
+                            description: name is the field name.
+                            type: string
+                          value:
+                            description: value is the field value. Can be a string,
+                              number, or boolean.
+                            x-kubernetes-preserve-unknown-fields: true
+                        required:
+                        - name
+                        type: object
+                      type: array
+                    host:
+                      description: host is the hostname or IP of the download client.
+                      type: string
+                    implementation:
+                      description: implementation is the download client type (e.g.,
+                        QBittorrent, Sabnzbd, NzbGet, Transmission, Deluge).
+                      type: string
+                    name:
+                      description: name is the display name of the download client.
+                      type: string
+                    passwordSecretRef:
+                      description: passwordSecretRef references a Secret containing
+                        the password for authentication.
+                      properties:
+                        key:
+                          description: key is the key within the Secret.
+                          type: string
+                        name:
+                          description: name is the name of the Secret.
+                          type: string
+                      required:
+                      - key
+                      - name
+                      type: object
+                    port:
+                      description: port is the port of the download client.
+                      type: integer
+                    priority:
+                      default: 1
+                      description: priority is the download client priority. Lower
+                        values are higher priority.
+                      maximum: 50
+                      minimum: 1
+                      type: integer
+                    protocol:
+                      description: protocol is the download protocol.
+                      enum:
+                      - torrent
+                      - usenet
+                      type: string
+                    removeCompletedDownloads:
+                      default: true
+                      description: removeCompletedDownloads controls whether completed
+                        downloads are removed.
+                      type: boolean
+                    removeFailedDownloads:
+                      default: true
+                      description: removeFailedDownloads controls whether failed downloads
+                        are removed.
+                      type: boolean
+                    tags:
+                      description: tags is the list of tag IDs to associate with this
+                        download client.
+                      items:
+                        type: integer
+                      type: array
+                    urlBase:
+                      description: urlBase is the base URL path for the download client
+                        (e.g., "/qbittorrent").
+                      type: string
+                    useSsl:
+                      description: useSsl enables SSL/TLS for the download client
+                        connection.
+                      type: boolean
+                    usernameSecretRef:
+                      description: usernameSecretRef references a Secret containing
+                        the username for authentication.
+                      properties:
+                        key:
+                          description: key is the key within the Secret.
+                          type: string
+                        name:
+                          description: name is the name of the Secret.
+                          type: string
+                      required:
+                      - key
+                      - name
+                      type: object
+                  required:
+                  - host
+                  - implementation
+                  - name
+                  - port
+                  - protocol
+                  type: object
+                type: array
+              importLists:
+                description: importLists defines import list configurations for automatic
+                  content addition.
+                items:
+                  description: ImportList defines an import list for automatically
+                    adding content to a Servarr app.
+                  properties:
+                    configContract:
+                      description: |-
+                        configContract is the configuration contract name for the implementation.
+                        Defaults to "<implementation>Settings" if not set.
+                      type: string
+                    enable:
+                      default: true
+                      description: enable controls whether this import list is active.
+                      type: boolean
+                    enableAutomaticAdd:
+                      description: enableAutomaticAdd automatically adds items from
+                        this list.
+                      type: boolean
+                    fields:
+                      description: fields defines the import list's configuration
+                        fields (e.g., API URL, access token, list ID).
+                      items:
+                        description: ConfigField represents a key-value field in a
+                          download client configuration.
+                        properties:
+                          name:
+                            description: name is the field name.
+                            type: string
+                          value:
+                            description: value is the field value. Can be a string,
+                              number, or boolean.
+                            x-kubernetes-preserve-unknown-fields: true
+                        required:
+                        - name
+                        type: object
+                      type: array
+                    implementation:
+                      description: implementation is the import list type (e.g., TraktListImport,
+                        IMDbListImport, SonarrImport).
+                      type: string
+                    listOrder:
+                      description: listOrder controls the display order of this list.
+                      type: integer
+                    minimumAvailability:
+                      description: 'minimumAvailability controls when imported movies
+                        are considered available (Radarr: announced, inCinemas, released).'
+                      type: string
+                    monitor:
+                      description: |-
+                        monitor controls how imported items are monitored.
+                        Values vary by app (Sonarr: all, future, missing, existing, firstSeason, latestSeason, pilot, none;
+                        Radarr: movieOnly, movieAndCollection, none).
+                      type: string
+                    name:
+                      description: name is the display name of the import list.
+                      type: string
+                    qualityProfileName:
+                      description: |-
+                        qualityProfileName is the name of the quality profile to assign to imported items.
+                        Must match an existing quality profile. Resolved to an ID at reconciliation time.
+                      type: string
+                    rootFolderPath:
+                      description: rootFolderPath is the root folder path for imported
+                        items.
+                      type: string
+                    searchOnAdd:
+                      description: searchOnAdd searches for items immediately after
+                        adding (Radarr).
+                      type: boolean
+                    seasonFolder:
+                      description: seasonFolder enables season folders for imported
+                        items (Sonarr).
+                      type: boolean
+                    seriesType:
+                      description: 'seriesType is the series type for imported items
+                        (Sonarr: standard, daily, anime).'
+                      type: string
+                    shouldMonitor:
+                      description: shouldMonitor controls whether imported items are
+                        monitored (Sonarr).
+                      type: boolean
+                    tags:
+                      description: tags is the list of tag IDs to associate with this
+                        import list.
+                      items:
+                        type: integer
+                      type: array
+                  required:
+                  - implementation
+                  - name
+                  type: object
+                type: array
+              indexerConfig:
+                description: indexerConfig configures global indexer settings.
+                properties:
+                  maximumSize:
+                    description: maximumSize is the maximum release size in MB. 0
+                      means unlimited.
+                    type: integer
+                  minimumAge:
+                    description: minimumAge is the minimum age in minutes before downloading.
+                    type: integer
+                  retention:
+                    description: retention is the usenet retention in days. 0 means
+                      unlimited.
+                    type: integer
+                  rssSyncInterval:
+                    description: rssSyncInterval is the RSS sync interval in minutes.
+                      0 disables RSS.
+                    type: integer
+                type: object
+              indexers:
+                description: indexers defines indexer connections.
+                items:
+                  description: Indexer defines an indexer connection for a Servarr
+                    app.
+                  properties:
+                    configContract:
+                      description: |-
+                        configContract is the configuration contract name for the implementation.
+                        Defaults to "<implementation>Settings" if not set.
+                      type: string
+                    enable:
+                      default: true
+                      description: enable controls whether this indexer is active.
+                      type: boolean
+                    enableAutomaticSearch:
+                      default: true
+                      description: enableAutomaticSearch enables automatic search
+                        for this indexer.
+                      type: boolean
+                    enableInteractiveSearch:
+                      default: true
+                      description: enableInteractiveSearch enables interactive (manual)
+                        search for this indexer.
+                      type: boolean
+                    enableRss:
+                      default: true
+                      description: enableRss enables RSS feed polling for this indexer.
+                      type: boolean
+                    fields:
+                      description: fields defines the indexer's configuration fields
+                        (e.g., baseUrl, apiKey, categories).
+                      items:
+                        description: ConfigField represents a key-value field in a
+                          download client configuration.
+                        properties:
+                          name:
+                            description: name is the field name.
+                            type: string
+                          value:
+                            description: value is the field value. Can be a string,
+                              number, or boolean.
+                            x-kubernetes-preserve-unknown-fields: true
+                        required:
+                        - name
+                        type: object
+                      type: array
+                    implementation:
+                      description: implementation is the indexer type (e.g., Newznab,
+                        Torznab).
+                      type: string
+                    name:
+                      description: name is the display name of the indexer.
+                      type: string
+                    priority:
+                      description: priority is the indexer priority. Lower values
+                        are higher priority.
+                      minimum: 1
+                      type: integer
+                    protocol:
+                      description: protocol is the indexer protocol.
+                      enum:
+                      - torrent
+                      - usenet
+                      type: string
+                    tags:
+                      description: tags is the list of tag IDs to associate with this
+                        indexer.
+                      items:
+                        type: integer
+                      type: array
+                  required:
+                  - implementation
+                  - name
+                  - protocol
+                  type: object
+                type: array
+              mediaManagement:
+                description: mediaManagement configures media management settings.
+                properties:
+                  copyUsingHardlinks:
+                    default: true
+                    description: copyUsingHardlinks uses hardlinks instead of copies
+                      when importing.
+                    type: boolean
+                  createEmptySeriesFolders:
+                    description: createEmptySeriesFolders creates folders for series
+                      with no files.
+                    type: boolean
+                  deleteEmptyFolders:
+                    default: true
+                    description: deleteEmptyFolders removes empty series folders after
+                      cleanup.
+                    type: boolean
+                  downloadPropersAndRepacks:
+                    description: downloadPropersAndRepacks controls how proper/repack
+                      releases are handled.
+                    enum:
+                    - preferAndUpgrade
+                    - doNotPrefer
+                    - doNotUpgrade
+                    type: string
+                  enableMediaInfo:
+                    description: enableMediaInfo enables media info scanning.
+                    type: boolean
+                  episodeTitleRequired:
+                    description: episodeTitleRequired controls when episode titles
+                      are required.
+                    enum:
+                    - always
+                    - bulkSeasonReleases
+                    - never
+                    type: string
+                  extraFileExtensions:
+                    description: extraFileExtensions is a comma-separated list of
+                      extra file extensions to import.
+                    type: string
+                  importExtraFiles:
+                    description: importExtraFiles imports additional files (subtitles,
+                      etc.) alongside media.
+                    type: boolean
+                  minimumFreeSpaceWhenImporting:
+                    description: minimumFreeSpaceWhenImporting is the minimum free
+                      space in MB required to import.
+                    type: integer
+                  recycleBin:
+                    description: recycleBin is the path to the recycling bin folder.
+                      Empty disables.
+                    type: string
+                  recycleBinCleanupDays:
+                    description: recycleBinCleanupDays is how many days files stay
+                      in the recycling bin.
+                    type: integer
+                  rescanAfterRefresh:
+                    description: rescanAfterRefresh controls when to rescan series
+                      folders.
+                    enum:
+                    - always
+                    - afterManual
+                    - never
+                    type: string
+                  setPermissionsLinux:
+                    description: setPermissionsLinux enables setting file permissions
+                      on import.
+                    type: boolean
+                  skipFreeSpaceCheckWhenImporting:
+                    description: skipFreeSpaceCheckWhenImporting skips free space
+                      check during import.
+                    type: boolean
+                type: object
+              naming:
+                description: naming configures episode and series naming formats.
+                properties:
+                  animeEpisodeFormat:
+                    description: animeEpisodeFormat is the naming format for anime
+                      episodes.
+                    type: string
+                  colonReplacementFormat:
+                    description: colonReplacementFormat defines how colons are replaced
+                      in filenames.
+                    type: integer
+                  dailyEpisodeFormat:
+                    description: dailyEpisodeFormat is the naming format for daily
+                      episodes.
+                    type: string
+                  multiEpisodeStyle:
+                    description: multiEpisodeStyle defines how multi-episode files
+                      are named.
+                    type: integer
+                  renameEpisodes:
+                    description: renameEpisodes enables automatic episode file renaming.
+                    type: boolean
+                  replaceIllegalCharacters:
+                    description: replaceIllegalCharacters replaces illegal characters
+                      in filenames.
+                    type: boolean
+                  seasonFolderFormat:
+                    description: seasonFolderFormat is the naming format for season
+                      folders.
+                    type: string
+                  seriesFolderFormat:
+                    description: seriesFolderFormat is the naming format for series
+                      folders.
+                    type: string
+                  specialsFolderFormat:
+                    description: specialsFolderFormat is the naming format for specials
+                      folders.
+                    type: string
+                  standardEpisodeFormat:
+                    description: standardEpisodeFormat is the naming format for standard
+                      episodes.
+                    type: string
+                type: object
+              notifications:
+                description: notifications defines notification/connection configurations.
+                items:
+                  description: Notification defines a notification/connection for
+                    a Servarr app.
+                  properties:
+                    configContract:
+                      description: |-
+                        configContract is the configuration contract name for the implementation.
+                        Defaults to "<implementation>Settings" if not set.
+                      type: string
+                    fields:
+                      description: fields defines the notification's configuration
+                        fields (e.g., webhook URL, API token).
+                      items:
+                        description: ConfigField represents a key-value field in a
+                          download client configuration.
+                        properties:
+                          name:
+                            description: name is the field name.
+                            type: string
+                          value:
+                            description: value is the field value. Can be a string,
+                              number, or boolean.
+                            x-kubernetes-preserve-unknown-fields: true
+                        required:
+                        - name
+                        type: object
+                      type: array
+                    implementation:
+                      description: implementation is the notification type (e.g.,
+                        Discord, Slack, Webhook, Email).
+                      type: string
+                    includeHealthWarnings:
+                      description: includeHealthWarnings includes health warnings
+                        (not just errors) in notifications.
+                      type: boolean
+                    name:
+                      description: name is the display name of the notification.
+                      type: string
+                    onApplicationUpdate:
+                      description: onApplicationUpdate fires when the application
+                        is updated.
+                      type: boolean
+                    onDownload:
+                      description: onDownload fires when a download is imported.
+                      type: boolean
+                    onEpisodeFileDelete:
+                      description: onEpisodeFileDelete fires when an episode file
+                        is deleted (Sonarr).
+                      type: boolean
+                    onEpisodeFileDeleteForUpgrade:
+                      description: onEpisodeFileDeleteForUpgrade fires when an episode
+                        file is deleted for upgrade (Sonarr).
+                      type: boolean
+                    onGrab:
+                      description: onGrab fires when a release is grabbed (sent to
+                        download client).
+                      type: boolean
+                    onHealthIssue:
+                      description: onHealthIssue fires when a health check fails.
+                      type: boolean
+                    onHealthRestored:
+                      description: onHealthRestored fires when a health check recovers.
+                      type: boolean
+                    onManualInteractionRequired:
+                      description: onManualInteractionRequired fires when manual interaction
+                        is needed.
+                      type: boolean
+                    onMovieAdded:
+                      description: onMovieAdded fires when a new movie is added (Radarr).
+                      type: boolean
+                    onMovieDelete:
+                      description: onMovieDelete fires when a movie is deleted (Radarr).
+                      type: boolean
+                    onMovieFileDelete:
+                      description: onMovieFileDelete fires when a movie file is deleted
+                        (Radarr).
+                      type: boolean
+                    onMovieFileDeleteForUpgrade:
+                      description: onMovieFileDeleteForUpgrade fires when a movie
+                        file is deleted for upgrade (Radarr).
+                      type: boolean
+                    onRename:
+                      description: onRename fires when files are renamed.
+                      type: boolean
+                    onSeriesAdd:
+                      description: onSeriesAdd fires when a new series is added (Sonarr).
+                      type: boolean
+                    onSeriesDelete:
+                      description: onSeriesDelete fires when a series is deleted (Sonarr).
+                      type: boolean
+                    onUpgrade:
+                      description: onUpgrade fires when an existing file is upgraded.
+                      type: boolean
+                    tags:
+                      description: tags is the list of tag IDs to associate with this
+                        notification.
+                      items:
+                        type: integer
+                      type: array
+                  required:
+                  - implementation
+                  - name
+                  type: object
+                type: array
+              qualityProfiles:
+                description: qualityProfiles defines quality profiles for controlling
+                  download quality preferences.
+                items:
+                  description: |-
+                    QualityProfile defines a quality profile that controls which qualities are acceptable
+                    and when upgrades should occur.
+                  properties:
+                    cutoff:
+                      description: |-
+                        cutoff is the quality or group name at which quality upgrades stop.
+                        Must match a quality name or group name in the items list.
+                      type: string
+                    cutoffFormatScore:
+                      description: cutoffFormatScore is the custom format score at
+                        which upgrades stop.
+                      type: integer
+                    formatItems:
+                      description: |-
+                        formatItems assigns custom format scores within this profile.
+                        Reference custom formats by name; IDs are resolved automatically.
+                      items:
+                        description: QualityProfileFormatItem assigns a score to a
+                          custom format within a quality profile.
+                        properties:
+                          name:
+                            description: name is the custom format name. Must match
+                              an existing custom format.
+                            type: string
+                          score:
+                            description: score is the score to assign. Positive values
+                              prefer, negative values penalize.
+                            type: integer
+                        required:
+                        - name
+                        - score
+                        type: object
+                      type: array
+                    items:
+                      description: |-
+                        items defines the quality ordering and allowed states.
+                        Items at the end of the list are higher priority. Each item is either
+                        an individual quality (with quality set) or a quality group (with name and items set).
+                      items:
+                        description: |-
+                          QualityProfileItem represents a quality or quality group in a profile.
+                          Set quality for an individual quality, or set name+items for a group.
+                        properties:
+                          allowed:
+                            description: allowed controls whether this quality or
+                              group is enabled in the profile.
+                            type: boolean
+                          items:
+                            description: |-
+                              items contains the child qualities when this is a group.
+                              Only set for quality groups.
+                            items:
+                              description: QualityProfileGroupItem represents an individual
+                                quality within a quality group.
+                              properties:
+                                allowed:
+                                  description: allowed controls whether this quality
+                                    is enabled.
+                                  type: boolean
+                                quality:
+                                  description: quality identifies the quality level.
+                                  properties:
+                                    id:
+                                      description: id is the quality ID (e.g., 7 for
+                                        Bluray-1080p). IDs are app-specific.
+                                      type: integer
+                                    name:
+                                      description: name is the quality display name
+                                        (e.g., "Bluray-1080p").
+                                      type: string
+                                  required:
+                                  - id
+                                  type: object
+                              required:
+                              - quality
+                              type: object
+                            type: array
+                          name:
+                            description: name is the group name. Set only for quality
+                              groups, not individual qualities.
+                            type: string
+                          quality:
+                            description: |-
+                              quality identifies a specific quality level.
+                              Set for individual qualities, omit for groups.
+                            properties:
+                              id:
+                                description: id is the quality ID (e.g., 7 for Bluray-1080p).
+                                  IDs are app-specific.
+                                type: integer
+                              name:
+                                description: name is the quality display name (e.g.,
+                                  "Bluray-1080p").
+                                type: string
+                            required:
+                            - id
+                            type: object
+                        type: object
+                      type: array
+                    minFormatScore:
+                      description: minFormatScore is the minimum custom format score
+                        required to grab a release.
+                      type: integer
+                    minUpgradeFormatScore:
+                      description: minUpgradeFormatScore is the minimum score improvement
+                        required for a format-based upgrade.
+                      type: integer
+                    name:
+                      description: name is the display name of the quality profile.
+                      type: string
+                    upgradeAllowed:
+                      description: upgradeAllowed controls whether upgrades to better
+                        qualities are allowed.
+                      type: boolean
+                  required:
+                  - name
+                  type: object
+                type: array
+              reconcile:
+                description: reconcile configures reconciliation behavior (e.g., sync
+                  interval).
+                properties:
+                  interval:
+                    description: |-
+                      interval overrides the default reconciliation interval (default: 5m).
+                      Uses standard Kubernetes duration format (e.g., "30s", "5m", "1h").
+                    type: string
+                  prune:
+                    description: |-
+                      prune enables deletion of resources that exist in the app but are not declared in the CRD.
+                      When true, for each resource type where at least one item is specified, any existing
+                      resources not matching a declared item will be removed from the app.
+                      Root folders and tags are never pruned.
+                      Default: false (only create/update, never delete).
+                    type: boolean
+                type: object
+              rootFolders:
+                description: rootFolders defines media library root folder paths.
+                items:
+                  description: RootFolder defines a media root folder path.
+                  properties:
+                    path:
+                      description: path is the filesystem path for the root folder
+                        inside the container.
+                      type: string
+                  required:
+                  - path
+                  type: object
+                type: array
+              tags:
+                description: tags defines tags for linking resources together.
+                items:
+                  description: |-
+                    Tag defines a tag that can be used to link resources together
+                    (download clients, indexers, notifications, etc.).
+                  properties:
+                    label:
+                      description: label is the tag name.
+                      type: string
+                  required:
+                  - label
+                  type: object
+                type: array
+              ui:
+                description: ui configures UI display settings.
+                properties:
+                  enableColorImpairedMode:
+                    description: enableColorImpairedMode enables color-impaired accessibility
+                      mode.
+                    type: boolean
+                  firstDayOfWeek:
+                    description: firstDayOfWeek is the first day of the week. 0=Sunday,
+                      1=Monday.
+                    maximum: 1
+                    minimum: 0
+                    type: integer
+                  longDateFormat:
+                    description: longDateFormat is the long date display format.
+                    type: string
+                  shortDateFormat:
+                    description: shortDateFormat is the short date display format.
+                    type: string
+                  showRelativeDates:
+                    description: showRelativeDates shows relative dates (today, yesterday).
+                    type: boolean
+                  theme:
+                    description: theme is the UI theme.
+                    enum:
+                    - auto
+                    - dark
+                    - light
+                    type: string
+                  timeFormat:
+                    description: timeFormat is the time display format.
+                    type: string
+                  uiLanguage:
+                    description: uiLanguage is the UI language ID. 1=English.
+                    type: integer
+                type: object
+            required:
+            - connection
+            type: object
+          status:
+            description: SonarrConfigStatus defines the observed state of SonarrConfig.
+            properties:
+              conditions:
+                description: conditions represent the current state of the SonarrConfig
+                  resource.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              lastSyncTime:
+                description: lastSyncTime is the timestamp of the last successful
+                  reconciliation.
+                format: date-time
+                type: string
+              observedGeneration:
+                description: observedGeneration is the most recent generation observed.
+                format: int64
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

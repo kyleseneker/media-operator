@@ -1,0 +1,6 @@
+apiVersion: v2
+name: media-operator-transcode
+description: Kubernetes operator for declarative transcode manager (Tdarr) configuration
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

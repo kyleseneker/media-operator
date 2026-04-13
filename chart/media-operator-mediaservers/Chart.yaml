@@ -1,0 +1,6 @@
+apiVersion: v2
+name: media-operator-mediaservers
+description: Kubernetes operator for declarative media server (Jellyfin, Plex) configuration
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

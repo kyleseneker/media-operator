@@ -1,0 +1,6 @@
+apiVersion: v2
+name: media-operator-utilities
+description: Kubernetes operator for declarative utility service (FlareSolverr) configuration
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

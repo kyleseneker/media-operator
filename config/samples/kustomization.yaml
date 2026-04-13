@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - sonarrconfig.yaml
+  - radarrconfig.yaml
+  - lidarrconfig.yaml
+  - readarrconfig.yaml
+  - prowlarrconfig.yaml
+  - bazarrconfig.yaml
+  - qbittorrentconfig.yaml
+  - sabnzbdconfig.yaml
+  - jellyfinconfig.yaml
+  - plexconfig.yaml
+  - seerrconfig.yaml
+  - tdarrconfig.yaml
+  - flaresolverrconfig.yaml
+  - autobrrconfig.yaml
+  - maintainerrconfig.yaml

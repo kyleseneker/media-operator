@@ -1,0 +1,498 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: seerrconfigs.media-operator.dev
+spec:
+  group: media-operator.dev
+  names:
+    kind: SeerrConfig
+    listKind: SeerrConfigList
+    plural: seerrconfigs
+    singular: seerrconfig
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Synced")].status
+      name: Synced
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.lastSyncTime
+      name: Last Sync
+      type: date
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: SeerrConfig is the Schema for the seerrconfigs API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              SeerrConfigSpec defines the desired state of SeerrConfig.
+              Exactly one of jellyfinAuth or plexAuth must be set.
+            properties:
+              connection:
+                description: connection defines how to connect to the Seerr instance.
+                properties:
+                  tls:
+                    description: |-
+                      tls configures TLS settings for the connection.
+                      Only needed when Seerr uses HTTPS with self-signed or private CA certificates.
+                    properties:
+                      caSecretRef:
+                        description: |-
+                          caSecretRef references a Secret containing a PEM-encoded CA certificate bundle
+                          used to verify the target app's TLS certificate.
+                          The Secret must contain the CA certificate under the specified key.
+                        properties:
+                          key:
+                            description: key is the key within the Secret.
+                            type: string
+                          name:
+                            description: name is the name of the Secret.
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      insecureSkipVerify:
+                        description: |-
+                          insecureSkipVerify disables TLS certificate verification.
+                          WARNING: This makes the connection susceptible to machine-in-the-middle attacks.
+                          Only use for testing or when the target app uses a self-signed certificate and
+                          providing a CA is not practical.
+                        type: boolean
+                    type: object
+                  url:
+                    description: url is the base URL of the Seerr instance (e.g.,
+                      http://jellyseerr.media.svc.cluster.local:5055).
+                    type: string
+                required:
+                - url
+                type: object
+              jellyfinAuth:
+                description: |-
+                  jellyfinAuth defines Jellyfin authentication settings.
+                  Set this for Jellyfin-based Seerr instances. Mutually exclusive with plexAuth.
+                properties:
+                  hostname:
+                    description: hostname is the Jellyfin server hostname.
+                    type: string
+                  passwordSecretRef:
+                    description: passwordSecretRef references a Secret containing
+                      the Jellyfin password.
+                    properties:
+                      key:
+                        description: key is the key within the Secret.
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  port:
+                    description: port is the Jellyfin server port.
+                    type: integer
+                  useSsl:
+                    description: useSsl enables SSL for the Jellyfin connection.
+                    type: boolean
+                  usernameSecretRef:
+                    description: usernameSecretRef references a Secret containing
+                      the Jellyfin username.
+                    properties:
+                      key:
+                        description: key is the key within the Secret.
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                required:
+                - hostname
+                - passwordSecretRef
+                - port
+                - usernameSecretRef
+                type: object
+              main:
+                description: main configures general application settings.
+                properties:
+                  applicationTitle:
+                    description: applicationTitle is the application display title.
+                    type: string
+                  applicationUrl:
+                    description: applicationUrl is the external URL for the application.
+                    type: string
+                  defaultPermissions:
+                    description: defaultPermissions is the default permission bitmask
+                      for new users.
+                    type: integer
+                  hideAvailable:
+                    description: hideAvailable hides already-available media from
+                      discovery.
+                    type: boolean
+                  localLogin:
+                    description: localLogin enables local user login.
+                    type: boolean
+                  locale:
+                    description: locale is the application locale (e.g., "en").
+                    type: string
+                  mediaServerLogin:
+                    description: mediaServerLogin enables login via the media server
+                      (Jellyfin).
+                    type: boolean
+                  partialRequestsEnabled:
+                    description: partialRequestsEnabled enables partial season/episode
+                      requests.
+                    type: boolean
+                type: object
+              notifications:
+                description: |-
+                  notifications configures notification agents (Discord, Slack, Telegram, etc.).
+                  Each agent is a singleton — only one configuration per agent type.
+                items:
+                  description: SeerrNotificationAgent configures a single notification
+                    agent in Seerr.
+                  properties:
+                    agent:
+                      description: |-
+                        agent is the notification agent type.
+                        Supported values: discord, slack, telegram, pushover, email, webhook,
+                        gotify, lunasea, pushbullet, webpush.
+                      type: string
+                    enabled:
+                      description: enabled enables this notification agent.
+                      type: boolean
+                    options:
+                      additionalProperties:
+                        type: string
+                      description: options contains provider-specific configuration
+                        (e.g., webhookUrl, botUsername, chatId).
+                      type: object
+                    types:
+                      description: |-
+                        types is the notification type bitfield that controls which events trigger notifications.
+                        Common values: 2=media requested, 4=media auto-approved, 8=media approved,
+                        16=media available, 32=media failed, 64=media declined, 128=test notification.
+                        Combine with bitwise OR (e.g., 4094 for all types).
+                      type: integer
+                  required:
+                  - agent
+                  type: object
+                type: array
+              plexAuth:
+                description: |-
+                  plexAuth defines Plex authentication settings.
+                  Set this for Plex-based Seerr instances. Mutually exclusive with jellyfinAuth.
+                properties:
+                  hostname:
+                    description: hostname is the Plex server hostname.
+                    type: string
+                  port:
+                    default: 32400
+                    description: port is the Plex server port.
+                    type: integer
+                  tokenSecretRef:
+                    description: tokenSecretRef references a Secret containing the
+                      Plex auth token.
+                    properties:
+                      key:
+                        description: key is the key within the Secret.
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  useSsl:
+                    description: useSsl enables SSL for the Plex connection.
+                    type: boolean
+                required:
+                - hostname
+                - tokenSecretRef
+                type: object
+              radarr:
+                description: radarr configures the Radarr service connection for movie
+                  requests.
+                properties:
+                  activeDirectory:
+                    description: activeDirectory is the root folder path for media.
+                    type: string
+                  activeProfileId:
+                    description: activeProfileId is the quality profile ID to use.
+                    type: integer
+                  activeProfileName:
+                    description: activeProfileName is the quality profile name to
+                      use.
+                    type: string
+                  apiKeySecretRef:
+                    description: apiKeySecretRef references a Secret containing the
+                      service API key.
+                    properties:
+                      key:
+                        description: key is the key within the Secret.
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  baseUrl:
+                    description: baseUrl is the URL base path for the service.
+                    type: string
+                  enableSeasonFolders:
+                    description: |-
+                      enableSeasonFolders enables season folder organization in Sonarr.
+                      Only applicable when used with Sonarr.
+                    type: boolean
+                  hostname:
+                    description: hostname is the service hostname.
+                    type: string
+                  is4k:
+                    description: is4k indicates this is a 4K instance.
+                    type: boolean
+                  isDefault:
+                    description: isDefault indicates this is the default service for
+                      its type.
+                    type: boolean
+                  minimumAvailability:
+                    description: |-
+                      minimumAvailability is the minimum availability for Radarr.
+                      Only applicable when used with Radarr.
+                    enum:
+                    - announced
+                    - inCinemas
+                    - released
+                    type: string
+                  name:
+                    description: name is the display name for this service connection.
+                    type: string
+                  port:
+                    description: port is the service port.
+                    type: integer
+                  seriesType:
+                    description: |-
+                      seriesType is the series type for Sonarr (e.g., "standard", "anime").
+                      Only applicable when used with Sonarr.
+                    type: string
+                  useSsl:
+                    description: useSsl enables SSL for the service connection.
+                    type: boolean
+                required:
+                - apiKeySecretRef
+                - hostname
+                - name
+                - port
+                type: object
+              reconcile:
+                description: reconcile configures reconciliation behavior (e.g., sync
+                  interval).
+                properties:
+                  interval:
+                    description: |-
+                      interval overrides the default reconciliation interval (default: 5m).
+                      Uses standard Kubernetes duration format (e.g., "30s", "5m", "1h").
+                    type: string
+                  prune:
+                    description: |-
+                      prune enables deletion of resources that exist in the app but are not declared in the CRD.
+                      When true, for each resource type where at least one item is specified, any existing
+                      resources not matching a declared item will be removed from the app.
+                      Root folders and tags are never pruned.
+                      Default: false (only create/update, never delete).
+                    type: boolean
+                type: object
+              sonarr:
+                description: sonarr configures the Sonarr service connection for TV
+                  show requests.
+                properties:
+                  activeDirectory:
+                    description: activeDirectory is the root folder path for media.
+                    type: string
+                  activeProfileId:
+                    description: activeProfileId is the quality profile ID to use.
+                    type: integer
+                  activeProfileName:
+                    description: activeProfileName is the quality profile name to
+                      use.
+                    type: string
+                  apiKeySecretRef:
+                    description: apiKeySecretRef references a Secret containing the
+                      service API key.
+                    properties:
+                      key:
+                        description: key is the key within the Secret.
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  baseUrl:
+                    description: baseUrl is the URL base path for the service.
+                    type: string
+                  enableSeasonFolders:
+                    description: |-
+                      enableSeasonFolders enables season folder organization in Sonarr.
+                      Only applicable when used with Sonarr.
+                    type: boolean
+                  hostname:
+                    description: hostname is the service hostname.
+                    type: string
+                  is4k:
+                    description: is4k indicates this is a 4K instance.
+                    type: boolean
+                  isDefault:
+                    description: isDefault indicates this is the default service for
+                      its type.
+                    type: boolean
+                  minimumAvailability:
+                    description: |-
+                      minimumAvailability is the minimum availability for Radarr.
+                      Only applicable when used with Radarr.
+                    enum:
+                    - announced
+                    - inCinemas
+                    - released
+                    type: string
+                  name:
+                    description: name is the display name for this service connection.
+                    type: string
+                  port:
+                    description: port is the service port.
+                    type: integer
+                  seriesType:
+                    description: |-
+                      seriesType is the series type for Sonarr (e.g., "standard", "anime").
+                      Only applicable when used with Sonarr.
+                    type: string
+                  useSsl:
+                    description: useSsl enables SSL for the service connection.
+                    type: boolean
+                required:
+                - apiKeySecretRef
+                - hostname
+                - name
+                - port
+                type: object
+            required:
+            - connection
+            type: object
+          status:
+            description: SeerrConfigStatus defines the observed state of SeerrConfig.
+            properties:
+              conditions:
+                description: conditions represent the current state of the SeerrConfig
+                  resource.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              initialized:
+                description: initialized indicates whether the Seerr initial setup
+                  has been completed.
+                type: boolean
+              lastSyncTime:
+                description: lastSyncTime is the timestamp of the last successful
+                  reconciliation.
+                format: date-time
+                type: string
+              observedGeneration:
+                description: observedGeneration is the most recent generation observed.
+                format: int64
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

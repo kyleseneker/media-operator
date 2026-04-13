@@ -1,0 +1,31 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: QBittorrentConfig
+metadata:
+  name: qbittorrent
+  namespace: arr
+spec:
+  connection:
+    url: http://arr-vpn-downloads.arr.svc.cluster.local:8080
+    usernameSecretRef:
+      name: arr-config-secrets
+      key: QBIT_USERNAME
+    passwordSecretRef:
+      name: arr-config-secrets
+      key: QBIT_PASSWORD
+  preferences:
+    savePath: /data/torrents/
+    dht: true
+    pex: true
+    lsd: true
+    encryption: 0
+    maxConnec: -1
+    maxConnecPerTorrent: -1
+    maxUploads: -1
+    maxUploadsPerTorrent: -1
+    locale: en
+    webUiPort: 8080
+  categories:
+    - name: tv
+      savePath: /data/torrents/tv
+    - name: movies
+      savePath: /data/torrents/movies

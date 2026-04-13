@@ -1,0 +1,193 @@
+# Common homelab stack: Sonarr + Radarr + Prowlarr + qBittorrent + Plex + Overseerr
+# This is the Plex-based variant (vs Jellyfin). Adjust URLs to match your cluster.
+#
+# Prerequisites:
+#   - Apps deployed and accessible at the URLs below
+#   - Secrets created (see secrets.yaml)
+#   - media-operator operator installed:
+#     helm install media-operator oci://ghcr.io/kyleseneker/media-operator/chart \
+#       --set enableControllers=sonarr,radarr,prowlarr,qbittorrent,plex,overseerr
+---
+apiVersion: media-operator.dev/v1alpha1
+kind: SonarrConfig
+metadata:
+  name: sonarr
+  namespace: media
+spec:
+  connection:
+    url: http://sonarr.media.svc.cluster.local:8989
+    apiKeySecretRef:
+      name: sonarr-credentials
+      key: api-key
+  mediaManagement:
+    copyUsingHardlinks: true
+    deleteEmptyFolders: true
+  naming:
+    renameEpisodes: true
+    replaceIllegalCharacters: true
+    standardEpisodeFormat: "{Series TitleYear} - S{season:00}E{episode:00} - {Episode CleanTitle} [{Quality Full}]"
+    seriesFolderFormat: "{Series TitleYear}"
+    seasonFolderFormat: "Season {season:00}"
+  rootFolders:
+    - path: /media/tv
+  downloadClients:
+    - name: qBittorrent
+      protocol: torrent
+      implementation: QBittorrent
+      host: qbittorrent.media.svc.cluster.local
+      port: 8080
+      category: tv-sonarr
+---
+apiVersion: media-operator.dev/v1alpha1
+kind: RadarrConfig
+metadata:
+  name: radarr
+  namespace: media
+spec:
+  connection:
+    url: http://radarr.media.svc.cluster.local:7878
+    apiKeySecretRef:
+      name: radarr-credentials
+      key: api-key
+  mediaManagement:
+    copyUsingHardlinks: true
+    deleteEmptyFolders: true
+  naming:
+    renameMovies: true
+    replaceIllegalCharacters: true
+    standardMovieFormat: "{Movie CleanTitle} {(Release Year)} [{Quality Full}]"
+    movieFolderFormat: "{Movie CleanTitle} ({Release Year})"
+  rootFolders:
+    - path: /media/movies
+  downloadClients:
+    - name: qBittorrent
+      protocol: torrent
+      implementation: QBittorrent
+      host: qbittorrent.media.svc.cluster.local
+      port: 8080
+      category: radarr
+---
+apiVersion: media-operator.dev/v1alpha1
+kind: ProwlarrConfig
+metadata:
+  name: prowlarr
+  namespace: media
+spec:
+  connection:
+    url: http://prowlarr.media.svc.cluster.local:9696
+    apiKeySecretRef:
+      name: prowlarr-credentials
+      key: api-key
+  applications:
+    - name: Sonarr
+      implementation: Sonarr
+      configContract: SonarrSettings
+      syncLevel: fullSync
+      baseUrl: http://sonarr.media.svc.cluster.local:8989
+      prowlarrUrl: http://prowlarr.media.svc.cluster.local:9696
+      apiKeySecretRef:
+        name: sonarr-credentials
+        key: api-key
+      syncCategories: [5000, 5010, 5020, 5030, 5040, 5045, 5050]
+    - name: Radarr
+      implementation: Radarr
+      configContract: RadarrSettings
+      syncLevel: fullSync
+      baseUrl: http://radarr.media.svc.cluster.local:7878
+      prowlarrUrl: http://prowlarr.media.svc.cluster.local:9696
+      apiKeySecretRef:
+        name: radarr-credentials
+        key: api-key
+      syncCategories: [2000, 2010, 2020, 2030, 2040, 2045, 2050, 2060, 2070, 2080]
+---
+apiVersion: media-operator.dev/v1alpha1
+kind: QBittorrentConfig
+metadata:
+  name: qbittorrent
+  namespace: media
+spec:
+  connection:
+    url: http://qbittorrent.media.svc.cluster.local:8080
+    usernameSecretRef:
+      name: qbittorrent-credentials
+      key: username
+    passwordSecretRef:
+      name: qbittorrent-credentials
+      key: password
+  preferences:
+    savePath: /downloads
+    maxRatioEnabled: true
+    maxRatio: "2.0"
+  categories:
+    - name: tv-sonarr
+      savePath: /downloads/tv
+    - name: radarr
+      savePath: /downloads/movies
+---
+apiVersion: media-operator.dev/v1alpha1
+kind: PlexConfig
+metadata:
+  name: plex
+  namespace: media
+spec:
+  connection:
+    url: http://plex.media.svc.cluster.local:32400
+    tokenSecretRef:
+      name: plex-credentials
+      key: token
+  server:
+    friendlyName: "Homelab Media"
+    scanMyLibraryAutomatically: true
+    scanMyLibraryPeriodically: true
+    autoEmptyTrash: true
+  transcoder:
+    transcodeHwRequested: true
+    hardwareAccelerationType: vaapi
+  libraries:
+    - name: Movies
+      type: movie
+      paths:
+        - /media/movies
+    - name: TV Shows
+      type: show
+      paths:
+        - /media/tv
+---
+apiVersion: media-operator.dev/v1alpha1
+kind: SeerrConfig
+metadata:
+  name: seerr
+  namespace: media
+spec:
+  connection:
+    url: http://seerr.media.svc.cluster.local:5055
+  plexAuth:
+    hostname: plex.media.svc.cluster.local
+    port: 32400
+    tokenSecretRef:
+      name: plex-credentials
+      key: token
+  main:
+    applicationTitle: "Media Requests"
+    hideAvailable: false
+    localLogin: true
+  sonarr:
+    name: Sonarr
+    hostname: sonarr.media.svc.cluster.local
+    port: 8989
+    apiKeySecretRef:
+      name: sonarr-credentials
+      key: api-key
+    isDefault: true
+    enableSeasonFolders: true
+    activeDirectory: /media/tv
+  radarr:
+    name: Radarr
+    hostname: radarr.media.svc.cluster.local
+    port: 7878
+    apiKeySecretRef:
+      name: radarr-credentials
+      key: api-key
+    isDefault: true
+    minimumAvailability: released
+    activeDirectory: /media/movies

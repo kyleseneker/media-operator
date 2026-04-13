@@ -1,0 +1,273 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: tdarrconfigs.media-operator.dev
+spec:
+  group: media-operator.dev
+  names:
+    kind: TdarrConfig
+    listKind: TdarrConfigList
+    plural: tdarrconfigs
+    singular: tdarrconfig
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Synced")].status
+      name: Synced
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.lastSyncTime
+      name: Last Sync
+      type: date
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: TdarrConfig is the Schema for the tdarrconfigs API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: TdarrConfigSpec defines the desired state of TdarrConfig.
+            properties:
+              connection:
+                description: connection defines how to connect to the Tdarr instance
+                  using an API key.
+                properties:
+                  apiKeySecretRef:
+                    description: apiKeySecretRef references a Secret containing the
+                      API key.
+                    properties:
+                      key:
+                        description: key is the key within the Secret.
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  url:
+                    description: url is the base URL of the app (e.g., http://arr-sonarr.arr.svc.cluster.local:8989).
+                    type: string
+                required:
+                - apiKeySecretRef
+                - url
+                type: object
+              flows:
+                description: flows defines transcoding flows (plugins and edges).
+                items:
+                  description: TdarrFlow defines a transcoding flow with plugins and
+                    edges.
+                  properties:
+                    description:
+                      description: description is a human-readable description of
+                        the flow.
+                      type: string
+                    flowEdges:
+                      description: flowEdges is the raw JSON definition of flow edge
+                        connections.
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
+                    flowPlugins:
+                      description: flowPlugins is the raw JSON definition of flow
+                        plugin nodes.
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
+                    id:
+                      description: id is the Tdarr document ID for this flow.
+                      type: string
+                    name:
+                      description: name is the display name of the flow.
+                      type: string
+                  required:
+                  - flowEdges
+                  - flowPlugins
+                  - id
+                  - name
+                  type: object
+                type: array
+              libraries:
+                description: libraries defines media libraries to manage in Tdarr.
+                items:
+                  description: TdarrLibrary defines a media library in Tdarr.
+                  properties:
+                    cache:
+                      description: cache is the transcode cache folder path.
+                      type: string
+                    container:
+                      description: container is the output container format (e.g.,
+                        "mkv", "mp4").
+                      type: string
+                    containerFilter:
+                      description: containerFilter is the container filter for scanning
+                        (e.g., "mkv,mp4,avi").
+                      type: string
+                    ffmpeg:
+                      description: ffmpeg enables using FFmpeg (true) vs HandBrake
+                        (false) for transcoding.
+                      type: boolean
+                    folder:
+                      description: folder is the source media folder path.
+                      type: string
+                    folderWatching:
+                      description: folderWatching enables watching the folder for
+                        new files.
+                      type: boolean
+                    id:
+                      description: id is the Tdarr document ID for this library.
+                      type: string
+                    name:
+                      description: name is the display name of the library.
+                      type: string
+                    priority:
+                      description: priority is the processing priority for this library.
+                        Lower values are higher priority.
+                      type: integer
+                    processLibrary:
+                      description: processLibrary enables processing of files in this
+                        library.
+                      type: boolean
+                    scanOnStart:
+                      description: scanOnStart enables scanning the library when Tdarr
+                        starts.
+                      type: boolean
+                    scannerThreadCount:
+                      description: scannerThreadCount is the number of threads used
+                        for scanning.
+                      type: integer
+                    scheduledScanFindNew:
+                      description: scheduledScanFindNew enables scheduled scans for
+                        new files.
+                      type: boolean
+                  required:
+                  - folder
+                  - id
+                  - name
+                  type: object
+                type: array
+              workers:
+                description: workers configures the number of worker threads by type.
+                properties:
+                  healthcheckCPU:
+                    description: healthcheckCPU is the number of CPU health check
+                      workers.
+                    type: integer
+                  healthcheckGPU:
+                    description: healthcheckGPU is the number of GPU health check
+                      workers.
+                    type: integer
+                  transcodeCPU:
+                    description: transcodeCPU is the number of CPU transcode workers.
+                    type: integer
+                  transcodeGPU:
+                    description: transcodeGPU is the number of GPU transcode workers.
+                    type: integer
+                type: object
+            required:
+            - connection
+            type: object
+          status:
+            description: TdarrConfigStatus defines the observed state of TdarrConfig.
+            properties:
+              conditions:
+                description: conditions represent the current state of the TdarrConfig
+                  resource.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              lastSyncTime:
+                description: lastSyncTime is the timestamp of the last successful
+                  reconciliation.
+                format: date-time
+                type: string
+              observedGeneration:
+                description: observedGeneration is the most recent generation observed.
+                format: int64
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -1,0 +1,74 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: JellyfinConfig
+metadata:
+  name: jellyfin
+  namespace: arr
+spec:
+  connection:
+    url: http://arr-jellyfin.arr.svc.cluster.local:8096
+  adminUser:
+    usernameSecretRef:
+      name: arr-config-secrets
+      key: JELLYFIN_ADMIN_USER
+    passwordSecretRef:
+      name: arr-config-secrets
+      key: JELLYFIN_ADMIN_PASSWORD
+  server:
+    serverName: homelab-jellyfin
+    preferredMetadataLanguage: en
+    metadataCountryCode: US
+    logFileRetentionDays: 3
+    enableGroupingMoviesIntoCollections: true
+    displaySpecialsWithinSeasons: true
+    libraryMonitorDelay: 60
+  encoding:
+    hardwareAccelerationType: vaapi
+    vaapiDevice: /dev/dri/renderD128
+    enableHardwareEncoding: true
+    allowHevcEncoding: true
+    enableTonemapping: true
+    enableVppTonemapping: true
+    h264Crf: 23
+    h265Crf: 28
+    encoderPreset: auto
+    enableIntelLowPowerH264HwEncoder: true
+    enableIntelLowPowerHevcHwEncoder: true
+    enableSubtitleExtraction: true
+    enableThrottling: true
+    throttleDelaySeconds: 180
+    hardwareDecodingCodecs:
+      - h264
+      - hevc
+      - mpeg2video
+      - mpeg4
+      - vc1
+      - vp8
+      - vp9
+      - av1
+  libraries:
+    - name: TV Shows
+      collectionType: tvshows
+      paths:
+        - /data/media/tv
+      enableRealtimeMonitor: true
+      enableTrickplayImageExtraction: true
+      automaticRefreshIntervalDays: 30
+      preferredMetadataLanguage: en
+      metadataCountryCode: US
+    - name: Movies
+      collectionType: movies
+      paths:
+        - /data/media/movies
+      enableRealtimeMonitor: true
+      enableTrickplayImageExtraction: true
+      automaticRefreshIntervalDays: 30
+      preferredMetadataLanguage: en
+      metadataCountryCode: US
+    - name: Music
+      collectionType: music
+      paths:
+        - /data/media/music
+      enableRealtimeMonitor: true
+      automaticRefreshIntervalDays: 30
+      preferredMetadataLanguage: en
+      metadataCountryCode: US

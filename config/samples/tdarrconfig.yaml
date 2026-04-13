@@ -1,0 +1,41 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: TdarrConfig
+metadata:
+  name: tdarr
+  namespace: arr
+spec:
+  connection:
+    url: http://arr-tdarr.arr.svc.cluster.local:8266
+    apiKeySecretRef:
+      name: arr-config-secrets
+      key: TDARR_API_KEY
+  workers:
+    transcodeGPU: 1
+    transcodeCPU: 0
+    healthcheckGPU: 1
+    healthcheckCPU: 1
+  libraries:
+    - id: library-tv
+      name: TV Shows
+      folder: /data/media/tv
+      cache: /temp
+      container: ".mkv"
+      containerFilter: "mkv,mp4,mov,m4v,mpg,mpeg,avi,flv,webm,wmv,vob,evo,m2ts,ts"
+      folderWatching: true
+      processLibrary: true
+      scanOnStart: true
+      scheduledScanFindNew: true
+      scannerThreadCount: 2
+      ffmpeg: true
+    - id: library-movies
+      name: Movies
+      folder: /data/media/movies
+      cache: /temp
+      container: ".mkv"
+      containerFilter: "mkv,mp4,mov,m4v,mpg,mpeg,avi,flv,webm,wmv,vob,evo,m2ts,ts"
+      folderWatching: true
+      processLibrary: true
+      scanOnStart: true
+      scheduledScanFindNew: true
+      scannerThreadCount: 2
+      ffmpeg: true

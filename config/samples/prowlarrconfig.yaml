@@ -1,0 +1,87 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: ProwlarrConfig
+metadata:
+  name: prowlarr
+  namespace: arr
+spec:
+  connection:
+    url: http://arr-prowlarr.arr.svc.cluster.local:9696
+    apiKeySecretRef:
+      name: arr-config-secrets
+      key: PROWLARR_API_KEY
+  proxies:
+    - name: FlareSolverr
+      implementation: FlareSolverr
+      configContract: FlareSolverrSettings
+      host: http://arr-flaresolverr.arr.svc.cluster.local:8191
+      requestTimeout: 60
+  applications:
+    - name: Sonarr
+      syncLevel: fullSync
+      implementation: Sonarr
+      configContract: SonarrSettings
+      prowlarrUrl: http://arr-prowlarr.arr.svc.cluster.local:9696
+      baseUrl: http://arr-sonarr.arr.svc.cluster.local:8989
+      apiKeySecretRef:
+        name: arr-config-secrets
+        key: SONARR_API_KEY
+      syncCategories: [5000, 5010, 5020, 5030, 5040, 5045, 5050, 5090]
+    - name: Radarr
+      syncLevel: fullSync
+      implementation: Radarr
+      configContract: RadarrSettings
+      prowlarrUrl: http://arr-prowlarr.arr.svc.cluster.local:9696
+      baseUrl: http://arr-radarr.arr.svc.cluster.local:7878
+      apiKeySecretRef:
+        name: arr-config-secrets
+        key: RADARR_API_KEY
+      syncCategories: [2000, 2010, 2020, 2030, 2040, 2045, 2050, 2060, 2070, 2080, 2090]
+  indexers:
+    - name: 1337x
+      implementation: Cardigann
+      configContract: CardigannSettings
+      enable: true
+      appProfileId: 1
+      priority: 25
+      fields:
+        - name: definitionFile
+          value: "1337x"
+        - name: baseUrl
+          value: "https://1337x.to/"
+    - name: The Pirate Bay
+      implementation: Cardigann
+      configContract: CardigannSettings
+      enable: true
+      appProfileId: 1
+      priority: 25
+      fields:
+        - name: definitionFile
+          value: thepiratebay
+        - name: baseUrl
+          value: "https://thepiratebay.org/"
+  tags:
+    - label: anime
+    - label: hdr
+  downloadClients:
+    - name: qBittorrent
+      protocol: torrent
+      implementation: QBittorrent
+      fields:
+        - name: host
+          value: "arr-vpn-downloads.arr.svc.cluster.local"
+        - name: port
+          value: "8080"
+      categories:
+        - clientCategory: tv-sonarr
+          categories: [5000, 5010, 5020, 5030, 5040, 5045, 5050]
+        - clientCategory: radarr
+          categories: [2000, 2010, 2020, 2030, 2040, 2045, 2050, 2060]
+  notifications:
+    - name: Discord
+      implementation: Discord
+      onHealthIssue: true
+      onApplicationUpdate: true
+      includeHealthWarnings: true
+      fields:
+        - name: webHookUrl
+          value: "https://discord.com/api/webhooks/your-webhook-url"

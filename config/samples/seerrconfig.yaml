@@ -1,0 +1,63 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: SeerrConfig
+metadata:
+  name: seerr
+  namespace: arr
+spec:
+  connection:
+    url: http://arr-seerr.arr.svc.cluster.local:80
+  jellyfinAuth:
+    hostname: arr-jellyfin.arr.svc.cluster.local
+    port: 8096
+    useSsl: false
+    usernameSecretRef:
+      name: arr-config-secrets
+      key: JELLYFIN_ADMIN_USER
+    passwordSecretRef:
+      name: arr-config-secrets
+      key: JELLYFIN_ADMIN_PASSWORD
+  main:
+    applicationTitle: Seerr
+    localLogin: true
+    mediaServerLogin: true
+    defaultPermissions: 32
+    partialRequestsEnabled: true
+    locale: en
+  sonarr:
+    name: Sonarr
+    hostname: arr-sonarr.arr.svc.cluster.local
+    port: 8989
+    apiKeySecretRef:
+      name: arr-config-secrets
+      key: SONARR_API_KEY
+    activeProfileId: 1
+    activeProfileName: WEB-1080p
+    activeDirectory: /data/media/tv
+    isDefault: true
+    enableSeasonFolders: true
+    seriesType: standard
+  radarr:
+    name: Radarr
+    hostname: arr-radarr.arr.svc.cluster.local
+    port: 7878
+    apiKeySecretRef:
+      name: arr-config-secrets
+      key: RADARR_API_KEY
+    activeProfileId: 1
+    activeProfileName: HD Bluray + WEB
+    activeDirectory: /data/media/movies
+    isDefault: true
+    minimumAvailability: released
+  notifications:
+    - agent: discord
+      enabled: true
+      types: 4094
+      options:
+        webhookUrl: "https://discord.com/api/webhooks/your-webhook-url"
+        botUsername: "Seerr"
+    - agent: telegram
+      enabled: true
+      types: 4094
+      options:
+        botAPI: "your-bot-token"
+        chatId: "your-chat-id"

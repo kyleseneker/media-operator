@@ -1,0 +1,37 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: MaintainerrConfig
+metadata:
+  name: maintainerr
+  namespace: media
+  labels:
+    app.kubernetes.io/name: media-operator
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  connection:
+    url: http://maintainerr:6246
+    apiKeySecretRef:
+      name: maintainerr-secrets
+      key: api-key
+  plexConnection:
+    url: http://plex:32400
+    tokenSecretRef:
+      name: plex-secrets
+      key: token
+  radarrConnection:
+    url: http://radarr:7878
+    apiKeySecretRef:
+      name: radarr-secrets
+      key: api-key
+  rules:
+    - name: "Old unwatched movies"
+      libraryName: Movies
+      mediaType: movie
+      action: delete
+      deleteFromDisk: true
+      conditions:
+        - field: addedAt
+          operator: before
+          value: "180d"
+        - field: viewCount
+          operator: equals
+          value: "0"

@@ -1,0 +1,264 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: qbittorrentconfigs.media-operator.dev
+spec:
+  group: media-operator.dev
+  names:
+    kind: QBittorrentConfig
+    listKind: QBittorrentConfigList
+    plural: qbittorrentconfigs
+    singular: qbittorrentconfig
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Synced")].status
+      name: Synced
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.lastSyncTime
+      name: Last Sync
+      type: date
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: QBittorrentConfig is the Schema for the qbittorrentconfigs API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: QBittorrentConfigSpec defines the desired state of QBittorrentConfig.
+            properties:
+              categories:
+                description: categories defines download categories and their save
+                  paths.
+                items:
+                  description: QBittorrentCategory defines a download category with
+                    its save path.
+                  properties:
+                    name:
+                      description: name is the category name.
+                      type: string
+                    savePath:
+                      description: savePath is the save path for this category.
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+              connection:
+                description: connection defines how to connect to the qBittorrent
+                  instance.
+                properties:
+                  passwordSecretRef:
+                    description: passwordSecretRef references a Secret containing
+                      the password.
+                    properties:
+                      key:
+                        description: key is the key within the Secret.
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  url:
+                    description: url is the base URL of the qBittorrent Web UI (e.g.,
+                      http://qbittorrent.media.svc.cluster.local:8080).
+                    type: string
+                  usernameSecretRef:
+                    description: usernameSecretRef references a Secret containing
+                      the username.
+                    properties:
+                      key:
+                        description: key is the key within the Secret.
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                required:
+                - passwordSecretRef
+                - url
+                - usernameSecretRef
+                type: object
+              preferences:
+                description: preferences configures qBittorrent application preferences.
+                properties:
+                  dht:
+                    description: dht enables the DHT (Distributed Hash Table) network.
+                    type: boolean
+                  encryption:
+                    description: encryption controls the encryption mode. 0=prefer,
+                      1=force on, 2=force off.
+                    maximum: 2
+                    minimum: 0
+                    type: integer
+                  locale:
+                    description: locale is the UI locale (e.g., "en").
+                    type: string
+                  lsd:
+                    description: lsd enables Local Service Discovery.
+                    type: boolean
+                  maxConnec:
+                    description: maxConnec is the global maximum number of connections.
+                      -1 means unlimited.
+                    type: integer
+                  maxConnecPerTorrent:
+                    description: maxConnecPerTorrent is the maximum connections per
+                      torrent. -1 means unlimited.
+                    type: integer
+                  maxRatio:
+                    description: |-
+                      maxRatio is the global share ratio limit (e.g., "2.0").
+                      Represented as a string to preserve decimal precision in JSON.
+                    type: string
+                  maxRatioEnabled:
+                    description: maxRatioEnabled enables the global share ratio limit.
+                    type: boolean
+                  maxSeedingTime:
+                    description: maxSeedingTime is the global seeding time limit in
+                      minutes.
+                    type: integer
+                  maxSeedingTimeEnabled:
+                    description: maxSeedingTimeEnabled enables the global seeding
+                      time limit.
+                    type: boolean
+                  maxUploads:
+                    description: maxUploads is the global maximum number of upload
+                      slots. -1 means unlimited.
+                    type: integer
+                  maxUploadsPerTorrent:
+                    description: maxUploadsPerTorrent is the maximum upload slots
+                      per torrent. -1 means unlimited.
+                    type: integer
+                  pex:
+                    description: pex enables Peer Exchange.
+                    type: boolean
+                  preallocateAll:
+                    description: preallocateAll enables disk space pre-allocation
+                      for all files.
+                    type: boolean
+                  savePath:
+                    description: savePath is the default save path for downloads.
+                    type: string
+                  tempPathEnabled:
+                    description: tempPathEnabled enables using a temporary path for
+                      incomplete downloads.
+                    type: boolean
+                  webUiPort:
+                    description: webUiPort is the Web UI listening port.
+                    type: integer
+                type: object
+            required:
+            - connection
+            type: object
+          status:
+            description: QBittorrentConfigStatus defines the observed state of QBittorrentConfig.
+            properties:
+              conditions:
+                description: conditions represent the current state of the QBittorrentConfig
+                  resource.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              lastSyncTime:
+                description: lastSyncTime is the timestamp of the last successful
+                  reconciliation.
+                format: date-time
+                type: string
+              observedGeneration:
+                description: observedGeneration is the most recent generation observed.
+                format: int64
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
