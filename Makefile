@@ -45,6 +45,27 @@ help: ## Display this help.
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
+.PHONY: sync-crds
+sync-crds: manifests ## Copy generated CRDs into the matching Helm chart.
+	@for f in config/crd/bases/*.yaml; do \
+		kind=$$(grep -m1 '    kind:' $$f | awk '{print $$2}'); \
+		grp=$$(grep -rl "type $$kind struct" api/*/v1alpha1/*_types.go | head -1 | cut -d/ -f2); \
+		if [ -n "$$grp" ]; then \
+			mkdir -p chart/media-operator-$$grp/crds; \
+			cp $$f chart/media-operator-$$grp/crds/; \
+		fi; \
+	done
+	@echo "CRDs synced into chart/*/crds/"
+
+.PHONY: verify-crds
+verify-crds: sync-crds ## Fail if chart CRDs drift from generated CRDs.
+	@if [ -n "$$(git status --porcelain chart/*/crds/)" ]; then \
+		echo "chart CRDs are out of date; run 'make sync-crds' and commit"; \
+		git --no-pager diff --stat chart/*/crds/; \
+		exit 1; \
+	fi
+	@echo "chart CRDs are up to date"
+
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."

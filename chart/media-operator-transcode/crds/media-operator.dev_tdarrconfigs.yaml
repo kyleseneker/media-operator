@@ -70,6 +70,35 @@ spec:
                     - key
                     - name
                     type: object
+                  tls:
+                    description: |-
+                      tls configures TLS settings for the connection.
+                      Only needed when the app uses HTTPS with self-signed or private CA certificates.
+                    properties:
+                      caSecretRef:
+                        description: |-
+                          caSecretRef references a Secret containing a PEM-encoded CA certificate bundle
+                          used to verify the target app's TLS certificate.
+                          The Secret must contain the CA certificate under the specified key.
+                        properties:
+                          key:
+                            description: key is the key within the Secret.
+                            type: string
+                          name:
+                            description: name is the name of the Secret.
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      insecureSkipVerify:
+                        description: |-
+                          insecureSkipVerify disables TLS certificate verification.
+                          WARNING: This makes the connection susceptible to machine-in-the-middle attacks.
+                          Only use for testing or when the target app uses a self-signed certificate and
+                          providing a CA is not practical.
+                        type: boolean
+                    type: object
                   url:
                     description: url is the base URL of the app (e.g., http://arr-sonarr.arr.svc.cluster.local:8989).
                     type: string
@@ -169,6 +198,24 @@ spec:
                   - name
                   type: object
                 type: array
+              reconcile:
+                description: reconcile configures reconciliation behavior (e.g., sync
+                  interval).
+                properties:
+                  interval:
+                    description: |-
+                      interval overrides the default reconciliation interval (default: 5m).
+                      Uses standard Kubernetes duration format (e.g., "30s", "5m", "1h").
+                    type: string
+                  prune:
+                    description: |-
+                      prune enables deletion of resources that exist in the app but are not declared in the CRD.
+                      When true, for each resource type where at least one item is specified, any existing
+                      resources not matching a declared item will be removed from the app.
+                      Root folders and tags are never pruned.
+                      Default: false (only create/update, never delete).
+                    type: boolean
+                type: object
               workers:
                 description: workers configures the number of worker threads by type.
                 properties:

@@ -4,14 +4,14 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
-  name: sabnzbdconfigs.media-operator.dev
+  name: flaresolverrconfigs.media-operator.dev
 spec:
   group: media-operator.dev
   names:
-    kind: SabnzbdConfig
-    listKind: SabnzbdConfigList
-    plural: sabnzbdconfigs
-    singular: sabnzbdconfig
+    kind: FlareSolverrConfig
+    listKind: FlareSolverrConfigList
+    plural: flaresolverrconfigs
+    singular: flaresolverrconfig
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -21,6 +21,9 @@ spec:
     - jsonPath: .status.conditions[?(@.type=="Ready")].status
       name: Ready
       type: string
+    - jsonPath: .status.activeSessions
+      name: Sessions
+      type: integer
     - jsonPath: .status.lastSyncTime
       name: Last Sync
       type: date
@@ -30,7 +33,8 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: SabnzbdConfig is the Schema for the sabnzbdconfigs API.
+        description: FlareSolverrConfig is the Schema for the flaresolverrconfigs
+          API.
         properties:
           apiVersion:
             description: |-
@@ -50,52 +54,17 @@ spec:
           metadata:
             type: object
           spec:
-            description: SabnzbdConfigSpec defines the desired state of SabnzbdConfig.
+            description: FlareSolverrConfigSpec defines the desired state of FlareSolverrConfig.
             properties:
-              categories:
-                description: categories defines download categories.
-                items:
-                  description: SabnzbdCategory defines a download category.
-                  properties:
-                    dir:
-                      description: dir is the subdirectory for this category (relative
-                        to complete dir).
-                      type: string
-                    name:
-                      description: name is the category name.
-                      type: string
-                    priority:
-                      description: priority is the download priority. -100=default,
-                        -2=paused, -1=low, 0=normal, 1=high, 2=force.
-                      type: integer
-                    script:
-                      description: script is the post-processing script for this category.
-                      type: string
-                  required:
-                  - name
-                  type: object
-                type: array
               connection:
-                description: connection defines how to connect to the SABnzbd instance.
+                description: |-
+                  connection defines how to connect to the FlareSolverr instance.
+                  FlareSolverr does not require authentication by default.
                 properties:
-                  apiKeySecretRef:
-                    description: apiKeySecretRef references a Secret containing the
-                      API key.
-                    properties:
-                      key:
-                        description: key is the key within the Secret.
-                        type: string
-                      name:
-                        description: name is the name of the Secret.
-                        type: string
-                    required:
-                    - key
-                    - name
-                    type: object
                   tls:
                     description: |-
                       tls configures TLS settings for the connection.
-                      Only needed when the app uses HTTPS with self-signed or private CA certificates.
+                      Only needed when FlareSolverr uses HTTPS with self-signed or private CA certificates.
                     properties:
                       caSecretRef:
                         description: |-
@@ -122,50 +91,11 @@ spec:
                         type: boolean
                     type: object
                   url:
-                    description: url is the base URL of the app (e.g., http://arr-sonarr.arr.svc.cluster.local:8989).
+                    description: url is the base URL of the FlareSolverr instance
+                      (e.g., http://flaresolverr:8191).
                     type: string
                 required:
-                - apiKeySecretRef
                 - url
-                type: object
-              folders:
-                description: folders configures download and temp folder paths.
-                properties:
-                  completeDir:
-                    description: completeDir is the path for completed downloads.
-                    type: string
-                  incompleteDir:
-                    description: incompleteDir is the path for incomplete downloads.
-                    type: string
-                  nzbBackupDir:
-                    description: nzbBackupDir is the path for NZB backups.
-                    type: string
-                  scriptDir:
-                    description: scriptDir is the path for scripts.
-                    type: string
-                  tempDownloadDir:
-                    description: tempDownloadDir is the temporary download path.
-                    type: string
-                type: object
-              general:
-                description: general configures general SABnzbd settings.
-                properties:
-                  autoSort:
-                    description: autoSort enables automatic sorting of downloads.
-                    type: boolean
-                  downloadSpeedLimit:
-                    description: downloadSpeedLimit is the download speed limit (e.g.,
-                      "100M", "0" for unlimited).
-                    type: string
-                  pauseOnPostProcessing:
-                    description: pauseOnPostProcessing pauses downloading during post-processing.
-                    type: boolean
-                  preCheck:
-                    description: preCheck enables NZB pre-check for completion.
-                    type: boolean
-                  scriptDir:
-                    description: scriptDir is the path to the scripts directory.
-                    type: string
                 type: object
               reconcile:
                 description: reconcile configures reconciliation behavior (e.g., sync
@@ -185,78 +115,38 @@ spec:
                       Default: false (only create/update, never delete).
                     type: boolean
                 type: object
-              servers:
-                description: servers defines Usenet server connections.
+              sessions:
+                description: |-
+                  sessions defines persistent browser sessions to maintain.
+                  Named sessions are reused across requests and survive between solves,
+                  improving performance for repeated requests to the same site.
                 items:
-                  description: SabnzbdServer defines a Usenet server connection.
+                  description: FlareSolverrSession defines a named browser session
+                    to maintain in FlareSolverr.
                   properties:
-                    connections:
-                      description: connections is the number of simultaneous connections.
-                      type: integer
-                    enable:
-                      default: true
-                      description: enable controls whether this server is active.
-                      type: boolean
-                    host:
-                      description: host is the hostname of the Usenet server.
-                      type: string
                     name:
-                      description: name is the display name of the server.
+                      description: |-
+                        name is the session identifier. Must be unique across sessions.
+                        This name is used when making requests through Prowlarr or other tools
+                        to reuse the same browser session.
                       type: string
-                    passwordSecretRef:
-                      description: passwordSecretRef references a Secret containing
-                        the password.
-                      properties:
-                        key:
-                          description: key is the key within the Secret.
-                          type: string
-                        name:
-                          description: name is the name of the Secret.
-                          type: string
-                      required:
-                      - key
-                      - name
-                      type: object
-                    port:
-                      description: port is the port number.
-                      type: integer
-                    priority:
-                      description: priority is the server priority. 0 = highest.
-                      type: integer
-                    retention:
-                      description: retention is the server retention in days. 0 =
-                        unlimited.
-                      type: integer
-                    ssl:
-                      description: ssl enables SSL/TLS connection.
-                      type: boolean
-                    usernameSecretRef:
-                      description: usernameSecretRef references a Secret containing
-                        the username.
-                      properties:
-                        key:
-                          description: key is the key within the Secret.
-                          type: string
-                        name:
-                          description: name is the name of the Secret.
-                          type: string
-                      required:
-                      - key
-                      - name
-                      type: object
                   required:
-                  - host
                   - name
-                  - port
                   type: object
                 type: array
             required:
             - connection
             type: object
           status:
-            description: SabnzbdConfigStatus defines the observed state of SabnzbdConfig.
+            description: FlareSolverrConfigStatus defines the observed state of FlareSolverrConfig.
             properties:
+              activeSessions:
+                description: activeSessions is the number of active sessions managed
+                  by this resource.
+                type: integer
               conditions:
+                description: conditions represent the current state of the FlareSolverrConfig
+                  resource.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -316,16 +206,17 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               lastSyncTime:
+                description: lastSyncTime is the timestamp of the last successful
+                  reconciliation.
                 format: date-time
                 type: string
               observedGeneration:
+                description: observedGeneration is the most recent generation observed.
                 format: int64
                 type: integer
             type: object
         required:
-        - metadata
         - spec
-        - status
         type: object
     served: true
     storage: true

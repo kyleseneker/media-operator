@@ -136,6 +136,35 @@ spec:
                     - key
                     - name
                     type: object
+                  tls:
+                    description: |-
+                      tls configures TLS settings for the connection.
+                      Only needed when the app uses HTTPS with self-signed or private CA certificates.
+                    properties:
+                      caSecretRef:
+                        description: |-
+                          caSecretRef references a Secret containing a PEM-encoded CA certificate bundle
+                          used to verify the target app's TLS certificate.
+                          The Secret must contain the CA certificate under the specified key.
+                        properties:
+                          key:
+                            description: key is the key within the Secret.
+                            type: string
+                          name:
+                            description: name is the name of the Secret.
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      insecureSkipVerify:
+                        description: |-
+                          insecureSkipVerify disables TLS certificate verification.
+                          WARNING: This makes the connection susceptible to machine-in-the-middle attacks.
+                          Only use for testing or when the target app uses a self-signed certificate and
+                          providing a CA is not practical.
+                        type: boolean
+                    type: object
                   url:
                     description: url is the base URL of the app (e.g., http://arr-sonarr.arr.svc.cluster.local:8989).
                     type: string
@@ -143,6 +172,91 @@ spec:
                 - apiKeySecretRef
                 - url
                 type: object
+              downloadClients:
+                description: downloadClients defines download client connections for
+                  manual grabs.
+                items:
+                  description: ProwlarrDownloadClient defines a download client for
+                    Prowlarr manual grabs.
+                  properties:
+                    categories:
+                      description: categories defines the category mappings for this
+                        download client.
+                      items:
+                        description: ProwlarrDownloadClientCategory maps Prowlarr
+                          categories to download client categories.
+                        properties:
+                          categories:
+                            description: categories is the list of Prowlarr category
+                              IDs to map.
+                            items:
+                              type: integer
+                            type: array
+                          clientCategory:
+                            description: clientCategory is the category name in the
+                              download client.
+                            type: string
+                        required:
+                        - clientCategory
+                        type: object
+                      type: array
+                    configContract:
+                      description: |-
+                        configContract is the configuration contract name.
+                        Defaults to "<implementation>Settings" if not set.
+                      type: string
+                    enable:
+                      default: true
+                      description: enable controls whether this download client is
+                        active.
+                      type: boolean
+                    fields:
+                      description: fields defines the download client's configuration
+                        fields (e.g., host, port, apiKey).
+                      items:
+                        description: ProwlarrField represents a key-value configuration
+                          field.
+                        properties:
+                          name:
+                            description: name is the field name.
+                            type: string
+                          value:
+                            description: value is the field value. Use "ENV:VAR_NAME"
+                              convention for secret references.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      type: array
+                    implementation:
+                      description: implementation is the download client type (e.g.,
+                        QBittorrent, Sabnzbd).
+                      type: string
+                    name:
+                      description: name is the display name of the download client.
+                      type: string
+                    priority:
+                      description: priority is the download client priority. Lower
+                        values are higher priority.
+                      type: integer
+                    protocol:
+                      description: protocol is the download protocol.
+                      enum:
+                      - torrent
+                      - usenet
+                      type: string
+                    tags:
+                      description: tags is the list of tag IDs to associate with this
+                        download client.
+                      items:
+                        type: integer
+                      type: array
+                  required:
+                  - implementation
+                  - name
+                  - protocol
+                  type: object
+                type: array
               indexers:
                 description: indexers defines indexer configurations managed by Prowlarr.
                 items:
@@ -201,6 +315,112 @@ spec:
                   - name
                   type: object
                 type: array
+              notifications:
+                description: notifications defines notification/connection configurations.
+                items:
+                  description: Notification defines a notification/connection for
+                    a Servarr app.
+                  properties:
+                    configContract:
+                      description: |-
+                        configContract is the configuration contract name for the implementation.
+                        Defaults to "<implementation>Settings" if not set.
+                      type: string
+                    fields:
+                      description: fields defines the notification's configuration
+                        fields (e.g., webhook URL, API token).
+                      items:
+                        description: ConfigField represents a key-value field in a
+                          download client configuration.
+                        properties:
+                          name:
+                            description: name is the field name.
+                            type: string
+                          value:
+                            description: value is the field value. Can be a string,
+                              number, or boolean.
+                            x-kubernetes-preserve-unknown-fields: true
+                        required:
+                        - name
+                        type: object
+                      type: array
+                    implementation:
+                      description: implementation is the notification type (e.g.,
+                        Discord, Slack, Webhook, Email).
+                      type: string
+                    includeHealthWarnings:
+                      description: includeHealthWarnings includes health warnings
+                        (not just errors) in notifications.
+                      type: boolean
+                    name:
+                      description: name is the display name of the notification.
+                      type: string
+                    onApplicationUpdate:
+                      description: onApplicationUpdate fires when the application
+                        is updated.
+                      type: boolean
+                    onDownload:
+                      description: onDownload fires when a download is imported.
+                      type: boolean
+                    onEpisodeFileDelete:
+                      description: onEpisodeFileDelete fires when an episode file
+                        is deleted (Sonarr).
+                      type: boolean
+                    onEpisodeFileDeleteForUpgrade:
+                      description: onEpisodeFileDeleteForUpgrade fires when an episode
+                        file is deleted for upgrade (Sonarr).
+                      type: boolean
+                    onGrab:
+                      description: onGrab fires when a release is grabbed (sent to
+                        download client).
+                      type: boolean
+                    onHealthIssue:
+                      description: onHealthIssue fires when a health check fails.
+                      type: boolean
+                    onHealthRestored:
+                      description: onHealthRestored fires when a health check recovers.
+                      type: boolean
+                    onManualInteractionRequired:
+                      description: onManualInteractionRequired fires when manual interaction
+                        is needed.
+                      type: boolean
+                    onMovieAdded:
+                      description: onMovieAdded fires when a new movie is added (Radarr).
+                      type: boolean
+                    onMovieDelete:
+                      description: onMovieDelete fires when a movie is deleted (Radarr).
+                      type: boolean
+                    onMovieFileDelete:
+                      description: onMovieFileDelete fires when a movie file is deleted
+                        (Radarr).
+                      type: boolean
+                    onMovieFileDeleteForUpgrade:
+                      description: onMovieFileDeleteForUpgrade fires when a movie
+                        file is deleted for upgrade (Radarr).
+                      type: boolean
+                    onRename:
+                      description: onRename fires when files are renamed.
+                      type: boolean
+                    onSeriesAdd:
+                      description: onSeriesAdd fires when a new series is added (Sonarr).
+                      type: boolean
+                    onSeriesDelete:
+                      description: onSeriesDelete fires when a series is deleted (Sonarr).
+                      type: boolean
+                    onUpgrade:
+                      description: onUpgrade fires when an existing file is upgraded.
+                      type: boolean
+                    tags:
+                      description: tags is the list of tag IDs to associate with this
+                        notification.
+                      items:
+                        type: integer
+                      type: array
+                  required:
+                  - implementation
+                  - name
+                  type: object
+                type: array
               proxies:
                 description: proxies defines proxy configurations for Prowlarr.
                 items:
@@ -234,6 +454,38 @@ spec:
                   - host
                   - implementation
                   - name
+                  type: object
+                type: array
+              reconcile:
+                description: reconcile configures reconciliation behavior (e.g., sync
+                  interval).
+                properties:
+                  interval:
+                    description: |-
+                      interval overrides the default reconciliation interval (default: 5m).
+                      Uses standard Kubernetes duration format (e.g., "30s", "5m", "1h").
+                    type: string
+                  prune:
+                    description: |-
+                      prune enables deletion of resources that exist in the app but are not declared in the CRD.
+                      When true, for each resource type where at least one item is specified, any existing
+                      resources not matching a declared item will be removed from the app.
+                      Root folders and tags are never pruned.
+                      Default: false (only create/update, never delete).
+                    type: boolean
+                type: object
+              tags:
+                description: tags defines tags for linking resources together.
+                items:
+                  description: |-
+                    Tag defines a tag that can be used to link resources together
+                    (download clients, indexers, notifications, etc.).
+                  properties:
+                    label:
+                      description: label is the tag name.
+                      type: string
+                  required:
+                  - label
                   type: object
                 type: array
             required:

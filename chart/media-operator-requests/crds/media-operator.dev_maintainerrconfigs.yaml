@@ -4,14 +4,14 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
-  name: sabnzbdconfigs.media-operator.dev
+  name: maintainerrconfigs.media-operator.dev
 spec:
   group: media-operator.dev
   names:
-    kind: SabnzbdConfig
-    listKind: SabnzbdConfigList
-    plural: sabnzbdconfigs
-    singular: sabnzbdconfig
+    kind: MaintainerrConfig
+    listKind: MaintainerrConfigList
+    plural: maintainerrconfigs
+    singular: maintainerrconfig
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -30,7 +30,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: SabnzbdConfig is the Schema for the sabnzbdconfigs API.
+        description: MaintainerrConfig is the Schema for the maintainerrconfigs API.
         properties:
           apiVersion:
             description: |-
@@ -50,33 +50,12 @@ spec:
           metadata:
             type: object
           spec:
-            description: SabnzbdConfigSpec defines the desired state of SabnzbdConfig.
+            description: MaintainerrConfigSpec defines the desired state of MaintainerrConfig.
             properties:
-              categories:
-                description: categories defines download categories.
-                items:
-                  description: SabnzbdCategory defines a download category.
-                  properties:
-                    dir:
-                      description: dir is the subdirectory for this category (relative
-                        to complete dir).
-                      type: string
-                    name:
-                      description: name is the category name.
-                      type: string
-                    priority:
-                      description: priority is the download priority. -100=default,
-                        -2=paused, -1=low, 0=normal, 1=high, 2=force.
-                      type: integer
-                    script:
-                      description: script is the post-processing script for this category.
-                      type: string
-                  required:
-                  - name
-                  type: object
-                type: array
               connection:
-                description: connection defines how to connect to the SABnzbd instance.
+                description: |-
+                  connection defines how to connect to the Maintainerr instance.
+                  Maintainerr uses API key authentication.
                 properties:
                   apiKeySecretRef:
                     description: apiKeySecretRef references a Secret containing the
@@ -128,44 +107,80 @@ spec:
                 - apiKeySecretRef
                 - url
                 type: object
-              folders:
-                description: folders configures download and temp folder paths.
+              overseerrConnection:
+                description: overseerrConnection configures the Overseerr/Jellyseerr
+                  connection within Maintainerr.
                 properties:
-                  completeDir:
-                    description: completeDir is the path for completed downloads.
+                  apiKeySecretRef:
+                    description: apiKeySecretRef references a Secret containing the
+                      app's API key.
+                    properties:
+                      key:
+                        description: key is the key within the Secret.
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  url:
+                    description: url is the app URL (e.g., http://sonarr:8989).
                     type: string
-                  incompleteDir:
-                    description: incompleteDir is the path for incomplete downloads.
-                    type: string
-                  nzbBackupDir:
-                    description: nzbBackupDir is the path for NZB backups.
-                    type: string
-                  scriptDir:
-                    description: scriptDir is the path for scripts.
-                    type: string
-                  tempDownloadDir:
-                    description: tempDownloadDir is the temporary download path.
-                    type: string
+                required:
+                - apiKeySecretRef
+                - url
                 type: object
-              general:
-                description: general configures general SABnzbd settings.
+              plexConnection:
+                description: plexConnection configures the Plex server connection
+                  within Maintainerr.
                 properties:
-                  autoSort:
-                    description: autoSort enables automatic sorting of downloads.
-                    type: boolean
-                  downloadSpeedLimit:
-                    description: downloadSpeedLimit is the download speed limit (e.g.,
-                      "100M", "0" for unlimited).
+                  tokenSecretRef:
+                    description: tokenSecretRef references a Secret containing the
+                      Plex authentication token.
+                    properties:
+                      key:
+                        description: key is the key within the Secret.
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  url:
+                    description: url is the Plex server URL (e.g., http://plex:32400).
                     type: string
-                  pauseOnPostProcessing:
-                    description: pauseOnPostProcessing pauses downloading during post-processing.
-                    type: boolean
-                  preCheck:
-                    description: preCheck enables NZB pre-check for completion.
-                    type: boolean
-                  scriptDir:
-                    description: scriptDir is the path to the scripts directory.
+                required:
+                - tokenSecretRef
+                - url
+                type: object
+              radarrConnection:
+                description: radarrConnection configures the Radarr connection within
+                  Maintainerr.
+                properties:
+                  apiKeySecretRef:
+                    description: apiKeySecretRef references a Secret containing the
+                      app's API key.
+                    properties:
+                      key:
+                        description: key is the key within the Secret.
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  url:
+                    description: url is the app URL (e.g., http://sonarr:8989).
                     type: string
+                required:
+                - apiKeySecretRef
+                - url
                 type: object
               reconcile:
                 description: reconcile configures reconciliation behavior (e.g., sync
@@ -185,78 +200,142 @@ spec:
                       Default: false (only create/update, never delete).
                     type: boolean
                 type: object
-              servers:
-                description: servers defines Usenet server connections.
+              rules:
+                description: rules defines media management rules for automatic collection
+                  cleanup.
                 items:
-                  description: SabnzbdServer defines a Usenet server connection.
+                  description: MaintainerrRule defines a media management rule.
                   properties:
-                    connections:
-                      description: connections is the number of simultaneous connections.
-                      type: integer
+                    action:
+                      description: action defines what happens to matched media.
+                      enum:
+                      - delete
+                      - unmonitor
+                      type: string
+                    conditions:
+                      description: |-
+                        conditions defines the criteria for matching media.
+                        All conditions must be met for media to be matched (AND logic).
+                      items:
+                        description: MaintainerrRuleCondition defines a condition
+                          for a media management rule.
+                        properties:
+                          field:
+                            description: field is the media field to evaluate.
+                            enum:
+                            - addedAt
+                            - lastViewedAt
+                            - viewCount
+                            - rating
+                            - year
+                            - fileSize
+                            - resolution
+                            - genre
+                            - label
+                            type: string
+                          operator:
+                            description: operator is the comparison operator.
+                            enum:
+                            - equals
+                            - not_equals
+                            - contains
+                            - not_contains
+                            - greater_than
+                            - less_than
+                            - before
+                            - after
+                            - in_last
+                            - not_in_last
+                            type: string
+                          value:
+                            description: |-
+                              value is the value to compare against. For date fields, use duration format
+                              (e.g., "30d" for 30 days, "6m" for 6 months). For numeric fields, use plain numbers.
+                              For string fields, use the literal value.
+                            type: string
+                        required:
+                        - field
+                        - operator
+                        - value
+                        type: object
+                      type: array
+                    deleteFromDisk:
+                      description: deleteFromDisk also deletes the media files from
+                        disk (only when action=delete).
+                      type: boolean
                     enable:
                       default: true
-                      description: enable controls whether this server is active.
+                      description: enable controls whether this rule is active.
                       type: boolean
-                    host:
-                      description: host is the hostname of the Usenet server.
+                    libraryName:
+                      description: libraryName is the Plex library this rule applies
+                        to (e.g., "Movies", "TV Shows").
+                      type: string
+                    mediaType:
+                      description: mediaType is the type of media this rule targets.
+                      enum:
+                      - movie
+                      - show
                       type: string
                     name:
-                      description: name is the display name of the server.
+                      description: name is the display name of the rule.
                       type: string
-                    passwordSecretRef:
-                      description: passwordSecretRef references a Secret containing
-                        the password.
-                      properties:
-                        key:
-                          description: key is the key within the Secret.
-                          type: string
-                        name:
-                          description: name is the name of the Secret.
-                          type: string
-                      required:
-                      - key
-                      - name
-                      type: object
-                    port:
-                      description: port is the port number.
-                      type: integer
-                    priority:
-                      description: priority is the server priority. 0 = highest.
-                      type: integer
-                    retention:
-                      description: retention is the server retention in days. 0 =
-                        unlimited.
-                      type: integer
-                    ssl:
-                      description: ssl enables SSL/TLS connection.
-                      type: boolean
-                    usernameSecretRef:
-                      description: usernameSecretRef references a Secret containing
-                        the username.
-                      properties:
-                        key:
-                          description: key is the key within the Secret.
-                          type: string
-                        name:
-                          description: name is the name of the Secret.
-                          type: string
-                      required:
-                      - key
-                      - name
-                      type: object
                   required:
-                  - host
+                  - action
+                  - libraryName
+                  - mediaType
                   - name
-                  - port
                   type: object
                 type: array
+              settings:
+                description: settings configures general Maintainerr settings.
+                properties:
+                  collectionHandling:
+                    description: collectionHandling controls how Maintainerr manages
+                      Plex collections.
+                    enum:
+                    - keep
+                    - delete
+                    type: string
+                  dryRun:
+                    description: dryRun prevents actual deletions and only logs what
+                      would happen.
+                    type: boolean
+                type: object
+              sonarrConnection:
+                description: sonarrConnection configures the Sonarr connection within
+                  Maintainerr.
+                properties:
+                  apiKeySecretRef:
+                    description: apiKeySecretRef references a Secret containing the
+                      app's API key.
+                    properties:
+                      key:
+                        description: key is the key within the Secret.
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  url:
+                    description: url is the app URL (e.g., http://sonarr:8989).
+                    type: string
+                required:
+                - apiKeySecretRef
+                - url
+                type: object
             required:
             - connection
             type: object
           status:
-            description: SabnzbdConfigStatus defines the observed state of SabnzbdConfig.
+            description: MaintainerrConfigStatus defines the observed state of MaintainerrConfig.
             properties:
               conditions:
+                description: conditions represent the current state of the MaintainerrConfig
+                  resource.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -316,16 +395,17 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               lastSyncTime:
+                description: lastSyncTime is the timestamp of the last successful
+                  reconciliation.
                 format: date-time
                 type: string
               observedGeneration:
+                description: observedGeneration is the most recent generation observed.
                 format: int64
                 type: integer
             type: object
         required:
-        - metadata
         - spec
-        - status
         type: object
     served: true
     storage: true

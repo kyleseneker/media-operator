@@ -50,12 +50,42 @@ spec:
           metadata:
             type: object
           spec:
-            description: SeerrConfigSpec defines the desired state of SeerrConfig.
+            description: |-
+              SeerrConfigSpec defines the desired state of SeerrConfig.
+              Exactly one of jellyfinAuth or plexAuth must be set.
             properties:
               connection:
-                description: connection defines how to connect to the Jellyseerr/Overseerr
-                  instance.
+                description: connection defines how to connect to the Seerr instance.
                 properties:
+                  tls:
+                    description: |-
+                      tls configures TLS settings for the connection.
+                      Only needed when Seerr uses HTTPS with self-signed or private CA certificates.
+                    properties:
+                      caSecretRef:
+                        description: |-
+                          caSecretRef references a Secret containing a PEM-encoded CA certificate bundle
+                          used to verify the target app's TLS certificate.
+                          The Secret must contain the CA certificate under the specified key.
+                        properties:
+                          key:
+                            description: key is the key within the Secret.
+                            type: string
+                          name:
+                            description: name is the name of the Secret.
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      insecureSkipVerify:
+                        description: |-
+                          insecureSkipVerify disables TLS certificate verification.
+                          WARNING: This makes the connection susceptible to machine-in-the-middle attacks.
+                          Only use for testing or when the target app uses a self-signed certificate and
+                          providing a CA is not practical.
+                        type: boolean
+                    type: object
                   url:
                     description: url is the base URL of the Seerr instance (e.g.,
                       http://jellyseerr.media.svc.cluster.local:5055).
@@ -64,8 +94,9 @@ spec:
                 - url
                 type: object
               jellyfinAuth:
-                description: jellyfinAuth defines the Jellyfin authentication settings
-                  for Seerr.
+                description: |-
+                  jellyfinAuth defines Jellyfin authentication settings.
+                  Set this for Jellyfin-based Seerr instances. Mutually exclusive with plexAuth.
                 properties:
                   hostname:
                     description: hostname is the Jellyfin server hostname.
@@ -116,6 +147,9 @@ spec:
                   applicationTitle:
                     description: applicationTitle is the application display title.
                     type: string
+                  applicationUrl:
+                    description: applicationUrl is the external URL for the application.
+                    type: string
                   defaultPermissions:
                     description: defaultPermissions is the default permission bitmask
                       for new users.
@@ -138,6 +172,73 @@ spec:
                     description: partialRequestsEnabled enables partial season/episode
                       requests.
                     type: boolean
+                type: object
+              notifications:
+                description: |-
+                  notifications configures notification agents (Discord, Slack, Telegram, etc.).
+                  Each agent is a singleton — only one configuration per agent type.
+                items:
+                  description: SeerrNotificationAgent configures a single notification
+                    agent in Seerr.
+                  properties:
+                    agent:
+                      description: |-
+                        agent is the notification agent type.
+                        Supported values: discord, slack, telegram, pushover, email, webhook,
+                        gotify, lunasea, pushbullet, webpush.
+                      type: string
+                    enabled:
+                      description: enabled enables this notification agent.
+                      type: boolean
+                    options:
+                      additionalProperties:
+                        type: string
+                      description: options contains provider-specific configuration
+                        (e.g., webhookUrl, botUsername, chatId).
+                      type: object
+                    types:
+                      description: |-
+                        types is the notification type bitfield that controls which events trigger notifications.
+                        Common values: 2=media requested, 4=media auto-approved, 8=media approved,
+                        16=media available, 32=media failed, 64=media declined, 128=test notification.
+                        Combine with bitwise OR (e.g., 4094 for all types).
+                      type: integer
+                  required:
+                  - agent
+                  type: object
+                type: array
+              plexAuth:
+                description: |-
+                  plexAuth defines Plex authentication settings.
+                  Set this for Plex-based Seerr instances. Mutually exclusive with jellyfinAuth.
+                properties:
+                  hostname:
+                    description: hostname is the Plex server hostname.
+                    type: string
+                  port:
+                    default: 32400
+                    description: port is the Plex server port.
+                    type: integer
+                  tokenSecretRef:
+                    description: tokenSecretRef references a Secret containing the
+                      Plex auth token.
+                    properties:
+                      key:
+                        description: key is the key within the Secret.
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  useSsl:
+                    description: useSsl enables SSL for the Plex connection.
+                    type: boolean
+                required:
+                - hostname
+                - tokenSecretRef
                 type: object
               radarr:
                 description: radarr configures the Radarr service connection for movie
@@ -167,6 +268,9 @@ spec:
                     - key
                     - name
                     type: object
+                  baseUrl:
+                    description: baseUrl is the URL base path for the service.
+                    type: string
                   enableSeasonFolders:
                     description: |-
                       enableSeasonFolders enables season folder organization in Sonarr.
@@ -211,6 +315,24 @@ spec:
                 - name
                 - port
                 type: object
+              reconcile:
+                description: reconcile configures reconciliation behavior (e.g., sync
+                  interval).
+                properties:
+                  interval:
+                    description: |-
+                      interval overrides the default reconciliation interval (default: 5m).
+                      Uses standard Kubernetes duration format (e.g., "30s", "5m", "1h").
+                    type: string
+                  prune:
+                    description: |-
+                      prune enables deletion of resources that exist in the app but are not declared in the CRD.
+                      When true, for each resource type where at least one item is specified, any existing
+                      resources not matching a declared item will be removed from the app.
+                      Root folders and tags are never pruned.
+                      Default: false (only create/update, never delete).
+                    type: boolean
+                type: object
               sonarr:
                 description: sonarr configures the Sonarr service connection for TV
                   show requests.
@@ -239,6 +361,9 @@ spec:
                     - key
                     - name
                     type: object
+                  baseUrl:
+                    description: baseUrl is the URL base path for the service.
+                    type: string
                   enableSeasonFolders:
                     description: |-
                       enableSeasonFolders enables season folder organization in Sonarr.
@@ -285,7 +410,6 @@ spec:
                 type: object
             required:
             - connection
-            - jellyfinAuth
             type: object
           status:
             description: SeerrConfigStatus defines the observed state of SeerrConfig.
