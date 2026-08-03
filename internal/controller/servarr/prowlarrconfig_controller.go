@@ -87,7 +87,8 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		Notifications:   config.Spec.Notifications,
 	})
 
-	result := engine.ReconcileApp(ctx, hc, def, nil, resources, ctrlcommon.PruneEnabled(config.Spec.Reconcile))
+	result := engine.ReconcileApp(ctx, hc, def, nil, resources, ctrlcommon.PruneEnabled(config.Spec.Reconcile), config.Status.ManagedResources)
+	ctrlcommon.UpdateStatusManaged(&config, result.Managed)
 	ctrlcommon.EmitPruneEvents(r.Recorder, &config, result.Pruned)
 	ctrlcommon.UpdateStatus(ctx, r.Status(), &config, result.Success(), ctrlcommon.ResultReason(result), result.Message())
 

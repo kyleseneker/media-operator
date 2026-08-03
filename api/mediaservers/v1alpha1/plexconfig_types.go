@@ -162,6 +162,12 @@ type PlexConfigStatus struct {
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
 	LastSyncTime       *metav1.Time       `json:"lastSyncTime,omitempty"`
+
+	// managedResources records the resources this operator created, keyed by
+	// resource type. Prune only removes entries listed here, so resources
+	// created outside the operator are never deleted.
+	// +optional
+	ManagedResources map[string][]string `json:"managedResources,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -192,6 +198,7 @@ func (c *PlexConfig) GetConditions() *[]metav1.Condition                  { retu
 func (c *PlexConfig) GetObservedGeneration() *int64                       { return &c.Status.ObservedGeneration }
 func (c *PlexConfig) GetLastSyncTime() **metav1.Time                      { return &c.Status.LastSyncTime }
 func (c *PlexConfig) GetReconcileConfig() *commonv1alpha1.ReconcileConfig { return c.Spec.Reconcile }
+func (c *PlexConfig) GetManagedResources() *map[string][]string           { return &c.Status.ManagedResources }
 
 func init() {
 	SchemeBuilder.Register(&PlexConfig{}, &PlexConfigList{})

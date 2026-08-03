@@ -80,6 +80,12 @@ type FlareSolverrConfigStatus struct {
 	// activeSessions is the number of active sessions managed by this resource.
 	// +optional
 	ActiveSessions int `json:"activeSessions,omitempty"`
+
+	// managedResources records the resources this operator created, keyed by
+	// resource type. Prune only removes entries listed here, so resources
+	// created outside the operator are never deleted.
+	// +optional
+	ManagedResources map[string][]string `json:"managedResources,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -118,6 +124,9 @@ func (c *FlareSolverrConfig) GetObservedGeneration() *int64      { return &c.Sta
 func (c *FlareSolverrConfig) GetLastSyncTime() **metav1.Time     { return &c.Status.LastSyncTime }
 func (c *FlareSolverrConfig) GetReconcileConfig() *commonv1alpha1.ReconcileConfig {
 	return c.Spec.Reconcile
+}
+func (c *FlareSolverrConfig) GetManagedResources() *map[string][]string {
+	return &c.Status.ManagedResources
 }
 
 func init() {

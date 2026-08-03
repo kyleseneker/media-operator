@@ -34,9 +34,10 @@ type PrunedResource struct {
 
 // ReconcileResult holds the outcome of a reconciliation pass.
 type ReconcileResult struct {
-	Synced []string
-	Errors []string
-	Pruned []PrunedResource
+	Synced  []string
+	Errors  []string
+	Pruned  []PrunedResource
+	Managed map[string][]string
 }
 
 // Success returns true if no errors occurred.
@@ -63,9 +64,9 @@ func (r *ReconcileResult) Message() string {
 // `sections` maps setting endpoint names to their desired state (Go structs).
 // `resources` maps resource endpoint names to slices of desired resource objects.
 // `prune` enables deletion of unmanaged resources for prunable resource types.
-func ReconcileApp(ctx context.Context, client *HTTPClient, def AppDefinition, sections map[string]interface{}, resources map[string][]map[string]interface{}, prune bool) ReconcileResult {
+func ReconcileApp(ctx context.Context, client *HTTPClient, def AppDefinition, sections map[string]interface{}, resources map[string][]map[string]interface{}, prune bool, previouslyManaged map[string][]string) ReconcileResult {
 	logger := log.FromContext(ctx)
-	result := ReconcileResult{}
+	result := ReconcileResult{Managed: map[string][]string{}}
 
 	// Reconcile settings (singleton config endpoints)
 	for _, s := range def.Settings {
@@ -88,6 +89,7 @@ func ReconcileApp(ctx context.Context, client *HTTPClient, def AppDefinition, se
 		if !ok || len(items) == 0 {
 			continue
 		}
+		var applied []map[string]interface{}
 		for _, item := range items {
 			if err := reconcileResource(ctx, client, r, item); err != nil {
 				matchVal := item[r.MatchField]
@@ -97,6 +99,10 @@ func ReconcileApp(ctx context.Context, client *HTTPClient, def AppDefinition, se
 			} else {
 				matchVal := item[r.MatchField]
 				result.Synced = append(result.Synced, fmt.Sprintf("%s(%v)", r.Name, matchVal))
+				applied = append(applied, item)
+				if s, ok := matchVal.(string); ok {
+					result.Managed[r.Name] = append(result.Managed[r.Name], s)
+				}
 			}
 		}
 
@@ -104,7 +110,7 @@ func ReconcileApp(ctx context.Context, client *HTTPClient, def AppDefinition, se
 		// Only runs when prune is enabled, the resource type is prunable, and at least one
 		// desired item was specified (so an omitted section doesn't wipe everything).
 		if prune && r.Prunable {
-			pruned, err := pruneResources(ctx, client, r, items)
+			pruned, err := pruneResources(ctx, client, r, applied, previouslyManaged[r.Name])
 			result.Pruned = append(result.Pruned, pruned...)
 			if err != nil {
 				logger.Error(err, "failed to prune resources", "type", r.Name)
@@ -120,7 +126,14 @@ func ReconcileApp(ctx context.Context, client *HTTPClient, def AppDefinition, se
 // pruneResources deletes any existing resources not present in the desired list.
 // Returns the list of successfully pruned resources for event emission.
 // Refuses to prune if the number of candidates exceeds DefaultMaxPruneCount.
-func pruneResources(ctx context.Context, client *HTTPClient, endpoint ResourceEndpoint, desired []map[string]interface{}) ([]PrunedResource, error) {
+func pruneResources(ctx context.Context, client *HTTPClient, endpoint ResourceEndpoint, desired []map[string]interface{}, previouslyManaged []string) ([]PrunedResource, error) {
+	if len(previouslyManaged) == 0 {
+		return nil, nil
+	}
+	managedSet := make(map[string]bool, len(previouslyManaged))
+	for _, m := range previouslyManaged {
+		managedSet[m] = true
+	}
 	existing, err := client.GetJSONList(ctx, endpoint.Path)
 	if err != nil {
 		return nil, fmt.Errorf("listing for prune: %w", err)
@@ -146,6 +159,9 @@ func pruneResources(ctx context.Context, client *HTTPClient, endpoint ResourceEn
 			continue
 		}
 		if desiredSet[matchVal] {
+			continue
+		}
+		if !managedSet[matchVal] {
 			continue
 		}
 		id, ok := e["id"].(float64)

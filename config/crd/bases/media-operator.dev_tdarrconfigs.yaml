@@ -306,6 +306,16 @@ spec:
                   reconciliation.
                 format: date-time
                 type: string
+              managedResources:
+                additionalProperties:
+                  items:
+                    type: string
+                  type: array
+                description: |-
+                  managedResources records the resources this operator created, keyed by
+                  resource type. Prune only removes entries listed here, so resources
+                  created outside the operator are never deleted.
+                type: object
               observedGeneration:
                 description: observedGeneration is the most recent generation observed.
                 format: int64

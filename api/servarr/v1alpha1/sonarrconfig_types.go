@@ -264,6 +264,12 @@ type SonarrConfigStatus struct {
 	// lastSyncTime is the timestamp of the last successful reconciliation.
 	// +optional
 	LastSyncTime *metav1.Time `json:"lastSyncTime,omitempty"`
+
+	// managedResources records the resources this operator created, keyed by
+	// resource type. Prune only removes entries listed here, so resources
+	// created outside the operator are never deleted.
+	// +optional
+	ManagedResources map[string][]string `json:"managedResources,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -300,6 +306,7 @@ func (c *SonarrConfig) GetConditions() *[]metav1.Condition                  { re
 func (c *SonarrConfig) GetObservedGeneration() *int64                       { return &c.Status.ObservedGeneration }
 func (c *SonarrConfig) GetLastSyncTime() **metav1.Time                      { return &c.Status.LastSyncTime }
 func (c *SonarrConfig) GetReconcileConfig() *commonv1alpha1.ReconcileConfig { return c.Spec.Reconcile }
+func (c *SonarrConfig) GetManagedResources() *map[string][]string           { return &c.Status.ManagedResources }
 
 func init() {
 	SchemeBuilder.Register(&SonarrConfig{}, &SonarrConfigList{})

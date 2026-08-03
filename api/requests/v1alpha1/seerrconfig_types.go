@@ -256,6 +256,12 @@ type SeerrConfigStatus struct {
 	// initialized indicates whether the Seerr initial setup has been completed.
 	// +optional
 	Initialized *bool `json:"initialized,omitempty"`
+
+	// managedResources records the resources this operator created, keyed by
+	// resource type. Prune only removes entries listed here, so resources
+	// created outside the operator are never deleted.
+	// +optional
+	ManagedResources map[string][]string `json:"managedResources,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -292,6 +298,7 @@ func (c *SeerrConfig) GetConditions() *[]metav1.Condition                  { ret
 func (c *SeerrConfig) GetObservedGeneration() *int64                       { return &c.Status.ObservedGeneration }
 func (c *SeerrConfig) GetLastSyncTime() **metav1.Time                      { return &c.Status.LastSyncTime }
 func (c *SeerrConfig) GetReconcileConfig() *commonv1alpha1.ReconcileConfig { return c.Spec.Reconcile }
+func (c *SeerrConfig) GetManagedResources() *map[string][]string           { return &c.Status.ManagedResources }
 
 func init() {
 	SchemeBuilder.Register(&SeerrConfig{}, &SeerrConfigList{})

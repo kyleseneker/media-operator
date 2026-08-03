@@ -242,6 +242,12 @@ type ProwlarrConfigStatus struct {
 	// lastSyncTime is the timestamp of the last successful reconciliation.
 	// +optional
 	LastSyncTime *metav1.Time `json:"lastSyncTime,omitempty"`
+
+	// managedResources records the resources this operator created, keyed by
+	// resource type. Prune only removes entries listed here, so resources
+	// created outside the operator are never deleted.
+	// +optional
+	ManagedResources map[string][]string `json:"managedResources,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -279,6 +285,9 @@ func (c *ProwlarrConfig) GetObservedGeneration() *int64      { return &c.Status.
 func (c *ProwlarrConfig) GetLastSyncTime() **metav1.Time     { return &c.Status.LastSyncTime }
 func (c *ProwlarrConfig) GetReconcileConfig() *commonv1alpha1.ReconcileConfig {
 	return c.Spec.Reconcile
+}
+func (c *ProwlarrConfig) GetManagedResources() *map[string][]string {
+	return &c.Status.ManagedResources
 }
 
 func init() {

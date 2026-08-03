@@ -47,6 +47,15 @@ func ResultReason(r engine.ReconcileResult) string {
 
 // UpdateStatus sets the Synced and Ready conditions on a config resource and persists the status.
 // Ready=True indicates the app is reachable; Synced reflects whether config was applied.
+// UpdateStatusManaged records the resources the operator now manages, so prune
+// can distinguish them from resources created outside the operator.
+func UpdateStatusManaged(obj ConfigResource, managed map[string][]string) {
+	if managed == nil {
+		return
+	}
+	*obj.GetManagedResources() = managed
+}
+
 func UpdateStatus(ctx context.Context, sw client.SubResourceWriter, obj ConfigResource, synced bool, reason, message string) {
 	syncedStatus := string(metav1.ConditionFalse)
 	if synced {

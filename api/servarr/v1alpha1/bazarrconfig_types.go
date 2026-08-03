@@ -269,6 +269,12 @@ type BazarrConfigStatus struct {
 	// lastSyncTime is the timestamp of the last successful reconciliation.
 	// +optional
 	LastSyncTime *metav1.Time `json:"lastSyncTime,omitempty"`
+
+	// managedResources records the resources this operator created, keyed by
+	// resource type. Prune only removes entries listed here, so resources
+	// created outside the operator are never deleted.
+	// +optional
+	ManagedResources map[string][]string `json:"managedResources,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -305,6 +311,7 @@ func (c *BazarrConfig) GetConditions() *[]metav1.Condition                  { re
 func (c *BazarrConfig) GetObservedGeneration() *int64                       { return &c.Status.ObservedGeneration }
 func (c *BazarrConfig) GetLastSyncTime() **metav1.Time                      { return &c.Status.LastSyncTime }
 func (c *BazarrConfig) GetReconcileConfig() *commonv1alpha1.ReconcileConfig { return c.Spec.Reconcile }
+func (c *BazarrConfig) GetManagedResources() *map[string][]string           { return &c.Status.ManagedResources }
 
 func init() {
 	SchemeBuilder.Register(&BazarrConfig{}, &BazarrConfigList{})

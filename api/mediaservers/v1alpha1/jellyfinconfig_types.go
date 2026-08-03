@@ -222,6 +222,12 @@ type JellyfinConfigStatus struct {
 	// initialized indicates whether the Jellyfin setup wizard has been completed.
 	// +optional
 	Initialized *bool `json:"initialized,omitempty"`
+
+	// managedResources records the resources this operator created, keyed by
+	// resource type. Prune only removes entries listed here, so resources
+	// created outside the operator are never deleted.
+	// +optional
+	ManagedResources map[string][]string `json:"managedResources,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -259,6 +265,9 @@ func (c *JellyfinConfig) GetObservedGeneration() *int64      { return &c.Status.
 func (c *JellyfinConfig) GetLastSyncTime() **metav1.Time     { return &c.Status.LastSyncTime }
 func (c *JellyfinConfig) GetReconcileConfig() *commonv1alpha1.ReconcileConfig {
 	return c.Spec.Reconcile
+}
+func (c *JellyfinConfig) GetManagedResources() *map[string][]string {
+	return &c.Status.ManagedResources
 }
 
 func init() {

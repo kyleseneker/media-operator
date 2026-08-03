@@ -615,7 +615,7 @@ func resolveCustomFormatIDs(ctx context.Context, client *engine.HTTPClient, apiV
 }
 
 // ReconcileServarr runs the full reconciliation for any Servarr-family app.
-func ReconcileServarr(ctx context.Context, client *engine.HTTPClient, apiVersion string, spec interface{}, opts ServarrOptions, prune bool) (engine.ReconcileResult, error) {
+func ReconcileServarr(ctx context.Context, client *engine.HTTPClient, apiVersion string, spec interface{}, opts ServarrOptions, prune bool, managed map[string][]string) (engine.ReconcileResult, error) {
 	def := ServarrDefinition(apiVersion)
 	sections, err := ServarrSections(spec)
 	if err != nil {
@@ -625,5 +625,5 @@ func ReconcileServarr(ctx context.Context, client *engine.HTTPClient, apiVersion
 	if err != nil {
 		return engine.ReconcileResult{}, fmt.Errorf("building resources: %w", err)
 	}
-	return engine.ReconcileApp(ctx, client, def, sections, resources, prune), nil
+	return engine.ReconcileApp(ctx, client, def, sections, resources, prune, managed), nil
 }

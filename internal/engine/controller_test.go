@@ -158,7 +158,7 @@ func TestPruneResources(t *testing.T) {
 	desired := []map[string]interface{}{{"name": "managed"}}
 
 	before := testutil.ToFloat64(metrics.ResourcesPrunedTotal.WithLabelValues(testAppLabel, "downloadClients"))
-	pruned, err := pruneResources(context.Background(), hc, endpoint, desired)
+	pruned, err := pruneResources(context.Background(), hc, endpoint, desired, []string{"managed", "unmanaged-1", "unmanaged-2"})
 	require.NoError(t, err)
 	assert.Len(t, pruned, 2)
 	assert.Contains(t, deletedPaths, "/api/v3/downloadclient/2")
@@ -189,7 +189,11 @@ func TestPruneResources_SafetyThreshold(t *testing.T) {
 	desired := []map[string]interface{}{} // No desired items, all 30 would be pruned
 
 	before := testutil.ToFloat64(metrics.ResourcesPrunedTotal.WithLabelValues(testAppLabel, "indexers"))
-	_, err := pruneResources(context.Background(), hc, endpoint, desired)
+	allManaged := make([]string, len(existing))
+	for i := range existing {
+		allManaged[i] = existing[i]["name"].(string)
+	}
+	_, err := pruneResources(context.Background(), hc, endpoint, desired, allManaged)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "refusing to prune")
 	assert.Contains(t, err.Error(), "30")
@@ -240,7 +244,7 @@ func TestReconcileApp(t *testing.T) {
 		"tags": {{"label": "test"}},
 	}
 
-	result := ReconcileApp(context.Background(), hc, def, sections, resources, false)
+	result := ReconcileApp(context.Background(), hc, def, sections, resources, false, nil)
 	assert.True(t, result.Success())
 	assert.Contains(t, result.Synced, "naming")
 	assert.Contains(t, result.Synced, "tags(test)")
@@ -254,7 +258,56 @@ func TestReconcileApp_SkipsNilSections(t *testing.T) {
 	def := AppDefinition{
 		Settings: []SettingEndpoint{{Name: "naming", Path: "/api/v3/config/naming"}},
 	}
-	result := ReconcileApp(context.Background(), hc, def, map[string]interface{}{}, nil, false)
+	result := ReconcileApp(context.Background(), hc, def, map[string]interface{}{}, nil, false, nil)
 	assert.True(t, result.Success())
 	assert.Empty(t, result.Synced)
+}
+
+func TestPruneSkipsResourcesTheOperatorNeverCreated(t *testing.T) {
+	var deletedPaths []string
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			json.NewEncoder(w).Encode([]map[string]interface{}{
+				{"id": float64(1), "name": "operator-made"},
+				{"id": float64(2), "name": "hand-built-by-human"},
+			})
+		case http.MethodDelete:
+			deletedPaths = append(deletedPaths, r.URL.Path)
+			w.WriteHeader(http.StatusOK)
+		}
+	}
+	_, hc := newTestServer(t, handler)
+	endpoint := ResourceEndpoint{Name: "indexers", Path: "/api/v3/indexer", MatchField: "name", Prunable: true}
+
+	// The CR no longer declares either one, but the operator only ever created
+	// "operator-made". The hand-built indexer must survive.
+	pruned, err := pruneResources(context.Background(), hc, endpoint,
+		[]map[string]interface{}{}, []string{"operator-made"})
+	require.NoError(t, err)
+
+	assert.Len(t, pruned, 1)
+	assert.Equal(t, "operator-made", pruned[0].Name)
+	assert.Contains(t, deletedPaths, "/api/v3/indexer/1")
+	assert.NotContains(t, deletedPaths, "/api/v3/indexer/2",
+		"a resource the operator never created must never be pruned")
+}
+
+func TestPruneIsNoOpOnFirstReconcile(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			json.NewEncoder(w).Encode([]map[string]interface{}{
+				{"id": float64(1), "name": "pre-existing"},
+			})
+		case http.MethodDelete:
+			t.Error("nothing may be deleted when the operator has no recorded managed set")
+		}
+	}
+	_, hc := newTestServer(t, handler)
+	endpoint := ResourceEndpoint{Name: "indexers", Path: "/api/v3/indexer", MatchField: "name", Prunable: true}
+
+	pruned, err := pruneResources(context.Background(), hc, endpoint, []map[string]interface{}{}, nil)
+	require.NoError(t, err)
+	assert.Empty(t, pruned)
 }
