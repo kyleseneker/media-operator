@@ -48,6 +48,26 @@ rules:
 - apiGroups:
   - media-operator.dev
   resources:
+  - autobrrconfigs/finalizers
+  - bazarrconfigs/finalizers
+  - flaresolverrconfigs/finalizers
+  - jellyfinconfigs/finalizers
+  - lidarrconfigs/finalizers
+  - maintainerrconfigs/finalizers
+  - plexconfigs/finalizers
+  - prowlarrconfigs/finalizers
+  - qbittorrentconfigs/finalizers
+  - radarrconfigs/finalizers
+  - readarrconfigs/finalizers
+  - sabnzbdconfigs/finalizers
+  - seerrconfigs/finalizers
+  - sonarrconfigs/finalizers
+  - tdarrconfigs/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - media-operator.dev
+  resources:
   - autobrrconfigs/status
   - bazarrconfigs/status
   - flaresolverrconfigs/status

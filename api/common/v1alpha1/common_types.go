@@ -21,6 +21,14 @@ type ReconcileConfig struct {
 	// Default: false (only create/update, never delete).
 	// +optional
 	Prune *bool `json:"prune,omitempty"`
+
+	// deletionPolicy controls what happens to resources in the app when this CR
+	// is deleted. "orphan" leaves them in place, "delete" removes the resources
+	// the operator created.
+	// Default: orphan.
+	// +kubebuilder:validation:Enum=orphan;delete
+	// +optional
+	DeletionPolicy *string `json:"deletionPolicy,omitempty"`
 }
 
 // SecretKeyRef references a key within a Kubernetes Secret.

@@ -34,6 +34,7 @@ type BazarrConfigReconciler struct {
 
 // +kubebuilder:rbac:groups=media-operator.dev,resources=bazarrconfigs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=media-operator.dev,resources=bazarrconfigs/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=media-operator.dev,resources=bazarrconfigs/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
 func (r *BazarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -42,6 +43,21 @@ func (r *BazarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	var config servarrv1alpha1.BazarrConfig
 	if err := r.Get(ctx, req.NamespacedName, &config); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	if !config.GetDeletionTimestamp().IsZero() {
+		handled, derr := ctrlcommon.HandleDeletion(ctx, r.Client, r.Recorder, &config, nil)
+		if derr != nil {
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		if handled {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, nil
+	}
+
+	if err := ctrlcommon.EnsureFinalizer(ctx, r.Client, &config); err != nil {
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	// Resolve API key

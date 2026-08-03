@@ -168,6 +168,16 @@ spec:
                 description: reconcile configures reconciliation behavior (e.g., sync
                   interval).
                 properties:
+                  deletionPolicy:
+                    description: |-
+                      deletionPolicy controls what happens to resources in the app when this CR
+                      is deleted. "orphan" leaves them in place, "delete" removes the resources
+                      the operator created.
+                      Default: orphan.
+                    enum:
+                    - orphan
+                    - delete
+                    type: string
                   interval:
                     description: |-
                       interval overrides the default reconciliation interval (default: 5m).

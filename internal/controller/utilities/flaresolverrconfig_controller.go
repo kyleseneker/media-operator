@@ -26,6 +26,7 @@ type FlareSolverrConfigReconciler struct {
 
 // +kubebuilder:rbac:groups=media-operator.dev,resources=flaresolverrconfigs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=media-operator.dev,resources=flaresolverrconfigs/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=media-operator.dev,resources=flaresolverrconfigs/finalizers,verbs=update
 
 func (r *FlareSolverrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -33,6 +34,21 @@ func (r *FlareSolverrConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 	var config utilitiesv1alpha1.FlareSolverrConfig
 	if err := r.Get(ctx, req.NamespacedName, &config); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	if !config.GetDeletionTimestamp().IsZero() {
+		handled, derr := ctrlcommon.HandleDeletion(ctx, r.Client, r.Recorder, &config, nil)
+		if derr != nil {
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		if handled {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, nil
+	}
+
+	if err := ctrlcommon.EnsureFinalizer(ctx, r.Client, &config); err != nil {
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
