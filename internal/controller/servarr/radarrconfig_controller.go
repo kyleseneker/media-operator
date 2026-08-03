@@ -13,8 +13,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	servarrv1alpha1 "github.com/kyleseneker/media-operator/api/servarr/v1alpha1"
-	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	servarrclient "github.com/kyleseneker/media-operator/internal/client/servarr"
+	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/engine"
 	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
@@ -63,6 +63,24 @@ func (r *RadarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
+	indexers, err := ctrlcommon.ResolveIndexerSecrets(ctx, r.Client, config.Namespace, config.Spec.Indexers)
+	if err != nil {
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+
+	notifications, err := ctrlcommon.ResolveNotificationSecrets(ctx, r.Client, config.Namespace, config.Spec.Notifications)
+	if err != nil {
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+
+	importLists, err := ctrlcommon.ResolveImportListSecrets(ctx, r.Client, config.Namespace, config.Spec.ImportLists)
+	if err != nil {
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+
 	result, err := servarrclient.ReconcileServarr(ctx, hc, "v3", config.Spec, servarrclient.ServarrOptions{
 		RootFolders:     config.Spec.RootFolders,
 		DownloadClients: config.Spec.DownloadClients,
@@ -71,9 +89,9 @@ func (r *RadarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		QualityProfiles: config.Spec.QualityProfiles,
 		CustomFormats:   config.Spec.CustomFormats,
 		Tags:            config.Spec.Tags,
-		Indexers:        config.Spec.Indexers,
-		Notifications:   config.Spec.Notifications,
-		ImportLists:     config.Spec.ImportLists,
+		Indexers:        indexers,
+		Notifications:   notifications,
+		ImportLists:     importLists,
 	}, ctrlcommon.PruneEnabled(config.Spec.Reconcile))
 	if err != nil {
 		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, err.Error())
@@ -92,7 +110,7 @@ func (r *RadarrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return ctrlcommon.FindConfigsBySecret(ctx, r.Client, obj, &servarrv1alpha1.RadarrConfigList{}, func(list *servarrv1alpha1.RadarrConfigList) []reconcile.Request {
 				var reqs []reconcile.Request
 				for _, c := range list.Items {
-					if c.Spec.Connection.APIKeySecretRef.Name == obj.GetName() || ctrlcommon.DownloadClientReferencesSecret(c.Spec.DownloadClients, obj.GetName()) {
+					if c.Spec.Connection.APIKeySecretRef.Name == obj.GetName() || ctrlcommon.DownloadClientReferencesSecret(c.Spec.DownloadClients, obj.GetName()) || ctrlcommon.ListsReferenceSecret(c.Spec.Indexers, c.Spec.Notifications, c.Spec.ImportLists, obj.GetName()) {
 						reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&c)})
 					}
 				}

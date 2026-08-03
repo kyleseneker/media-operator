@@ -138,9 +138,13 @@ type ProwlarrField struct {
 	// +required
 	Name string `json:"name"`
 
-	// value is the field value. Use "ENV:VAR_NAME" convention for secret references.
+	// value is the field value.
 	// +optional
 	Value *string `json:"value,omitempty"`
+
+	// valueFrom sources the field value from a Secret. Mutually exclusive with value.
+	// +optional
+	ValueFrom *commonv1alpha1.SecretKeyRef `json:"valueFrom,omitempty"`
 }
 
 // ProwlarrProxy defines a proxy configuration for Prowlarr.

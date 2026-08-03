@@ -76,6 +76,10 @@ type ConfigField struct {
 	// value is the field value. Can be a string, number, or boolean.
 	// +optional
 	Value *FieldValue `json:"value,omitempty"`
+
+	// valueFrom sources the field value from a Secret. Mutually exclusive with value.
+	// +optional
+	ValueFrom *SecretKeyRef `json:"valueFrom,omitempty"`
 }
 
 // FieldValue wraps a value that can be a string, int, or bool.

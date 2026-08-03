@@ -14,8 +14,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	servarrv1alpha1 "github.com/kyleseneker/media-operator/api/servarr/v1alpha1"
-	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	prowlarrclient "github.com/kyleseneker/media-operator/internal/client/prowlarr"
+	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/engine"
 	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
@@ -67,10 +67,21 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
+	indexers := make([]servarrv1alpha1.ProwlarrIndexer, len(config.Spec.Indexers))
+	copy(indexers, config.Spec.Indexers)
+	for i := range indexers {
+		f, ferr := ctrlcommon.ResolveProwlarrFields(ctx, r.Client, config.Namespace, "indexer "+indexers[i].Name, indexers[i].Fields)
+		if ferr != nil {
+			ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSecretNotFound, ferr.Error())
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		indexers[i].Fields = f
+	}
+
 	resources := prowlarrclient.ProwlarrResources(prowlarrclient.ProwlarrOptions{
 		Tags:            config.Spec.Tags,
 		Applications:    apps,
-		Indexers:        config.Spec.Indexers,
+		Indexers:        indexers,
 		Proxies:         config.Spec.Proxies,
 		DownloadClients: config.Spec.DownloadClients,
 		Notifications:   config.Spec.Notifications,

@@ -146,6 +146,20 @@ spec:
                                   description: value is the field value. Can be a
                                     string, number, or boolean.
                                   x-kubernetes-preserve-unknown-fields: true
+                                valueFrom:
+                                  description: valueFrom sources the field value from
+                                    a Secret. Mutually exclusive with value.
+                                  properties:
+                                    key:
+                                      description: key is the key within the Secret.
+                                      type: string
+                                    name:
+                                      description: name is the name of the Secret.
+                                      type: string
+                                  required:
+                                  - key
+                                  - name
+                                  type: object
                               required:
                               - name
                               type: object
@@ -245,6 +259,20 @@ spec:
                             description: value is the field value. Can be a string,
                               number, or boolean.
                             x-kubernetes-preserve-unknown-fields: true
+                          valueFrom:
+                            description: valueFrom sources the field value from a
+                              Secret. Mutually exclusive with value.
+                            properties:
+                              key:
+                                description: key is the key within the Secret.
+                                type: string
+                              name:
+                                description: name is the name of the Secret.
+                                type: string
+                            required:
+                            - key
+                            - name
+                            type: object
                         required:
                         - name
                         type: object
@@ -369,6 +397,20 @@ spec:
                             description: value is the field value. Can be a string,
                               number, or boolean.
                             x-kubernetes-preserve-unknown-fields: true
+                          valueFrom:
+                            description: valueFrom sources the field value from a
+                              Secret. Mutually exclusive with value.
+                            properties:
+                              key:
+                                description: key is the key within the Secret.
+                                type: string
+                              name:
+                                description: name is the name of the Secret.
+                                type: string
+                            required:
+                            - key
+                            - name
+                            type: object
                         required:
                         - name
                         type: object
@@ -491,6 +533,20 @@ spec:
                             description: value is the field value. Can be a string,
                               number, or boolean.
                             x-kubernetes-preserve-unknown-fields: true
+                          valueFrom:
+                            description: valueFrom sources the field value from a
+                              Secret. Mutually exclusive with value.
+                            properties:
+                              key:
+                                description: key is the key within the Secret.
+                                type: string
+                              name:
+                                description: name is the name of the Secret.
+                                type: string
+                            required:
+                            - key
+                            - name
+                            type: object
                         required:
                         - name
                         type: object
@@ -666,6 +722,20 @@ spec:
                             description: value is the field value. Can be a string,
                               number, or boolean.
                             x-kubernetes-preserve-unknown-fields: true
+                          valueFrom:
+                            description: valueFrom sources the field value from a
+                              Secret. Mutually exclusive with value.
+                            properties:
+                              key:
+                                description: key is the key within the Secret.
+                                type: string
+                              name:
+                                description: name is the name of the Secret.
+                                type: string
+                            required:
+                            - key
+                            - name
+                            type: object
                         required:
                         - name
                         type: object

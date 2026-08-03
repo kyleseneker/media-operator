@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
+	servarrv1alpha1 "github.com/kyleseneker/media-operator/api/servarr/v1alpha1"
 	servarrclient "github.com/kyleseneker/media-operator/internal/client/servarr"
 	"github.com/kyleseneker/media-operator/internal/engine"
 	"github.com/kyleseneker/media-operator/internal/reconciler"
@@ -124,6 +126,141 @@ func ResolveDownloadClientSecrets(ctx context.Context, c client.Reader, namespac
 		resolved[dc.Name] = s
 	}
 	return resolved, nil
+}
+
+// ResolveConfigFields returns a copy of fields with any valueFrom reference
+// resolved into a literal value, so secrets stay out of the CR.
+func ResolveConfigFields(ctx context.Context, c client.Reader, namespace, owner string, fields []commonv1alpha1.ConfigField) ([]commonv1alpha1.ConfigField, error) {
+	if len(fields) == 0 {
+		return fields, nil
+	}
+	out := make([]commonv1alpha1.ConfigField, len(fields))
+	copy(out, fields)
+	for i := range out {
+		if out[i].ValueFrom == nil {
+			continue
+		}
+		if out[i].Value != nil {
+			return nil, fmt.Errorf("%s field %q: value and valueFrom are mutually exclusive", owner, out[i].Name)
+		}
+		val, err := reconciler.ResolveSecretKeyRef(ctx, c, namespace, *out[i].ValueFrom)
+		if err != nil {
+			return nil, fmt.Errorf("%s field %q: %w", owner, out[i].Name, err)
+		}
+		raw, err := json.Marshal(val)
+		if err != nil {
+			return nil, fmt.Errorf("%s field %q: encoding secret value: %w", owner, out[i].Name, err)
+		}
+		out[i].Value = &commonv1alpha1.FieldValue{Raw: raw}
+		out[i].ValueFrom = nil
+	}
+	return out, nil
+}
+
+// ResolveIndexerSecrets returns indexers with their field secret references resolved.
+func ResolveIndexerSecrets(ctx context.Context, c client.Reader, namespace string, in []commonv1alpha1.Indexer) ([]commonv1alpha1.Indexer, error) {
+	out := make([]commonv1alpha1.Indexer, len(in))
+	copy(out, in)
+	for i := range out {
+		f, err := ResolveConfigFields(ctx, c, namespace, "indexer "+out[i].Name, out[i].Fields)
+		if err != nil {
+			return nil, err
+		}
+		out[i].Fields = f
+	}
+	return out, nil
+}
+
+// ResolveNotificationSecrets returns notifications with their field secret references resolved.
+func ResolveNotificationSecrets(ctx context.Context, c client.Reader, namespace string, in []commonv1alpha1.Notification) ([]commonv1alpha1.Notification, error) {
+	out := make([]commonv1alpha1.Notification, len(in))
+	copy(out, in)
+	for i := range out {
+		f, err := ResolveConfigFields(ctx, c, namespace, "notification "+out[i].Name, out[i].Fields)
+		if err != nil {
+			return nil, err
+		}
+		out[i].Fields = f
+	}
+	return out, nil
+}
+
+// ResolveImportListSecrets returns import lists with their field secret references resolved.
+func ResolveImportListSecrets(ctx context.Context, c client.Reader, namespace string, in []commonv1alpha1.ImportList) ([]commonv1alpha1.ImportList, error) {
+	out := make([]commonv1alpha1.ImportList, len(in))
+	copy(out, in)
+	for i := range out {
+		f, err := ResolveConfigFields(ctx, c, namespace, "import list "+out[i].Name, out[i].Fields)
+		if err != nil {
+			return nil, err
+		}
+		out[i].Fields = f
+	}
+	return out, nil
+}
+
+// ResolveProwlarrFields returns a copy of fields with any valueFrom reference resolved.
+func ResolveProwlarrFields(ctx context.Context, c client.Reader, namespace, owner string, fields []servarrv1alpha1.ProwlarrField) ([]servarrv1alpha1.ProwlarrField, error) {
+	if len(fields) == 0 {
+		return fields, nil
+	}
+	out := make([]servarrv1alpha1.ProwlarrField, len(fields))
+	copy(out, fields)
+	for i := range out {
+		if out[i].ValueFrom == nil {
+			continue
+		}
+		if out[i].Value != nil {
+			return nil, fmt.Errorf("%s field %q: value and valueFrom are mutually exclusive", owner, out[i].Name)
+		}
+		val, err := reconciler.ResolveSecretKeyRef(ctx, c, namespace, *out[i].ValueFrom)
+		if err != nil {
+			return nil, fmt.Errorf("%s field %q: %w", owner, out[i].Name, err)
+		}
+		out[i].Value = &val
+		out[i].ValueFrom = nil
+	}
+	return out, nil
+}
+
+// ProwlarrFieldsReferenceSecret returns true if any field sources from the named secret.
+func ProwlarrFieldsReferenceSecret(fields []servarrv1alpha1.ProwlarrField, secretName string) bool {
+	for _, f := range fields {
+		if f.ValueFrom != nil && f.ValueFrom.Name == secretName {
+			return true
+		}
+	}
+	return false
+}
+
+// ListsReferenceSecret returns true if any indexer, notification or import list sources from the named secret.
+func ListsReferenceSecret(indexers []commonv1alpha1.Indexer, notifications []commonv1alpha1.Notification, importLists []commonv1alpha1.ImportList, secretName string) bool {
+	for _, x := range indexers {
+		if ConfigFieldsReferenceSecret(x.Fields, secretName) {
+			return true
+		}
+	}
+	for _, x := range notifications {
+		if ConfigFieldsReferenceSecret(x.Fields, secretName) {
+			return true
+		}
+	}
+	for _, x := range importLists {
+		if ConfigFieldsReferenceSecret(x.Fields, secretName) {
+			return true
+		}
+	}
+	return false
+}
+
+// ConfigFieldsReferenceSecret returns true if any field sources from the named secret.
+func ConfigFieldsReferenceSecret(fields []commonv1alpha1.ConfigField, secretName string) bool {
+	for _, f := range fields {
+		if f.ValueFrom != nil && f.ValueFrom.Name == secretName {
+			return true
+		}
+	}
+	return false
 }
 
 // DownloadClientReferencesSecret returns true if any download client references the named secret.
