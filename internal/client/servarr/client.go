@@ -621,9 +621,50 @@ func ReconcileServarr(ctx context.Context, client *engine.HTTPClient, apiVersion
 	if err != nil {
 		return engine.ReconcileResult{}, fmt.Errorf("building sections: %w", err)
 	}
-	resources, err := ServarrResources(ctx, client, apiVersion, opts)
+	// Quality profiles reference custom formats by ID, and import lists reference
+	// quality profiles by ID. Those IDs only exist once the referenced resources
+	// have been written, so each dependent stage resolves after the prior apply
+	// rather than all at once up front.
+	base := opts
+	base.QualityProfiles = nil
+	base.ImportLists = nil
+	resources, err := ServarrResources(ctx, client, apiVersion, base)
 	if err != nil {
 		return engine.ReconcileResult{}, fmt.Errorf("building resources: %w", err)
 	}
-	return engine.ReconcileApp(ctx, client, def, sections, resources, prune, managed), nil
+	result := engine.ReconcileApp(ctx, client, def, sections, resources, prune, managed)
+
+	if len(opts.QualityProfiles) > 0 {
+		stage := ServarrOptions{QualityProfiles: opts.QualityProfiles}
+		qpRes, qerr := ServarrResources(ctx, client, apiVersion, stage)
+		if qerr != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("qualityProfiles: %v", qerr))
+		} else {
+			mergeResult(&result, engine.ReconcileApp(ctx, client, def, nil, qpRes, prune, managed))
+		}
+	}
+
+	if len(opts.ImportLists) > 0 {
+		stage := ServarrOptions{ImportLists: opts.ImportLists}
+		ilRes, ierr := ServarrResources(ctx, client, apiVersion, stage)
+		if ierr != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("importLists: %v", ierr))
+		} else {
+			mergeResult(&result, engine.ReconcileApp(ctx, client, def, nil, ilRes, prune, managed))
+		}
+	}
+
+	return result, nil
+}
+
+func mergeResult(dst *engine.ReconcileResult, src engine.ReconcileResult) {
+	dst.Synced = append(dst.Synced, src.Synced...)
+	dst.Errors = append(dst.Errors, src.Errors...)
+	dst.Pruned = append(dst.Pruned, src.Pruned...)
+	if dst.Managed == nil {
+		dst.Managed = map[string][]string{}
+	}
+	for k, v := range src.Managed {
+		dst.Managed[k] = append(dst.Managed[k], v...)
+	}
 }
