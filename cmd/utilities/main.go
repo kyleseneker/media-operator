@@ -30,6 +30,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -76,6 +77,7 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var enableControllers string
+	var watchNamespace string
 	var disableControllers string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8443", "The address the metrics endpoint binds to. "+
@@ -99,6 +101,8 @@ func main() {
 		"Comma-separated list of controllers to enable (e.g., flaresolverr). Use * for all.")
 	flag.StringVar(&disableControllers, "disable-controllers", "",
 		"Comma-separated list of controllers to disable (applied after --enable-controllers).")
+	flag.StringVar(&watchNamespace, "watch-namespace", "",
+		"Namespace to watch for custom resources. Empty means all namespaces.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -158,6 +162,12 @@ func main() {
 		metricsServerOptions.KeyName = metricsCertKey
 	}
 
+	cacheOptions := cache.Options{}
+	if watchNamespace != "" {
+		cacheOptions.DefaultNamespaces = map[string]cache.Config{watchNamespace: {}}
+		setupLog.Info("Watching a single namespace", "namespace", watchNamespace)
+	}
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
@@ -165,6 +175,7 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "media-operator-utilities.media-operator.dev",
+		Cache:                  cacheOptions,
 	})
 	if err != nil {
 		setupLog.Error(err, "Failed to start manager")
