@@ -26,6 +26,10 @@ func MergeDesiredOverCurrent(current map[string]interface{}, desired interface{}
 
 	// Overlay desired fields onto current
 	for k, v := range desiredMap {
+		if existing, ok := merged[k]; ok {
+			merged[k] = mergeValue(existing, v)
+			continue
+		}
 		merged[k] = v
 	}
 
@@ -33,6 +37,75 @@ func MergeDesiredOverCurrent(current map[string]interface{}, desired interface{}
 	changed := !reflect.DeepEqual(current, merged)
 
 	return merged, changed, nil
+}
+
+// mergeValue recurses into nested objects and into arrays of named objects,
+// so a partial "fields" array does not discard entries the CR omitted.
+func mergeValue(current, desired interface{}) interface{} {
+	curMap, curIsMap := current.(map[string]interface{})
+	desMap, desIsMap := desired.(map[string]interface{})
+	if curIsMap && desIsMap {
+		out := deepCopyMap(curMap)
+		for k, v := range desMap {
+			if existing, ok := out[k]; ok {
+				out[k] = mergeValue(existing, v)
+				continue
+			}
+			out[k] = v
+		}
+		return out
+	}
+
+	curSlice, curIsSlice := current.([]interface{})
+	desSlice, desIsSlice := desired.([]interface{})
+	if curIsSlice && desIsSlice && isNamedObjectSlice(curSlice) && isNamedObjectSlice(desSlice) {
+		return mergeNamedObjectSlice(curSlice, desSlice)
+	}
+
+	return desired
+}
+
+func isNamedObjectSlice(s []interface{}) bool {
+	if len(s) == 0 {
+		return false
+	}
+	for _, e := range s {
+		m, ok := e.(map[string]interface{})
+		if !ok {
+			return false
+		}
+		if _, ok := m["name"].(string); !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func mergeNamedObjectSlice(current, desired []interface{}) []interface{} {
+	out := deepCopySlice(current)
+	index := make(map[string]int, len(out))
+	for i, e := range out {
+		if m, ok := e.(map[string]interface{}); ok {
+			if name, ok := m["name"].(string); ok {
+				index[name] = i
+			}
+		}
+	}
+
+	for _, e := range desired {
+		m, ok := e.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		name, _ := m["name"].(string)
+		if i, found := index[name]; found {
+			out[i] = mergeValue(out[i], m)
+			continue
+		}
+		out = append(out, e)
+	}
+
+	return out
 }
 
 func deepCopyMap(m map[string]interface{}) map[string]interface{} {
