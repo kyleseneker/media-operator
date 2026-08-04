@@ -37,7 +37,7 @@ func (c *Client) IsSetupComplete(ctx context.Context) (bool, error) {
 // RunSetupWizard drives the Jellyfin first-time setup wizard to completion.
 func (c *Client) RunSetupWizard(ctx context.Context, username, password, serverName, metadataLang, countryCode string) error {
 	// Step 1: Set initial user.
-	userPayload := map[string]interface{}{
+	userPayload := map[string]any{
 		"Name":     username,
 		"Password": password,
 	}
@@ -46,7 +46,7 @@ func (c *Client) RunSetupWizard(ctx context.Context, username, password, serverN
 	}
 
 	// Step 2: Set server configuration.
-	configPayload := map[string]interface{}{
+	configPayload := map[string]any{
 		"MetadataCountryCode":       countryCode,
 		"PreferredMetadataLanguage": metadataLang,
 		"UICulture":                 metadataLang,
@@ -56,7 +56,7 @@ func (c *Client) RunSetupWizard(ctx context.Context, username, password, serverN
 	}
 
 	// Step 3: Configure remote access.
-	remotePayload := map[string]interface{}{
+	remotePayload := map[string]any{
 		"EnableRemoteAccess":         true,
 		"EnableAutomaticPortMapping": false,
 	}
@@ -74,7 +74,7 @@ func (c *Client) RunSetupWizard(ctx context.Context, username, password, serverN
 
 // Authenticate logs in with username/password and stores the access token.
 func (c *Client) Authenticate(ctx context.Context, username, password string) error {
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"Username": username,
 		"Pw":       password,
 	}
@@ -82,7 +82,7 @@ func (c *Client) Authenticate(ctx context.Context, username, password string) er
 	if err != nil {
 		return fmt.Errorf("authenticating: %w", err)
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(data, &result); err != nil {
 		return fmt.Errorf("unmarshaling auth response: %w", err)
 	}
@@ -95,22 +95,22 @@ func (c *Client) Authenticate(ctx context.Context, username, password string) er
 }
 
 // GetConfig fetches a configuration resource by path.
-func (c *Client) GetConfig(ctx context.Context, path string) (map[string]interface{}, error) {
+func (c *Client) GetConfig(ctx context.Context, path string) (map[string]any, error) {
 	return c.hc.GetJSON(ctx, path)
 }
 
 // PostConfig sends a configuration payload to the given path.
-func (c *Client) PostConfig(ctx context.Context, path string, payload map[string]interface{}) error {
+func (c *Client) PostConfig(ctx context.Context, path string, payload map[string]any) error {
 	return c.hc.PostJSON(ctx, path, payload)
 }
 
 // ListLibraries returns all virtual folder (library) entries.
-func (c *Client) ListLibraries(ctx context.Context) ([]map[string]interface{}, error) {
+func (c *Client) ListLibraries(ctx context.Context) ([]map[string]any, error) {
 	return c.hc.GetJSONList(ctx, "/Library/VirtualFolders")
 }
 
 // CreateLibrary adds a new virtual folder (library).
-func (c *Client) CreateLibrary(ctx context.Context, name, collectionType string, libraryOptions map[string]interface{}) error {
+func (c *Client) CreateLibrary(ctx context.Context, name, collectionType string, libraryOptions map[string]any) error {
 	params := url.Values{}
 	params.Set("name", name)
 	params.Set("collectionType", collectionType)

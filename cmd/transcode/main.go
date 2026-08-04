@@ -64,7 +64,14 @@ type controllerSetup interface {
 // allControllers defines every available controller.
 var allControllers = []controllerFactory{
 	{name: "tdarr", setup: func(mgr ctrl.Manager) controllerSetup {
-		return &transcode.TdarrConfigReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Recorder: mgr.GetEventRecorderFor("tdarr-controller")}
+		return &transcode.TdarrConfigReconciler{
+
+			Client: mgr.GetClient(),
+
+			Scheme: mgr.GetScheme(),
+
+			Recorder: mgr.GetEventRecorderFor("tdarr-controller"),
+		}
 	}},
 }
 
@@ -229,7 +236,7 @@ func resolveEnabledControllers(enable, disable string) map[string]bool {
 			known[name] = true
 		}
 	} else {
-		for _, name := range strings.Split(enable, ",") {
+		for name := range strings.SplitSeq(enable, ",") {
 			name = strings.TrimSpace(name)
 			if name != "" {
 				known[name] = true
@@ -238,7 +245,7 @@ func resolveEnabledControllers(enable, disable string) map[string]bool {
 	}
 
 	// Apply disable list
-	for _, name := range strings.Split(disable, ",") {
+	for name := range strings.SplitSeq(disable, ",") {
 		name = strings.TrimSpace(name)
 		if name != "" {
 			known[name] = false

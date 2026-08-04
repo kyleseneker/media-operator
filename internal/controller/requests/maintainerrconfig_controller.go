@@ -41,19 +41,8 @@ func (r *MaintainerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if !config.GetDeletionTimestamp().IsZero() {
-		handled, derr := ctrlcommon.HandleDeletion(ctx, r.Client, r.Recorder, &config, nil)
-		if derr != nil {
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-		}
-		if handled {
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, nil
-	}
-
-	if err := ctrlcommon.EnsureFinalizer(ctx, r.Client, &config); err != nil {
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, nil); done {
+		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
 	// Resolve API key
@@ -149,7 +138,7 @@ func reconcileMaintainerrPlex(ctx context.Context, c client.Reader, mc *maintain
 		return fmt.Errorf("resolving Plex token: %w", err)
 	}
 
-	return mc.UpdatePlexSettings(ctx, map[string]interface{}{
+	return mc.UpdatePlexSettings(ctx, map[string]any{
 		"url":   plex.URL,
 		"token": token,
 	})
@@ -161,7 +150,7 @@ func reconcileMaintainerrArr(ctx context.Context, c client.Reader, mc *maintaine
 		return fmt.Errorf("resolving %s API key: %w", appType, err)
 	}
 
-	settings := map[string]interface{}{
+	settings := map[string]any{
 		"url":    conn.URL,
 		"apiKey": apiKey,
 	}
@@ -179,7 +168,7 @@ func reconcileMaintainerrArr(ctx context.Context, c client.Reader, mc *maintaine
 }
 
 func reconcileMaintainerrSettings(ctx context.Context, mc *maintainerrclient.Client, settings *requestsv1alpha1.MaintainerrSettings) error {
-	obj := make(map[string]interface{})
+	obj := make(map[string]any)
 	if settings.CollectionHandling != "" {
 		obj["collectionHandling"] = settings.CollectionHandling
 	}
@@ -198,7 +187,7 @@ func reconcileMaintainerrRule(ctx context.Context, mc *maintainerrclient.Client,
 		return fmt.Errorf("listing rules: %w", err)
 	}
 
-	obj := map[string]interface{}{
+	obj := map[string]any{
 		"name":        rule.Name,
 		"enabled":     rule.Enable == nil || *rule.Enable,
 		"libraryName": rule.LibraryName,
@@ -211,9 +200,9 @@ func reconcileMaintainerrRule(ctx context.Context, mc *maintainerrclient.Client,
 
 	// Build conditions
 	if len(rule.Conditions) > 0 {
-		conditions := make([]map[string]interface{}, 0, len(rule.Conditions))
+		conditions := make([]map[string]any, 0, len(rule.Conditions))
 		for _, cond := range rule.Conditions {
-			conditions = append(conditions, map[string]interface{}{
+			conditions = append(conditions, map[string]any{
 				"field":    cond.Field,
 				"operator": cond.Operator,
 				"value":    cond.Value,

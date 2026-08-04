@@ -87,7 +87,7 @@ func TestResolveTLSConfig_CASecret(t *testing.T) {
 	_ = corev1.AddToScheme(scheme)
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: "tls-ca", Namespace: "default"},
-		Data:       map[string][]byte{"ca.crt": []byte(caPEM)},
+		Data:       map[string][]byte{"ca.crt": caPEM},
 	}
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(secret).Build()
 

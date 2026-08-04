@@ -64,7 +64,7 @@ func (r *ReconcileResult) Message() string {
 // `sections` maps setting endpoint names to their desired state (Go structs).
 // `resources` maps resource endpoint names to slices of desired resource objects.
 // `prune` enables deletion of unmanaged resources for prunable resource types.
-func ReconcileApp(ctx context.Context, client *HTTPClient, def AppDefinition, sections map[string]interface{}, resources map[string][]map[string]interface{}, prune bool, previouslyManaged map[string][]string) ReconcileResult {
+func ReconcileApp(ctx context.Context, client *HTTPClient, def AppDefinition, sections map[string]any, resources map[string][]map[string]any, prune bool, previouslyManaged map[string][]string) ReconcileResult {
 	logger := log.FromContext(ctx)
 	result := ReconcileResult{Managed: map[string][]string{}}
 
@@ -89,7 +89,7 @@ func ReconcileApp(ctx context.Context, client *HTTPClient, def AppDefinition, se
 		if !ok || len(items) == 0 {
 			continue
 		}
-		var applied []map[string]interface{}
+		var applied []map[string]any
 		for _, item := range items {
 			if err := reconcileResource(ctx, client, r, item); err != nil {
 				matchVal := item[r.MatchField]
@@ -126,7 +126,7 @@ func ReconcileApp(ctx context.Context, client *HTTPClient, def AppDefinition, se
 // pruneResources deletes any existing resources not present in the desired list.
 // Returns the list of successfully pruned resources for event emission.
 // Refuses to prune if the number of candidates exceeds DefaultMaxPruneCount.
-func pruneResources(ctx context.Context, client *HTTPClient, endpoint ResourceEndpoint, desired []map[string]interface{}, previouslyManaged []string) ([]PrunedResource, error) {
+func pruneResources(ctx context.Context, client *HTTPClient, endpoint ResourceEndpoint, desired []map[string]any, previouslyManaged []string) ([]PrunedResource, error) {
 	if len(previouslyManaged) == 0 {
 		return nil, nil
 	}
@@ -193,7 +193,7 @@ func pruneResources(ctx context.Context, client *HTTPClient, endpoint ResourceEn
 }
 
 // reconcileSetting handles a singleton config endpoint: GET, merge, PUT.
-func reconcileSetting(ctx context.Context, client *HTTPClient, path string, desired interface{}) error {
+func reconcileSetting(ctx context.Context, client *HTTPClient, path string, desired any) error {
 	current, err := client.GetJSON(ctx, path)
 	if err != nil {
 		return fmt.Errorf("getting current: %w", err)
@@ -216,7 +216,7 @@ func reconcileSetting(ctx context.Context, client *HTTPClient, path string, desi
 }
 
 // reconcileResource handles a list-based resource endpoint.
-func reconcileResource(ctx context.Context, client *HTTPClient, endpoint ResourceEndpoint, desired map[string]interface{}) error {
+func reconcileResource(ctx context.Context, client *HTTPClient, endpoint ResourceEndpoint, desired map[string]any) error {
 	existing, err := client.GetJSONList(ctx, endpoint.Path)
 	if err != nil {
 		return fmt.Errorf("listing: %w", err)
@@ -252,7 +252,7 @@ func reconcileResource(ctx context.Context, client *HTTPClient, endpoint Resourc
 	return client.PostJSON(ctx, endpoint.Path, desired)
 }
 
-func isNilInterface(v interface{}) bool {
+func isNilInterface(v any) bool {
 	if v == nil {
 		return true
 	}

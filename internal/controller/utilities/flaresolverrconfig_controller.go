@@ -36,19 +36,8 @@ func (r *FlareSolverrConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if !config.GetDeletionTimestamp().IsZero() {
-		handled, derr := ctrlcommon.HandleDeletion(ctx, r.Client, r.Recorder, &config, nil)
-		if derr != nil {
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-		}
-		if handled {
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, nil
-	}
-
-	if err := ctrlcommon.EnsureFinalizer(ctx, r.Client, &config); err != nil {
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, nil); done {
+		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
 	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)

@@ -42,17 +42,17 @@ func ServarrDefinition(apiVersion string) engine.AppDefinition {
 
 // ServarrSections builds the sections map from a spec that follows the Servarr pattern.
 // The spec must have the fields: MediaManagement, Naming, IndexerConfig, DownloadClientConfig, UI.
-func ServarrSections(spec interface{}) (map[string]interface{}, error) {
+func ServarrSections(spec any) (map[string]any, error) {
 	data, err := json.Marshal(spec)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling spec to JSON: %w", err)
 	}
-	var m map[string]interface{}
+	var m map[string]any
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("unmarshaling spec from JSON: %w", err)
 	}
 
-	sections := make(map[string]interface{})
+	sections := make(map[string]any)
 	fieldMap := map[string]string{
 		"mediaManagement":      "mediaManagement",
 		"naming":               "naming",
@@ -90,27 +90,27 @@ type ServarrOptions struct {
 }
 
 // ServarrResources builds the resources map from the options.
-func ServarrResources(ctx context.Context, client *engine.HTTPClient, apiVersion string, opts ServarrOptions) (map[string][]map[string]interface{}, error) {
-	resources := make(map[string][]map[string]interface{})
+func ServarrResources(ctx context.Context, client *engine.HTTPClient, apiVersion string, opts ServarrOptions) (map[string][]map[string]any, error) {
+	resources := make(map[string][]map[string]any)
 
 	if len(opts.Tags) > 0 {
-		var tags []map[string]interface{}
+		tags := make([]map[string]any, 0, len(opts.Tags))
 		for _, t := range opts.Tags {
-			tags = append(tags, map[string]interface{}{"label": t.Label})
+			tags = append(tags, map[string]any{"label": t.Label})
 		}
 		resources["tags"] = tags
 	}
 
 	if len(opts.RootFolders) > 0 {
-		var rfs []map[string]interface{}
+		rfs := make([]map[string]any, 0, len(opts.RootFolders))
 		for _, rf := range opts.RootFolders {
-			rfs = append(rfs, map[string]interface{}{"path": rf.Path})
+			rfs = append(rfs, map[string]any{"path": rf.Path})
 		}
 		resources["rootFolders"] = rfs
 	}
 
 	if len(opts.DownloadClients) > 0 {
-		var dcs []map[string]interface{}
+		dcs := make([]map[string]any, 0, len(opts.DownloadClients))
 		for _, dc := range opts.DownloadClients {
 			secrets := opts.DCSecrets[dc.Name]
 			dcs = append(dcs, BuildDownloadClientPayload(dc, secrets, opts.CategoryField))
@@ -119,7 +119,7 @@ func ServarrResources(ctx context.Context, client *engine.HTTPClient, apiVersion
 	}
 
 	if len(opts.Indexers) > 0 {
-		var idxs []map[string]interface{}
+		idxs := make([]map[string]any, 0, len(opts.Indexers))
 		for _, idx := range opts.Indexers {
 			idxs = append(idxs, BuildIndexerPayload(idx))
 		}
@@ -127,7 +127,7 @@ func ServarrResources(ctx context.Context, client *engine.HTTPClient, apiVersion
 	}
 
 	if len(opts.CustomFormats) > 0 {
-		var cfs []map[string]interface{}
+		cfs := make([]map[string]any, 0, len(opts.CustomFormats))
 		for _, cf := range opts.CustomFormats {
 			cfs = append(cfs, BuildCustomFormatPayload(cf))
 		}
@@ -140,7 +140,7 @@ func ServarrResources(ctx context.Context, client *engine.HTTPClient, apiVersion
 		if err != nil {
 			return nil, err
 		}
-		var qps []map[string]interface{}
+		var qps []map[string]any
 		for _, qp := range opts.QualityProfiles {
 			qps = append(qps, BuildQualityProfilePayload(qp, cfIDs))
 		}
@@ -148,7 +148,7 @@ func ServarrResources(ctx context.Context, client *engine.HTTPClient, apiVersion
 	}
 
 	if len(opts.Notifications) > 0 {
-		var notifs []map[string]interface{}
+		var notifs []map[string]any
 		for _, n := range opts.Notifications {
 			notifs = append(notifs, BuildNotificationPayload(n))
 		}
@@ -161,7 +161,7 @@ func ServarrResources(ctx context.Context, client *engine.HTTPClient, apiVersion
 		if err != nil {
 			return nil, err
 		}
-		var ils []map[string]interface{}
+		var ils []map[string]any
 		for _, il := range opts.ImportLists {
 			ils = append(ils, BuildImportListPayload(il, qpIDs))
 		}
@@ -178,7 +178,7 @@ func ServarrResources(ctx context.Context, client *engine.HTTPClient, apiVersion
 }
 
 // BuildDownloadClientPayload builds the API payload for a download client.
-func BuildDownloadClientPayload(dc commonv1alpha1.DownloadClient, secrets DownloadClientResolvedSecrets, categoryField string) map[string]interface{} {
+func BuildDownloadClientPayload(dc commonv1alpha1.DownloadClient, secrets DownloadClientResolvedSecrets, categoryField string) map[string]any {
 	enable := dc.Enable == nil || *dc.Enable
 	removeCompleted := dc.RemoveCompletedDownloads == nil || *dc.RemoveCompletedDownloads
 	removeFailed := dc.RemoveFailedDownloads == nil || *dc.RemoveFailedDownloads
@@ -199,7 +199,7 @@ func BuildDownloadClientPayload(dc commonv1alpha1.DownloadClient, secrets Downlo
 	}
 
 	// Build the fields array from first-class fields
-	fields := []map[string]interface{}{
+	fields := []map[string]any{
 		{"name": "host", "value": dc.Host},
 		{"name": "port", "value": dc.Port},
 		{"name": "useSsl", "value": useSsl},
@@ -207,18 +207,18 @@ func BuildDownloadClientPayload(dc commonv1alpha1.DownloadClient, secrets Downlo
 	}
 
 	if dc.UrlBase != "" {
-		fields = append(fields, map[string]interface{}{"name": "urlBase", "value": dc.UrlBase})
+		fields = append(fields, map[string]any{"name": "urlBase", "value": dc.UrlBase})
 	}
 
 	// Add auth fields from resolved secrets
 	if secrets.Username != "" {
-		fields = append(fields, map[string]interface{}{"name": "username", "value": secrets.Username})
+		fields = append(fields, map[string]any{"name": "username", "value": secrets.Username})
 	}
 	if secrets.Password != "" {
-		fields = append(fields, map[string]interface{}{"name": "password", "value": secrets.Password})
+		fields = append(fields, map[string]any{"name": "password", "value": secrets.Password})
 	}
 	if secrets.APIKey != "" {
-		fields = append(fields, map[string]interface{}{"name": "apiKey", "value": secrets.APIKey})
+		fields = append(fields, map[string]any{"name": "apiKey", "value": secrets.APIKey})
 	}
 
 	// Append any additional implementation-specific fields.
@@ -234,19 +234,19 @@ func BuildDownloadClientPayload(dc commonv1alpha1.DownloadClient, secrets Downlo
 			// Users should use the dedicated CRD fields instead.
 			continue
 		}
-		var val interface{}
+		var val any
 		if f.Value != nil {
 			val = f.Value.ToInterface()
 		}
-		fields = append(fields, map[string]interface{}{"name": f.Name, "value": val})
+		fields = append(fields, map[string]any{"name": f.Name, "value": val})
 	}
 
-	tags := make([]interface{}, len(dc.Tags))
+	tags := make([]any, len(dc.Tags))
 	for i, t := range dc.Tags {
 		tags[i] = t
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"name":                     dc.Name,
 		"enable":                   enable,
 		"protocol":                 dc.Protocol,
@@ -261,7 +261,7 @@ func BuildDownloadClientPayload(dc commonv1alpha1.DownloadClient, secrets Downlo
 }
 
 // BuildIndexerPayload builds the API payload for an indexer.
-func BuildIndexerPayload(idx commonv1alpha1.Indexer) map[string]interface{} {
+func BuildIndexerPayload(idx commonv1alpha1.Indexer) map[string]any {
 	enable := idx.Enable == nil || *idx.Enable
 	enableRss := idx.EnableRss == nil || *idx.EnableRss
 	enableAutoSearch := idx.EnableAutomaticSearch == nil || *idx.EnableAutomaticSearch
@@ -275,7 +275,7 @@ func BuildIndexerPayload(idx commonv1alpha1.Indexer) map[string]interface{} {
 	fields := BuildFieldsPayload(idx.Fields)
 	tags := BuildTagsPayload(idx.Tags)
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"name":                    idx.Name,
 		"enable":                  enable,
 		"protocol":                idx.Protocol,
@@ -296,7 +296,7 @@ func BuildIndexerPayload(idx commonv1alpha1.Indexer) map[string]interface{} {
 }
 
 // BuildNotificationPayload builds the API payload for a notification.
-func BuildNotificationPayload(n commonv1alpha1.Notification) map[string]interface{} {
+func BuildNotificationPayload(n commonv1alpha1.Notification) map[string]any {
 	configContract := n.Implementation + "Settings"
 	if n.ConfigContract != "" {
 		configContract = n.ConfigContract
@@ -305,7 +305,7 @@ func BuildNotificationPayload(n commonv1alpha1.Notification) map[string]interfac
 	fields := BuildFieldsPayload(n.Fields)
 	tags := BuildTagsPayload(n.Tags)
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"name":           n.Name,
 		"implementation": n.Implementation,
 		"configContract": configContract,
@@ -339,7 +339,7 @@ func BuildNotificationPayload(n commonv1alpha1.Notification) map[string]interfac
 
 // BuildImportListPayload builds the API payload for an import list.
 // qpIDs maps quality profile names to their IDs.
-func BuildImportListPayload(il commonv1alpha1.ImportList, qpIDs map[string]int) map[string]interface{} {
+func BuildImportListPayload(il commonv1alpha1.ImportList, qpIDs map[string]int) map[string]any {
 	enable := il.Enable == nil || *il.Enable
 
 	configContract := il.Implementation + "Settings"
@@ -350,7 +350,7 @@ func BuildImportListPayload(il commonv1alpha1.ImportList, qpIDs map[string]int) 
 	fields := BuildFieldsPayload(il.Fields)
 	tags := BuildTagsPayload(il.Tags)
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"name":           il.Name,
 		"enable":         enable,
 		"implementation": il.Implementation,
@@ -391,14 +391,14 @@ func BuildImportListPayload(il commonv1alpha1.ImportList, qpIDs map[string]int) 
 }
 
 // BuildFieldsPayload converts ConfigField slice to API fields format.
-func BuildFieldsPayload(dcFields []commonv1alpha1.ConfigField) []map[string]interface{} {
-	fields := make([]map[string]interface{}, len(dcFields))
+func BuildFieldsPayload(dcFields []commonv1alpha1.ConfigField) []map[string]any {
+	fields := make([]map[string]any, len(dcFields))
 	for i, f := range dcFields {
-		var val interface{}
+		var val any
 		if f.Value != nil {
 			val = f.Value.ToInterface()
 		}
-		fields[i] = map[string]interface{}{
+		fields[i] = map[string]any{
 			"name":  f.Name,
 			"value": val,
 		}
@@ -407,8 +407,8 @@ func BuildFieldsPayload(dcFields []commonv1alpha1.ConfigField) []map[string]inte
 }
 
 // BuildTagsPayload converts an int slice to an interface slice for JSON.
-func BuildTagsPayload(tagIDs []int) []interface{} {
-	tags := make([]interface{}, len(tagIDs))
+func BuildTagsPayload(tagIDs []int) []any {
+	tags := make([]any, len(tagIDs))
 	for i, t := range tagIDs {
 		tags[i] = t
 	}
@@ -416,7 +416,7 @@ func BuildTagsPayload(tagIDs []int) []interface{} {
 }
 
 // SetOptionalBool sets a key in the payload only if the pointer is non-nil.
-func SetOptionalBool(payload map[string]interface{}, key string, val *bool) {
+func SetOptionalBool(payload map[string]any, key string, val *bool) {
 	if val != nil {
 		payload[key] = *val
 	}
@@ -442,13 +442,13 @@ func resolveQualityProfileIDs(ctx context.Context, client *engine.HTTPClient, ap
 }
 
 // BuildCustomFormatPayload builds the API payload for a custom format.
-func BuildCustomFormatPayload(cf commonv1alpha1.CustomFormat) map[string]interface{} {
+func BuildCustomFormatPayload(cf commonv1alpha1.CustomFormat) map[string]any {
 	includeWhenRenaming := false
 	if cf.IncludeCustomFormatWhenRenaming != nil {
 		includeWhenRenaming = *cf.IncludeCustomFormatWhenRenaming
 	}
 
-	specs := make([]map[string]interface{}, len(cf.Specifications))
+	specs := make([]map[string]any, len(cf.Specifications))
 	for i, s := range cf.Specifications {
 		negate := false
 		if s.Negate != nil {
@@ -459,19 +459,19 @@ func BuildCustomFormatPayload(cf commonv1alpha1.CustomFormat) map[string]interfa
 			required = *s.Required
 		}
 
-		fields := make([]map[string]interface{}, len(s.Fields))
+		fields := make([]map[string]any, len(s.Fields))
 		for j, f := range s.Fields {
-			var val interface{}
+			var val any
 			if f.Value != nil {
 				val = f.Value.ToInterface()
 			}
-			fields[j] = map[string]interface{}{
+			fields[j] = map[string]any{
 				"name":  f.Name,
 				"value": val,
 			}
 		}
 
-		specs[i] = map[string]interface{}{
+		specs[i] = map[string]any{
 			"name":           s.Name,
 			"implementation": s.Implementation,
 			"negate":         negate,
@@ -480,7 +480,7 @@ func BuildCustomFormatPayload(cf commonv1alpha1.CustomFormat) map[string]interfa
 		}
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"name":                            cf.Name,
 		"includeCustomFormatWhenRenaming": includeWhenRenaming,
 		"specifications":                  specs,
@@ -489,8 +489,8 @@ func BuildCustomFormatPayload(cf commonv1alpha1.CustomFormat) map[string]interfa
 
 // BuildQualityProfilePayload builds the API payload for a quality profile.
 // cfIDs maps custom format names to their IDs for resolving formatItems references.
-func BuildQualityProfilePayload(qp commonv1alpha1.QualityProfile, cfIDs map[string]int) map[string]interface{} {
-	payload := map[string]interface{}{
+func BuildQualityProfilePayload(qp commonv1alpha1.QualityProfile, cfIDs map[string]int) map[string]any {
+	payload := map[string]any{
 		"name": qp.Name,
 	}
 
@@ -520,10 +520,10 @@ func BuildQualityProfilePayload(qp commonv1alpha1.QualityProfile, cfIDs map[stri
 	}
 
 	if len(qp.FormatItems) > 0 {
-		formatItems := make([]map[string]interface{}, 0, len(qp.FormatItems))
+		formatItems := make([]map[string]any, 0, len(qp.FormatItems))
 		for _, fi := range qp.FormatItems {
 			if id, ok := cfIDs[fi.Name]; ok {
-				formatItems = append(formatItems, map[string]interface{}{
+				formatItems = append(formatItems, map[string]any{
 					"format": id,
 					"name":   fi.Name,
 					"score":  fi.Score,
@@ -537,31 +537,31 @@ func BuildQualityProfilePayload(qp commonv1alpha1.QualityProfile, cfIDs map[stri
 }
 
 // BuildQualityItems converts CRD quality profile items to API payload format.
-func BuildQualityItems(items []commonv1alpha1.QualityProfileItem) []map[string]interface{} {
-	result := make([]map[string]interface{}, len(items))
+func BuildQualityItems(items []commonv1alpha1.QualityProfileItem) []map[string]any {
+	result := make([]map[string]any, len(items))
 	for i, item := range items {
-		m := map[string]interface{}{}
+		m := map[string]any{}
 
 		if item.Quality != nil {
 			// Individual quality
-			m["quality"] = map[string]interface{}{
+			m["quality"] = map[string]any{
 				"id":   item.Quality.ID,
 				"name": item.Quality.Name,
 			}
-			m["items"] = []interface{}{}
+			m["items"] = []any{}
 		} else {
 			// Quality group
 			m["name"] = item.Name
 			m["quality"] = nil
-			children := make([]map[string]interface{}, len(item.Items))
+			children := make([]map[string]any, len(item.Items))
 			for j, child := range item.Items {
 				childAllowed := child.Allowed == nil || *child.Allowed
-				children[j] = map[string]interface{}{
-					"quality": map[string]interface{}{
+				children[j] = map[string]any{
+					"quality": map[string]any{
 						"id":   child.Quality.ID,
 						"name": child.Quality.Name,
 					},
-					"items":   []interface{}{},
+					"items":   []any{},
 					"allowed": childAllowed,
 				}
 			}
@@ -615,7 +615,7 @@ func resolveCustomFormatIDs(ctx context.Context, client *engine.HTTPClient, apiV
 }
 
 // ReconcileServarr runs the full reconciliation for any Servarr-family app.
-func ReconcileServarr(ctx context.Context, client *engine.HTTPClient, apiVersion string, spec interface{}, opts ServarrOptions, prune bool, managed map[string][]string) (engine.ReconcileResult, error) {
+func ReconcileServarr(ctx context.Context, client *engine.HTTPClient, apiVersion string, spec any, opts ServarrOptions, prune bool, managed map[string][]string) (engine.ReconcileResult, error) {
 	def := ServarrDefinition(apiVersion)
 	sections, err := ServarrSections(spec)
 	if err != nil {

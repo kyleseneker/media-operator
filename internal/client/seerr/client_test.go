@@ -13,7 +13,7 @@ import (
 	"github.com/kyleseneker/media-operator/internal/engine"
 )
 
-func newTestClient(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *Client) {
+func newTestClient(t *testing.T, handler http.HandlerFunc) *Client {
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
@@ -21,22 +21,22 @@ func newTestClient(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *C
 		engine.WithTransport(&http.Transport{}),
 	)
 	require.NoError(t, err)
-	return srv, NewClient(hc)
+	return NewClient(hc)
 }
 
 func TestIsInitialized(t *testing.T) {
 	tests := []struct {
 		name string
-		body map[string]interface{}
+		body map[string]any
 		want bool
 	}{
-		{"initialized", map[string]interface{}{"initialized": true}, true},
-		{"not initialized", map[string]interface{}{"initialized": false}, false},
+		{"initialized", map[string]any{"initialized": true}, true},
+		{"not initialized", map[string]any{"initialized": false}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-				json.NewEncoder(w).Encode(tt.body)
+			c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(tt.body)
 			})
 			result, err := c.IsInitialized(context.Background())
 			require.NoError(t, err)
@@ -46,7 +46,7 @@ func TestIsInitialized(t *testing.T) {
 }
 
 func TestAuthenticatePlex(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v1/auth/plex", r.URL.Path)
 		assert.Equal(t, http.MethodPost, r.Method)
 		w.WriteHeader(http.StatusOK)
@@ -55,7 +55,7 @@ func TestAuthenticatePlex(t *testing.T) {
 }
 
 func TestAuthenticateJellyfin(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v1/auth/jellyfin", r.URL.Path)
 		w.WriteHeader(http.StatusOK)
 	})
@@ -63,9 +63,9 @@ func TestAuthenticateJellyfin(t *testing.T) {
 }
 
 func TestGetAPIKey(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v1/settings/main", r.URL.Path)
-		json.NewEncoder(w).Encode(map[string]interface{}{"apiKey": "seerr-key-123"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"apiKey": "seerr-key-123"})
 	})
 	key, err := c.GetAPIKey(context.Background())
 	require.NoError(t, err)
@@ -73,16 +73,16 @@ func TestGetAPIKey(t *testing.T) {
 }
 
 func TestGetAPIKey_Missing(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{})
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{})
 	})
 	_, err := c.GetAPIKey(context.Background())
 	assert.Error(t, err)
 }
 
 func TestGet(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{"key": "val"})
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"key": "val"})
 	})
 	result, err := c.Get(context.Background(), "/api/v1/settings/main")
 	require.NoError(t, err)
@@ -90,17 +90,17 @@ func TestGet(t *testing.T) {
 }
 
 func TestPost(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
-		json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(1)})
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": float64(1)})
 	})
-	result, err := c.Post(context.Background(), "/api/v1/resource", map[string]interface{}{"name": "test"})
+	result, err := c.Post(context.Background(), "/api/v1/resource", map[string]any{"name": "test"})
 	require.NoError(t, err)
 	assert.Equal(t, float64(1), result["id"])
 }
 
 func TestPing(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v1/settings/public", r.URL.Path)
 		w.WriteHeader(http.StatusOK)
 	})

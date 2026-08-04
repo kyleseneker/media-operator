@@ -64,22 +64,64 @@ type controllerSetup interface {
 // allControllers defines every available controller.
 var allControllers = []controllerFactory{
 	{name: "sonarr", setup: func(mgr ctrl.Manager) controllerSetup {
-		return &servarr.SonarrConfigReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Recorder: mgr.GetEventRecorderFor("sonarr-controller")}
+		return &servarr.SonarrConfigReconciler{
+
+			Client: mgr.GetClient(),
+
+			Scheme: mgr.GetScheme(),
+
+			Recorder: mgr.GetEventRecorderFor("sonarr-controller"),
+		}
 	}},
 	{name: "radarr", setup: func(mgr ctrl.Manager) controllerSetup {
-		return &servarr.RadarrConfigReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Recorder: mgr.GetEventRecorderFor("radarr-controller")}
+		return &servarr.RadarrConfigReconciler{
+
+			Client: mgr.GetClient(),
+
+			Scheme: mgr.GetScheme(),
+
+			Recorder: mgr.GetEventRecorderFor("radarr-controller"),
+		}
 	}},
 	{name: "prowlarr", setup: func(mgr ctrl.Manager) controllerSetup {
-		return &servarr.ProwlarrConfigReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Recorder: mgr.GetEventRecorderFor("prowlarr-controller")}
+		return &servarr.ProwlarrConfigReconciler{
+
+			Client: mgr.GetClient(),
+
+			Scheme: mgr.GetScheme(),
+
+			Recorder: mgr.GetEventRecorderFor("prowlarr-controller"),
+		}
 	}},
 	{name: "lidarr", setup: func(mgr ctrl.Manager) controllerSetup {
-		return &servarr.LidarrConfigReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Recorder: mgr.GetEventRecorderFor("lidarr-controller")}
+		return &servarr.LidarrConfigReconciler{
+
+			Client: mgr.GetClient(),
+
+			Scheme: mgr.GetScheme(),
+
+			Recorder: mgr.GetEventRecorderFor("lidarr-controller"),
+		}
 	}},
 	{name: "readarr", setup: func(mgr ctrl.Manager) controllerSetup {
-		return &servarr.ReadarrConfigReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Recorder: mgr.GetEventRecorderFor("readarr-controller")}
+		return &servarr.ReadarrConfigReconciler{
+
+			Client: mgr.GetClient(),
+
+			Scheme: mgr.GetScheme(),
+
+			Recorder: mgr.GetEventRecorderFor("readarr-controller"),
+		}
 	}},
 	{name: "bazarr", setup: func(mgr ctrl.Manager) controllerSetup {
-		return &servarr.BazarrConfigReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Recorder: mgr.GetEventRecorderFor("bazarr-controller")}
+		return &servarr.BazarrConfigReconciler{
+
+			Client: mgr.GetClient(),
+
+			Scheme: mgr.GetScheme(),
+
+			Recorder: mgr.GetEventRecorderFor("bazarr-controller"),
+		}
 	}},
 }
 
@@ -244,7 +286,7 @@ func resolveEnabledControllers(enable, disable string) map[string]bool {
 			known[name] = true
 		}
 	} else {
-		for _, name := range strings.Split(enable, ",") {
+		for name := range strings.SplitSeq(enable, ",") {
 			name = strings.TrimSpace(name)
 			if name != "" {
 				known[name] = true
@@ -253,7 +295,7 @@ func resolveEnabledControllers(enable, disable string) map[string]bool {
 	}
 
 	// Apply disable list
-	for _, name := range strings.Split(disable, ",") {
+	for name := range strings.SplitSeq(disable, ",") {
 		name = strings.TrimSpace(name)
 		if name != "" {
 			known[name] = false

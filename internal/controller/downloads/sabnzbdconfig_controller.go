@@ -41,19 +41,8 @@ func (r *SabnzbdConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if !config.GetDeletionTimestamp().IsZero() {
-		handled, derr := ctrlcommon.HandleDeletion(ctx, r.Client, r.Recorder, &config, nil)
-		if derr != nil {
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-		}
-		if handled {
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, nil
-	}
-
-	if err := ctrlcommon.EnsureFinalizer(ctx, r.Client, &config); err != nil {
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, nil); done {
+		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
 	apiKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.APIKeySecretRef)
@@ -86,19 +75,7 @@ func (r *SabnzbdConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Folders
 	if f := config.Spec.Folders; f != nil {
-		vals := make(map[string]string)
-		if f.CompleteDir != "" {
-			vals["complete_dir"] = f.CompleteDir
-		}
-		if f.IncompleteDir != "" {
-			vals["download_dir"] = f.IncompleteDir
-		}
-		if f.TempDownloadDir != "" {
-			vals["tmp_dir"] = f.TempDownloadDir
-		}
-		if f.NzbBackupDir != "" {
-			vals["nzb_backup_dir"] = f.NzbBackupDir
-		}
+		vals := buildSabnzbdFolderValues(f)
 		if len(vals) > 0 {
 			if err := sc.SetConfigMulti(ctx, "misc", vals); err != nil {
 				syncErrors = append(syncErrors, fmt.Sprintf("folders: %v", err))
@@ -108,13 +85,7 @@ func (r *SabnzbdConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// General settings
 	if g := config.Spec.General; g != nil {
-		vals := make(map[string]string)
-		if g.DownloadSpeedLimit != "" {
-			vals["bandwidth_max"] = g.DownloadSpeedLimit
-		}
-		if g.PreCheck != nil {
-			vals["pre_check"] = ctrlcommon.BoolTo01(*g.PreCheck)
-		}
+		vals := buildSabnzbdGeneralValues(g)
 		if len(vals) > 0 {
 			if err := sc.SetConfigMulti(ctx, "misc", vals); err != nil {
 				syncErrors = append(syncErrors, fmt.Sprintf("general: %v", err))
@@ -210,4 +181,32 @@ func (r *SabnzbdConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		})).
 		Named("sabnzbdconfig").
 		Complete(r)
+}
+
+func buildSabnzbdFolderValues(f *downloadsv1alpha1.SabnzbdFolders) map[string]string {
+	vals := make(map[string]string)
+	if f.CompleteDir != "" {
+		vals["complete_dir"] = f.CompleteDir
+	}
+	if f.IncompleteDir != "" {
+		vals["download_dir"] = f.IncompleteDir
+	}
+	if f.TempDownloadDir != "" {
+		vals["tmp_dir"] = f.TempDownloadDir
+	}
+	if f.NzbBackupDir != "" {
+		vals["nzb_backup_dir"] = f.NzbBackupDir
+	}
+	return vals
+}
+
+func buildSabnzbdGeneralValues(g *downloadsv1alpha1.SabnzbdGeneral) map[string]string {
+	vals := make(map[string]string)
+	if g.DownloadSpeedLimit != "" {
+		vals["bandwidth_max"] = g.DownloadSpeedLimit
+	}
+	if g.PreCheck != nil {
+		vals["pre_check"] = ctrlcommon.BoolTo01(*g.PreCheck)
+	}
+	return vals
 }

@@ -127,9 +127,9 @@ func TestApplyAuth(t *testing.T) {
 		wantValue  string
 	}{
 		{
-			name:     "APIKey",
-			authType: AuthAPIKey,
-			setup:    func(c *HTTPClient) { c.apiKey = "my-key" },
+			name:       "APIKey",
+			authType:   AuthAPIKey,
+			setup:      func(c *HTTPClient) { c.apiKey = "my-key" },
 			wantHeader: "X-Api-Key",
 			wantValue:  "my-key",
 		},

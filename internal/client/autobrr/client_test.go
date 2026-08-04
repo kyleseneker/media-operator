@@ -13,7 +13,7 @@ import (
 	"github.com/kyleseneker/media-operator/internal/engine"
 )
 
-func newTestClient(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *Client) {
+func newTestClient(t *testing.T, handler http.HandlerFunc) *Client {
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
@@ -22,11 +22,11 @@ func newTestClient(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *C
 		engine.WithTransport(&http.Transport{}),
 	)
 	require.NoError(t, err)
-	return srv, NewClient(hc)
+	return NewClient(hc)
 }
 
 func TestPing(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/healthz/liveness", r.URL.Path)
 		w.WriteHeader(http.StatusOK)
 	})
@@ -34,9 +34,9 @@ func TestPing(t *testing.T) {
 }
 
 func TestListDownloadClients(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/download_clients", r.URL.Path)
-		json.NewEncoder(w).Encode([]map[string]interface{}{{"name": "qBit"}})
+		_ = json.NewEncoder(w).Encode([]map[string]any{{"name": "qBit"}})
 	})
 	dcs, err := c.ListDownloadClients(context.Background())
 	require.NoError(t, err)
@@ -44,27 +44,27 @@ func TestListDownloadClients(t *testing.T) {
 }
 
 func TestCreateDownloadClient(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
 		assert.Equal(t, "/api/download_clients", r.URL.Path)
 		w.WriteHeader(http.StatusCreated)
 	})
-	assert.NoError(t, c.CreateDownloadClient(context.Background(), map[string]interface{}{"name": "qBit"}))
+	assert.NoError(t, c.CreateDownloadClient(context.Background(), map[string]any{"name": "qBit"}))
 }
 
 func TestUpdateDownloadClient(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPut, r.Method)
 		assert.Equal(t, "/api/download_clients/5", r.URL.Path)
 		w.WriteHeader(http.StatusOK)
 	})
-	assert.NoError(t, c.UpdateDownloadClient(context.Background(), 5, map[string]interface{}{"name": "qBit"}))
+	assert.NoError(t, c.UpdateDownloadClient(context.Background(), 5, map[string]any{"name": "qBit"}))
 }
 
 func TestListFilters(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/filters", r.URL.Path)
-		json.NewEncoder(w).Encode([]map[string]interface{}{{"name": "filter1"}})
+		_ = json.NewEncoder(w).Encode([]map[string]any{{"name": "filter1"}})
 	})
 	filters, err := c.ListFilters(context.Background())
 	require.NoError(t, err)
@@ -72,19 +72,19 @@ func TestListFilters(t *testing.T) {
 }
 
 func TestCreateFilter(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
-		json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(1), "name": "new"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": float64(1), "name": "new"})
 	})
-	result, err := c.CreateFilter(context.Background(), map[string]interface{}{"name": "new"})
+	result, err := c.CreateFilter(context.Background(), map[string]any{"name": "new"})
 	require.NoError(t, err)
 	assert.Equal(t, float64(1), result["id"])
 }
 
 func TestListIndexers(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/indexer", r.URL.Path)
-		json.NewEncoder(w).Encode([]map[string]interface{}{{"name": "idx1"}})
+		_ = json.NewEncoder(w).Encode([]map[string]any{{"name": "idx1"}})
 	})
 	idxs, err := c.ListIndexers(context.Background())
 	require.NoError(t, err)
@@ -92,9 +92,9 @@ func TestListIndexers(t *testing.T) {
 }
 
 func TestListIRCNetworks(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/irc", r.URL.Path)
-		json.NewEncoder(w).Encode([]map[string]interface{}{})
+		_ = json.NewEncoder(w).Encode([]map[string]any{})
 	})
 	nets, err := c.ListIRCNetworks(context.Background())
 	require.NoError(t, err)

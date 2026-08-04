@@ -64,10 +64,24 @@ type controllerSetup interface {
 // allControllers defines every available controller.
 var allControllers = []controllerFactory{
 	{name: "seerr", setup: func(mgr ctrl.Manager) controllerSetup {
-		return &requests.SeerrConfigReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Recorder: mgr.GetEventRecorderFor("seerr-controller")}
+		return &requests.SeerrConfigReconciler{
+
+			Client: mgr.GetClient(),
+
+			Scheme: mgr.GetScheme(),
+
+			Recorder: mgr.GetEventRecorderFor("seerr-controller"),
+		}
 	}},
 	{name: "maintainerr", setup: func(mgr ctrl.Manager) controllerSetup {
-		return &requests.MaintainerrConfigReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Recorder: mgr.GetEventRecorderFor("maintainerr-controller")}
+		return &requests.MaintainerrConfigReconciler{
+
+			Client: mgr.GetClient(),
+
+			Scheme: mgr.GetScheme(),
+
+			Recorder: mgr.GetEventRecorderFor("maintainerr-controller"),
+		}
 	}},
 }
 
@@ -232,7 +246,7 @@ func resolveEnabledControllers(enable, disable string) map[string]bool {
 			known[name] = true
 		}
 	} else {
-		for _, name := range strings.Split(enable, ",") {
+		for name := range strings.SplitSeq(enable, ",") {
 			name = strings.TrimSpace(name)
 			if name != "" {
 				known[name] = true
@@ -241,7 +255,7 @@ func resolveEnabledControllers(enable, disable string) map[string]bool {
 	}
 
 	// Apply disable list
-	for _, name := range strings.Split(disable, ",") {
+	for name := range strings.SplitSeq(disable, ",") {
 		name = strings.TrimSpace(name)
 		if name != "" {
 			known[name] = false

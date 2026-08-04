@@ -78,3 +78,20 @@ func expired(obj ConfigResource) bool {
 	}
 	return metav1.Now().Sub(ts.Time) > DeletionGiveUpAfter
 }
+
+// HandleLifecycle performs the deletion and finalizer bookkeeping every
+// controller shares. It returns done=true when the caller should stop
+// reconciling, either because the object is being deleted or because the
+// finalizer could not be written.
+func HandleLifecycle(ctx context.Context, c client.Client, recorder record.EventRecorder, obj ConfigResource, remove func(context.Context) error) (bool, time.Duration) {
+	if !obj.GetDeletionTimestamp().IsZero() {
+		if _, err := HandleDeletion(ctx, c, recorder, obj, remove); err != nil {
+			return true, 30 * time.Second
+		}
+		return true, 0
+	}
+	if err := EnsureFinalizer(ctx, c, obj); err != nil {
+		return true, 30 * time.Second
+	}
+	return false, 0
+}

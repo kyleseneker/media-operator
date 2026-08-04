@@ -69,23 +69,23 @@ func TestServarrDefinition_ResourceOrder(t *testing.T) {
 
 func TestServarrSections(t *testing.T) {
 	type testSpec struct {
-		MediaManagement      *map[string]interface{} `json:"mediaManagement,omitempty"`
-		Naming               *map[string]interface{} `json:"naming,omitempty"`
-		IndexerConfig        *map[string]interface{} `json:"indexerConfig,omitempty"`
-		DownloadClientConfig *map[string]interface{} `json:"downloadClientConfig,omitempty"`
-		UI                   *map[string]interface{} `json:"ui,omitempty"`
+		MediaManagement      *map[string]any `json:"mediaManagement,omitempty"`
+		Naming               *map[string]any `json:"naming,omitempty"`
+		IndexerConfig        *map[string]any `json:"indexerConfig,omitempty"`
+		DownloadClientConfig *map[string]any `json:"downloadClientConfig,omitempty"`
+		UI                   *map[string]any `json:"ui,omitempty"`
 	}
 
 	tests := []struct {
 		name     string
-		spec     interface{}
+		spec     any
 		wantKeys []string
 	}{
 		{
 			name: "all sections",
 			spec: testSpec{
-				MediaManagement: &map[string]interface{}{"a": 1},
-				Naming:          &map[string]interface{}{"b": 2},
+				MediaManagement: &map[string]any{"a": 1},
+				Naming:          &map[string]any{"b": 2},
 			},
 			wantKeys: []string{"mediaManagement", "naming"},
 		},
@@ -113,7 +113,7 @@ func TestBuildDownloadClientPayload(t *testing.T) {
 		dc            commonv1alpha1.DownloadClient
 		secrets       DownloadClientResolvedSecrets
 		categoryField string
-		check         func(t *testing.T, p map[string]interface{})
+		check         func(t *testing.T, p map[string]any)
 	}{
 		{
 			name: "defaults",
@@ -122,7 +122,7 @@ func TestBuildDownloadClientPayload(t *testing.T) {
 				Host: "qbit", Port: 8080, Category: "tv",
 			},
 			categoryField: "tvCategory",
-			check: func(t *testing.T, p map[string]interface{}) {
+			check: func(t *testing.T, p map[string]any) {
 				assert.Equal(t, "qBit", p["name"])
 				assert.Equal(t, true, p["enable"])
 				assert.Equal(t, 1, p["priority"])
@@ -130,7 +130,7 @@ func TestBuildDownloadClientPayload(t *testing.T) {
 				assert.Equal(t, true, p["removeFailedDownloads"])
 				assert.Equal(t, "QBittorrentSettings", p["configContract"])
 
-				fields := p["fields"].([]map[string]interface{})
+				fields := p["fields"].([]map[string]any)
 				hostField := fields[0]
 				assert.Equal(t, "host", hostField["name"])
 				assert.Equal(t, "qbit", hostField["value"])
@@ -150,7 +150,7 @@ func TestBuildDownloadClientPayload(t *testing.T) {
 				Tags:                     []int{1, 2},
 			},
 			categoryField: "movieCategory",
-			check: func(t *testing.T, p map[string]interface{}) {
+			check: func(t *testing.T, p map[string]any) {
 				assert.Equal(t, false, p["enable"])
 				assert.Equal(t, 5, p["priority"])
 				assert.Equal(t, false, p["removeCompletedDownloads"])
@@ -158,7 +158,7 @@ func TestBuildDownloadClientPayload(t *testing.T) {
 				assert.Equal(t, "CustomContract", p["configContract"])
 				assert.Len(t, p["tags"], 2)
 
-				fields := p["fields"].([]map[string]interface{})
+				fields := p["fields"].([]map[string]any)
 				found := false
 				for _, f := range fields {
 					if f["name"] == "useSsl" {
@@ -180,9 +180,9 @@ func TestBuildDownloadClientPayload(t *testing.T) {
 			},
 			secrets:       DownloadClientResolvedSecrets{Username: "admin", Password: "pass123", APIKey: "key123"},
 			categoryField: "tvCategory",
-			check: func(t *testing.T, p map[string]interface{}) {
-				fields := p["fields"].([]map[string]interface{})
-				names := make(map[string]interface{})
+			check: func(t *testing.T, p map[string]any) {
+				fields := p["fields"].([]map[string]any)
+				names := make(map[string]any)
 				for _, f := range fields {
 					names[f["name"].(string)] = f["value"]
 				}
@@ -202,8 +202,8 @@ func TestBuildDownloadClientPayload(t *testing.T) {
 				},
 			},
 			categoryField: "tvCategory",
-			check: func(t *testing.T, p map[string]interface{}) {
-				fields := p["fields"].([]map[string]interface{})
+			check: func(t *testing.T, p map[string]any) {
+				fields := p["fields"].([]map[string]any)
 				hostCount := 0
 				foundInitial := false
 				for _, f := range fields {
@@ -233,14 +233,14 @@ func TestBuildIndexerPayload(t *testing.T) {
 	tests := []struct {
 		name  string
 		idx   commonv1alpha1.Indexer
-		check func(t *testing.T, p map[string]interface{})
+		check func(t *testing.T, p map[string]any)
 	}{
 		{
 			name: "defaults",
 			idx: commonv1alpha1.Indexer{
 				Name: "NZBgeek", Protocol: "usenet", Implementation: "Newznab",
 			},
-			check: func(t *testing.T, p map[string]interface{}) {
+			check: func(t *testing.T, p map[string]any) {
 				assert.Equal(t, true, p["enable"])
 				assert.Equal(t, true, p["enableRss"])
 				assert.Equal(t, true, p["enableAutomaticSearch"])
@@ -261,12 +261,12 @@ func TestBuildIndexerPayload(t *testing.T) {
 					{Name: "baseUrl", Value: fieldValue(`"http://nzbgeek.info"`)},
 				},
 			},
-			check: func(t *testing.T, p map[string]interface{}) {
+			check: func(t *testing.T, p map[string]any) {
 				assert.Equal(t, false, p["enable"])
 				assert.Equal(t, false, p["enableRss"])
 				assert.Equal(t, "CustomContract", p["configContract"])
 				assert.Equal(t, 10, p["priority"])
-				tags := p["tags"].([]interface{})
+				tags := p["tags"].([]any)
 				assert.Len(t, tags, 1)
 			},
 		},
@@ -283,12 +283,12 @@ func TestBuildNotificationPayload(t *testing.T) {
 	tests := []struct {
 		name  string
 		n     commonv1alpha1.Notification
-		check func(t *testing.T, p map[string]interface{})
+		check func(t *testing.T, p map[string]any)
 	}{
 		{
 			name: "minimal",
 			n:    commonv1alpha1.Notification{Name: "Discord", Implementation: "Discord"},
-			check: func(t *testing.T, p map[string]interface{}) {
+			check: func(t *testing.T, p map[string]any) {
 				assert.Equal(t, "Discord", p["name"])
 				assert.Equal(t, "DiscordSettings", p["configContract"])
 				_, hasOnGrab := p["onGrab"]
@@ -302,7 +302,7 @@ func TestBuildNotificationPayload(t *testing.T) {
 				OnGrab: boolPtr(true), OnDownload: boolPtr(false),
 				OnMovieAdded: boolPtr(true),
 			},
-			check: func(t *testing.T, p map[string]interface{}) {
+			check: func(t *testing.T, p map[string]any) {
 				assert.Equal(t, true, p["onGrab"])
 				assert.Equal(t, false, p["onDownload"])
 				assert.Equal(t, true, p["onMovieAdded"])
@@ -324,12 +324,12 @@ func TestBuildImportListPayload(t *testing.T) {
 		name  string
 		il    commonv1alpha1.ImportList
 		qpIDs map[string]int
-		check func(t *testing.T, p map[string]interface{})
+		check func(t *testing.T, p map[string]any)
 	}{
 		{
 			name: "minimal",
 			il:   commonv1alpha1.ImportList{Name: "Trakt", Implementation: "TraktListImport"},
-			check: func(t *testing.T, p map[string]interface{}) {
+			check: func(t *testing.T, p map[string]any) {
 				assert.Equal(t, true, p["enable"])
 				assert.Equal(t, "TraktListImportSettings", p["configContract"])
 			},
@@ -342,7 +342,7 @@ func TestBuildImportListPayload(t *testing.T) {
 				Monitor: "all", ListOrder: intPtr(1),
 			},
 			qpIDs: map[string]int{"HD-1080p": 5},
-			check: func(t *testing.T, p map[string]interface{}) {
+			check: func(t *testing.T, p map[string]any) {
 				assert.Equal(t, 5, p["qualityProfileId"])
 				assert.Equal(t, "/tv", p["rootFolderPath"])
 				assert.Equal(t, "all", p["monitor"])
@@ -356,7 +356,7 @@ func TestBuildImportListPayload(t *testing.T) {
 				QualityProfileName: "NonExistent",
 			},
 			qpIDs: map[string]int{"HD-1080p": 5},
-			check: func(t *testing.T, p map[string]interface{}) {
+			check: func(t *testing.T, p map[string]any) {
 				_, has := p["qualityProfileId"]
 				assert.False(t, has, "should not set ID for unresolved profile")
 			},
@@ -378,15 +378,15 @@ func TestBuildCustomFormatPayload(t *testing.T) {
 	tests := []struct {
 		name  string
 		cf    commonv1alpha1.CustomFormat
-		check func(t *testing.T, p map[string]interface{})
+		check func(t *testing.T, p map[string]any)
 	}{
 		{
 			name: "minimal",
 			cf:   commonv1alpha1.CustomFormat{Name: "BR-DISK"},
-			check: func(t *testing.T, p map[string]interface{}) {
+			check: func(t *testing.T, p map[string]any) {
 				assert.Equal(t, "BR-DISK", p["name"])
 				assert.Equal(t, false, p["includeCustomFormatWhenRenaming"])
-				specs := p["specifications"].([]map[string]interface{})
+				specs := p["specifications"].([]map[string]any)
 				assert.Empty(t, specs)
 			},
 		},
@@ -405,9 +405,9 @@ func TestBuildCustomFormatPayload(t *testing.T) {
 					},
 				},
 			},
-			check: func(t *testing.T, p map[string]interface{}) {
+			check: func(t *testing.T, p map[string]any) {
 				assert.Equal(t, true, p["includeCustomFormatWhenRenaming"])
-				specs := p["specifications"].([]map[string]interface{})
+				specs := p["specifications"].([]map[string]any)
 				require.Len(t, specs, 1)
 				assert.Equal(t, "x265", specs[0]["name"])
 				assert.Equal(t, false, specs[0]["negate"])
@@ -428,13 +428,13 @@ func TestBuildQualityProfilePayload(t *testing.T) {
 		name  string
 		qp    commonv1alpha1.QualityProfile
 		cfIDs map[string]int
-		check func(t *testing.T, p map[string]interface{})
+		check func(t *testing.T, p map[string]any)
 	}{
 		{
 			name:  "name only",
 			qp:    commonv1alpha1.QualityProfile{Name: "HD-1080p"},
 			cfIDs: map[string]int{},
-			check: func(t *testing.T, p map[string]interface{}) {
+			check: func(t *testing.T, p map[string]any) {
 				assert.Equal(t, "HD-1080p", p["name"])
 				_, hasUpgrade := p["upgradeAllowed"]
 				assert.False(t, hasUpgrade)
@@ -448,7 +448,7 @@ func TestBuildQualityProfilePayload(t *testing.T) {
 				MinUpgradeFormatScore: intPtr(5),
 			},
 			cfIDs: map[string]int{},
-			check: func(t *testing.T, p map[string]interface{}) {
+			check: func(t *testing.T, p map[string]any) {
 				assert.Equal(t, true, p["upgradeAllowed"])
 				assert.Equal(t, 10, p["minFormatScore"])
 				assert.Equal(t, 100, p["cutoffFormatScore"])
@@ -466,8 +466,8 @@ func TestBuildQualityProfilePayload(t *testing.T) {
 				},
 			},
 			cfIDs: map[string]int{"x265": 1, "BR-DISK": 2},
-			check: func(t *testing.T, p map[string]interface{}) {
-				items := p["formatItems"].([]map[string]interface{})
+			check: func(t *testing.T, p map[string]any) {
+				items := p["formatItems"].([]map[string]any)
 				assert.Len(t, items, 2)
 				assert.Equal(t, 1, items[0]["format"])
 				assert.Equal(t, 100, items[0]["score"])
@@ -483,7 +483,7 @@ func TestBuildQualityProfilePayload(t *testing.T) {
 				},
 			},
 			cfIDs: map[string]int{},
-			check: func(t *testing.T, p map[string]interface{}) {
+			check: func(t *testing.T, p map[string]any) {
 				assert.Equal(t, 7, p["cutoff"])
 			},
 		},
@@ -500,12 +500,12 @@ func TestBuildFieldsPayload(t *testing.T) {
 	tests := []struct {
 		name   string
 		fields []commonv1alpha1.ConfigField
-		check  func(t *testing.T, result []map[string]interface{})
+		check  func(t *testing.T, result []map[string]any)
 	}{
 		{
 			name:   "empty",
 			fields: []commonv1alpha1.ConfigField{},
-			check: func(t *testing.T, result []map[string]interface{}) {
+			check: func(t *testing.T, result []map[string]any) {
 				assert.Empty(t, result)
 			},
 		},
@@ -515,7 +515,7 @@ func TestBuildFieldsPayload(t *testing.T) {
 				{Name: "baseUrl", Value: fieldValue(`"http://example.com"`)},
 				{Name: "apiKey", Value: fieldValue(`"secret"`)},
 			},
-			check: func(t *testing.T, result []map[string]interface{}) {
+			check: func(t *testing.T, result []map[string]any) {
 				require.Len(t, result, 2)
 				assert.Equal(t, "baseUrl", result[0]["name"])
 				assert.Equal(t, "http://example.com", result[0]["value"])
@@ -526,7 +526,7 @@ func TestBuildFieldsPayload(t *testing.T) {
 			fields: []commonv1alpha1.ConfigField{
 				{Name: "optional"},
 			},
-			check: func(t *testing.T, result []map[string]interface{}) {
+			check: func(t *testing.T, result []map[string]any) {
 				require.Len(t, result, 1)
 				assert.Nil(t, result[0]["value"])
 			},
@@ -544,10 +544,10 @@ func TestBuildTagsPayload(t *testing.T) {
 	tests := []struct {
 		name string
 		tags []int
-		want []interface{}
+		want []any
 	}{
-		{"empty", []int{}, []interface{}{}},
-		{"multiple", []int{1, 5, 10}, []interface{}{1, 5, 10}},
+		{"empty", []int{}, []any{}},
+		{"multiple", []int{1, 5, 10}, []any{1, 5, 10}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -570,7 +570,7 @@ func TestSetOptionalBool(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := map[string]interface{}{}
+			p := map[string]any{}
 			SetOptionalBool(p, "key", tt.val)
 			if tt.wantSet {
 				assert.Equal(t, tt.want, p["key"])
@@ -616,20 +616,20 @@ func TestBuildQualityItems(t *testing.T) {
 	tests := []struct {
 		name  string
 		items []commonv1alpha1.QualityProfileItem
-		check func(t *testing.T, result []map[string]interface{})
+		check func(t *testing.T, result []map[string]any)
 	}{
 		{
 			name: "individual quality",
 			items: []commonv1alpha1.QualityProfileItem{
 				{Quality: &commonv1alpha1.QualityReference{ID: 7, Name: "Bluray-1080p"}},
 			},
-			check: func(t *testing.T, result []map[string]interface{}) {
+			check: func(t *testing.T, result []map[string]any) {
 				require.Len(t, result, 1)
-				q := result[0]["quality"].(map[string]interface{})
+				q := result[0]["quality"].(map[string]any)
 				assert.Equal(t, 7, q["id"])
 				assert.Equal(t, "Bluray-1080p", q["name"])
 				assert.Equal(t, true, result[0]["allowed"])
-				assert.Equal(t, []interface{}{}, result[0]["items"])
+				assert.Equal(t, []any{}, result[0]["items"])
 			},
 		},
 		{
@@ -643,11 +643,11 @@ func TestBuildQualityItems(t *testing.T) {
 					},
 				},
 			},
-			check: func(t *testing.T, result []map[string]interface{}) {
+			check: func(t *testing.T, result []map[string]any) {
 				require.Len(t, result, 1)
 				assert.Nil(t, result[0]["quality"])
 				assert.Equal(t, "HD Group", result[0]["name"])
-				children := result[0]["items"].([]map[string]interface{})
+				children := result[0]["items"].([]map[string]any)
 				require.Len(t, children, 1)
 				assert.Equal(t, false, children[0]["allowed"])
 			},
@@ -657,7 +657,7 @@ func TestBuildQualityItems(t *testing.T) {
 			items: []commonv1alpha1.QualityProfileItem{
 				{Quality: &commonv1alpha1.QualityReference{ID: 1, Name: "SDTV"}},
 			},
-			check: func(t *testing.T, result []map[string]interface{}) {
+			check: func(t *testing.T, result []map[string]any) {
 				assert.Equal(t, true, result[0]["allowed"])
 			},
 		},
@@ -666,7 +666,7 @@ func TestBuildQualityItems(t *testing.T) {
 			items: []commonv1alpha1.QualityProfileItem{
 				{Quality: &commonv1alpha1.QualityReference{ID: 1, Name: "SDTV"}, Allowed: boolPtr(false)},
 			},
-			check: func(t *testing.T, result []map[string]interface{}) {
+			check: func(t *testing.T, result []map[string]any) {
 				assert.Equal(t, false, result[0]["allowed"])
 			},
 		},
@@ -689,7 +689,7 @@ func TestPayloadsAreJSONSerializable(t *testing.T) {
 	notif := BuildNotificationPayload(commonv1alpha1.Notification{Name: "test", Implementation: "Discord"})
 	cf := BuildCustomFormatPayload(commonv1alpha1.CustomFormat{Name: "test"})
 
-	for name, payload := range map[string]interface{}{
+	for name, payload := range map[string]any{
 		"downloadClient": dc, "indexer": idx, "notification": notif, "customFormat": cf,
 	} {
 		t.Run(name, func(t *testing.T) {

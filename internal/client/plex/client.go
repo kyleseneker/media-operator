@@ -21,7 +21,7 @@ func (c *Client) Ping(ctx context.Context) error {
 	return c.hc.Ping(ctx, "/")
 }
 
-func (c *Client) GetPreferences(ctx context.Context) (map[string]interface{}, error) {
+func (c *Client) GetPreferences(ctx context.Context) (map[string]any, error) {
 	return c.hc.GetJSON(ctx, "/:/prefs")
 }
 
@@ -34,22 +34,22 @@ func (c *Client) SetPreferences(ctx context.Context, prefs map[string]string) er
 	return err
 }
 
-func (c *Client) ListLibraries(ctx context.Context) ([]map[string]interface{}, error) {
+func (c *Client) ListLibraries(ctx context.Context) ([]map[string]any, error) {
 	result, err := c.hc.GetJSON(ctx, "/library/sections")
 	if err != nil {
 		return nil, err
 	}
-	mc, ok := result["MediaContainer"].(map[string]interface{})
+	mc, ok := result["MediaContainer"].(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("unexpected response: missing MediaContainer")
 	}
-	dirs, ok := mc["Directory"].([]interface{})
+	dirs, ok := mc["Directory"].([]any)
 	if !ok {
 		return nil, fmt.Errorf("unexpected response: missing Directory in MediaContainer")
 	}
-	var libs []map[string]interface{}
+	var libs []map[string]any
 	for _, d := range dirs {
-		if m, ok := d.(map[string]interface{}); ok {
+		if m, ok := d.(map[string]any); ok {
 			libs = append(libs, m)
 		}
 	}

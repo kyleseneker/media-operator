@@ -14,7 +14,7 @@ import (
 	"github.com/kyleseneker/media-operator/internal/engine"
 )
 
-func newTestClient(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *Client) {
+func newTestClient(t *testing.T, handler http.HandlerFunc) *Client {
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
@@ -22,26 +22,26 @@ func newTestClient(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *C
 		engine.WithTransport(&http.Transport{}),
 	)
 	require.NoError(t, err)
-	return srv, NewClient(hc, "test-api-key")
+	return NewClient(hc, "test-api-key")
 }
 
 func TestPing(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api", r.URL.Path)
 		body, _ := io.ReadAll(r.Body)
 		assert.Contains(t, string(body), "mode=version")
 		assert.Contains(t, string(body), "apikey=test-api-key")
-		w.Write([]byte(`"4.0.0"`))
+		_, _ = w.Write([]byte(`"4.0.0"`))
 	})
 	assert.NoError(t, c.Ping(context.Background()))
 }
 
 func TestGetConfig(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		assert.Contains(t, string(body), "mode=get_config")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"config": map[string]interface{}{"misc": map[string]interface{}{"download_dir": "/downloads"}},
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"config": map[string]any{"misc": map[string]any{"download_dir": "/downloads"}},
 		})
 	})
 	cfg, err := c.GetConfig(context.Background())
@@ -50,7 +50,7 @@ func TestGetConfig(t *testing.T) {
 }
 
 func TestSetConfig(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		assert.Contains(t, string(body), "mode=set_config")
 		assert.Contains(t, string(body), "section=misc")
@@ -63,7 +63,7 @@ func TestSetConfig(t *testing.T) {
 
 func TestSetConfigMulti(t *testing.T) {
 	var callCount int
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		callCount++
 		w.WriteHeader(http.StatusOK)
 	})

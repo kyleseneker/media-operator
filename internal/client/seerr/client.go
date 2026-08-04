@@ -26,7 +26,7 @@ func (c *Client) IsInitialized(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(data, &result); err != nil {
 		return false, fmt.Errorf("unmarshaling public settings: %w", err)
 	}
@@ -40,7 +40,7 @@ func (c *Client) IsInitialized(ctx context.Context) (bool, error) {
 // AuthenticatePlex logs in via the Plex auth provider.
 // The session cookie is stored in the engine client's cookie jar.
 func (c *Client) AuthenticatePlex(ctx context.Context, plexToken string) error {
-	payload := map[string]interface{}{"authToken": plexToken}
+	payload := map[string]any{"authToken": plexToken}
 	_, err := c.hc.Do(ctx, http.MethodPost, "/api/v1/auth/plex", payload)
 	return err
 }
@@ -48,7 +48,7 @@ func (c *Client) AuthenticatePlex(ctx context.Context, plexToken string) error {
 // AuthenticateJellyfin logs in via the Jellyfin auth provider.
 // The session cookie is stored in the engine client's cookie jar.
 func (c *Client) AuthenticateJellyfin(ctx context.Context, username, password, jellyfinHost string, jellyfinPort int) error {
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"username": username,
 		"password": password,
 		"hostname": jellyfinHost,
@@ -65,7 +65,7 @@ func (c *Client) GetAPIKey(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(data, &result); err != nil {
 		return "", fmt.Errorf("unmarshaling main settings: %w", err)
 	}
@@ -82,22 +82,22 @@ func (c *Client) SetAPIKey(apiKey string) {
 }
 
 // Get performs a GET request and returns the response as a map.
-func (c *Client) Get(ctx context.Context, path string) (map[string]interface{}, error) {
+func (c *Client) Get(ctx context.Context, path string) (map[string]any, error) {
 	return c.hc.GetJSON(ctx, path)
 }
 
 // GetList performs a GET request and returns the response as a slice of maps.
-func (c *Client) GetList(ctx context.Context, path string) ([]map[string]interface{}, error) {
+func (c *Client) GetList(ctx context.Context, path string) ([]map[string]any, error) {
 	return c.hc.GetJSONList(ctx, path)
 }
 
 // Post performs a POST request and returns the response as a map.
-func (c *Client) Post(ctx context.Context, path string, payload map[string]interface{}) (map[string]interface{}, error) {
+func (c *Client) Post(ctx context.Context, path string, payload map[string]any) (map[string]any, error) {
 	data, err := c.hc.Do(ctx, http.MethodPost, path, payload)
 	if err != nil {
 		return nil, err
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, fmt.Errorf("unmarshaling response: %w", err)
 	}
@@ -105,7 +105,7 @@ func (c *Client) Post(ctx context.Context, path string, payload map[string]inter
 }
 
 // Put performs a PUT request.
-func (c *Client) Put(ctx context.Context, path string, payload map[string]interface{}) error {
+func (c *Client) Put(ctx context.Context, path string, payload map[string]any) error {
 	return c.hc.PutJSON(ctx, path, payload)
 }
 

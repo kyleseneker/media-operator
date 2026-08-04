@@ -60,7 +60,7 @@ func TestFieldValue_ToInterface(t *testing.T) {
 	tests := []struct {
 		name string
 		raw  []byte
-		want interface{}
+		want any
 	}{
 		{"nil returns nil", nil, nil},
 		{"string", []byte(`"hello"`), "hello"},

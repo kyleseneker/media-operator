@@ -9,14 +9,14 @@ import (
 // MergeDesiredOverCurrent takes the current state from the API and overlays
 // the desired state from the CR spec. Fields not set in desired are preserved
 // from current. Returns the merged result and whether any changes were detected.
-func MergeDesiredOverCurrent(current map[string]interface{}, desired interface{}) (map[string]interface{}, bool, error) {
+func MergeDesiredOverCurrent(current map[string]any, desired any) (map[string]any, bool, error) {
 	// Marshal desired to JSON, then unmarshal to map to get only non-nil fields
 	desiredJSON, err := json.Marshal(desired)
 	if err != nil {
 		return nil, false, fmt.Errorf("marshaling desired state: %w", err)
 	}
 
-	var desiredMap map[string]interface{}
+	var desiredMap map[string]any
 	if err := json.Unmarshal(desiredJSON, &desiredMap); err != nil {
 		return nil, false, fmt.Errorf("unmarshaling desired state: %w", err)
 	}
@@ -41,9 +41,9 @@ func MergeDesiredOverCurrent(current map[string]interface{}, desired interface{}
 
 // mergeValue recurses into nested objects and into arrays of named objects,
 // so a partial "fields" array does not discard entries the CR omitted.
-func mergeValue(current, desired interface{}) interface{} {
-	curMap, curIsMap := current.(map[string]interface{})
-	desMap, desIsMap := desired.(map[string]interface{})
+func mergeValue(current, desired any) any {
+	curMap, curIsMap := current.(map[string]any)
+	desMap, desIsMap := desired.(map[string]any)
 	if curIsMap && desIsMap {
 		out := deepCopyMap(curMap)
 		for k, v := range desMap {
@@ -56,8 +56,8 @@ func mergeValue(current, desired interface{}) interface{} {
 		return out
 	}
 
-	curSlice, curIsSlice := current.([]interface{})
-	desSlice, desIsSlice := desired.([]interface{})
+	curSlice, curIsSlice := current.([]any)
+	desSlice, desIsSlice := desired.([]any)
 	if curIsSlice && desIsSlice && isNamedObjectSlice(curSlice) && isNamedObjectSlice(desSlice) {
 		return mergeNamedObjectSlice(curSlice, desSlice)
 	}
@@ -65,12 +65,12 @@ func mergeValue(current, desired interface{}) interface{} {
 	return desired
 }
 
-func isNamedObjectSlice(s []interface{}) bool {
+func isNamedObjectSlice(s []any) bool {
 	if len(s) == 0 {
 		return false
 	}
 	for _, e := range s {
-		m, ok := e.(map[string]interface{})
+		m, ok := e.(map[string]any)
 		if !ok {
 			return false
 		}
@@ -81,11 +81,11 @@ func isNamedObjectSlice(s []interface{}) bool {
 	return true
 }
 
-func mergeNamedObjectSlice(current, desired []interface{}) []interface{} {
+func mergeNamedObjectSlice(current, desired []any) []any {
 	out := deepCopySlice(current)
 	index := make(map[string]int, len(out))
 	for i, e := range out {
-		if m, ok := e.(map[string]interface{}); ok {
+		if m, ok := e.(map[string]any); ok {
 			if name, ok := m["name"].(string); ok {
 				index[name] = i
 			}
@@ -93,7 +93,7 @@ func mergeNamedObjectSlice(current, desired []interface{}) []interface{} {
 	}
 
 	for _, e := range desired {
-		m, ok := e.(map[string]interface{})
+		m, ok := e.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -108,13 +108,13 @@ func mergeNamedObjectSlice(current, desired []interface{}) []interface{} {
 	return out
 }
 
-func deepCopyMap(m map[string]interface{}) map[string]interface{} {
-	result := make(map[string]interface{}, len(m))
+func deepCopyMap(m map[string]any) map[string]any {
+	result := make(map[string]any, len(m))
 	for k, v := range m {
 		switch val := v.(type) {
-		case map[string]interface{}:
+		case map[string]any:
 			result[k] = deepCopyMap(val)
-		case []interface{}:
+		case []any:
 			result[k] = deepCopySlice(val)
 		default:
 			result[k] = v
@@ -123,13 +123,13 @@ func deepCopyMap(m map[string]interface{}) map[string]interface{} {
 	return result
 }
 
-func deepCopySlice(s []interface{}) []interface{} {
-	result := make([]interface{}, len(s))
+func deepCopySlice(s []any) []any {
+	result := make([]any, len(s))
 	for i, v := range s {
 		switch val := v.(type) {
-		case map[string]interface{}:
+		case map[string]any:
 			result[i] = deepCopyMap(val)
-		case []interface{}:
+		case []any:
 			result[i] = deepCopySlice(val)
 		default:
 			result[i] = v

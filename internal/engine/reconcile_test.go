@@ -61,7 +61,7 @@ func TestReconcileResult_Message(t *testing.T) {
 func TestIsNilInterface(t *testing.T) {
 	tests := []struct {
 		name string
-		val  interface{}
+		val  any
 		want bool
 	}{
 		{"nil", nil, true},

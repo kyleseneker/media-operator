@@ -28,7 +28,7 @@ func (c *Client) Ping(ctx context.Context) error {
 }
 
 // PostSettings serializes a struct to form data under the given section and posts it to /api/system/settings.
-func (c *Client) PostSettings(ctx context.Context, section string, settings interface{}) error {
+func (c *Client) PostSettings(ctx context.Context, section string, settings any) error {
 	form := StructToFormData(section, settings)
 	return c.PostForm(ctx, "/api/system/settings", form)
 }
@@ -69,7 +69,7 @@ func (c *Client) ReconcileLanguages(ctx context.Context, langs *servarrv1alpha1.
 
 // StructToFormData converts a struct to form data with "settings-{section}-{field}=value" keys.
 // Uses json tags for field names. Skips nil pointers and empty strings.
-func StructToFormData(section string, obj interface{}) url.Values {
+func StructToFormData(section string, obj any) url.Values {
 	form := url.Values{}
 	v := reflect.ValueOf(obj)
 	if v.Kind() == reflect.Ptr {

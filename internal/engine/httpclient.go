@@ -17,6 +17,8 @@ import (
 	"github.com/kyleseneker/media-operator/internal/metrics"
 )
 
+const outcomeError = "error"
+
 // APIError represents a non-2xx HTTP response from a target app.
 // Error() returns only the status code, which is safe for CR status conditions.
 // Body contains the full response for debug logging.
@@ -142,7 +144,7 @@ var blockedCIDRs = func() []*net.IPNet {
 		"::1/128",        // IPv6 loopback
 		"fe80::/10",      // IPv6 link-local
 	}
-	var nets []*net.IPNet
+	nets := make([]*net.IPNet, 0, len(cidrs))
 	for _, c := range cidrs {
 		_, n, _ := net.ParseCIDR(c)
 		nets = append(nets, n)
@@ -253,7 +255,7 @@ func (c *HTTPClient) DoRaw(ctx context.Context, method, path string, body io.Rea
 
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
 	if err != nil {
-		outcome = "error"
+		outcome = outcomeError
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
@@ -264,20 +266,20 @@ func (c *HTTPClient) DoRaw(ctx context.Context, method, path string, body io.Rea
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		outcome = "error"
+		outcome = outcomeError
 		metrics.AppAPIErrorsTotal.WithLabelValues(c.appLabel, "network").Inc()
 		return nil, fmt.Errorf("executing request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		outcome = "error"
+		outcome = outcomeError
 		return nil, fmt.Errorf("reading response: %w", err)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		outcome = "error"
+		outcome = outcomeError
 		metrics.AppAPIErrorsTotal.WithLabelValues(c.appLabel, fmt.Sprintf("%dxx", resp.StatusCode/100)).Inc()
 		return nil, &APIError{StatusCode: resp.StatusCode, Body: respBody}
 	}
@@ -286,7 +288,7 @@ func (c *HTTPClient) DoRaw(ctx context.Context, method, path string, body io.Rea
 }
 
 // Do executes an HTTP request with a JSON body.
-func (c *HTTPClient) Do(ctx context.Context, method, path string, body interface{}) ([]byte, error) {
+func (c *HTTPClient) Do(ctx context.Context, method, path string, body any) ([]byte, error) {
 	var reqBody io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -342,12 +344,12 @@ func (c *HTTPClient) Ping(ctx context.Context, path string) error {
 }
 
 // GetJSON fetches a JSON object from the given path.
-func (c *HTTPClient) GetJSON(ctx context.Context, path string) (map[string]interface{}, error) {
+func (c *HTTPClient) GetJSON(ctx context.Context, path string) (map[string]any, error) {
 	data, err := c.Do(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, fmt.Errorf("unmarshaling: %w", err)
 	}
@@ -355,12 +357,12 @@ func (c *HTTPClient) GetJSON(ctx context.Context, path string) (map[string]inter
 }
 
 // GetJSONList fetches a JSON array from the given path.
-func (c *HTTPClient) GetJSONList(ctx context.Context, path string) ([]map[string]interface{}, error) {
+func (c *HTTPClient) GetJSONList(ctx context.Context, path string) ([]map[string]any, error) {
 	data, err := c.Do(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
 	}
-	var result []map[string]interface{}
+	var result []map[string]any
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, fmt.Errorf("unmarshaling: %w", err)
 	}
@@ -368,13 +370,13 @@ func (c *HTTPClient) GetJSONList(ctx context.Context, path string) ([]map[string
 }
 
 // PutJSON sends a PUT request with a JSON body.
-func (c *HTTPClient) PutJSON(ctx context.Context, path string, body map[string]interface{}) error {
+func (c *HTTPClient) PutJSON(ctx context.Context, path string, body map[string]any) error {
 	_, err := c.Do(ctx, http.MethodPut, path, body)
 	return err
 }
 
 // PostJSON sends a POST request with a JSON body.
-func (c *HTTPClient) PostJSON(ctx context.Context, path string, body map[string]interface{}) error {
+func (c *HTTPClient) PostJSON(ctx context.Context, path string, body map[string]any) error {
 	_, err := c.Do(ctx, http.MethodPost, path, body)
 	return err
 }

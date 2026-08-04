@@ -8,55 +8,57 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testModified = "modified"
+
 func TestMergeDesiredOverCurrent(t *testing.T) {
 	tests := []struct {
 		name        string
-		current     map[string]interface{}
-		desired     interface{}
+		current     map[string]any
+		desired     any
 		wantChanged bool
-		wantKeys    map[string]interface{}
+		wantKeys    map[string]any
 	}{
 		{
 			name:        "no changes",
-			current:     map[string]interface{}{"a": "1", "b": "2"},
-			desired:     map[string]interface{}{"a": "1", "b": "2"},
+			current:     map[string]any{"a": "1", "b": "2"},
+			desired:     map[string]any{"a": "1", "b": "2"},
 			wantChanged: false,
-			wantKeys:    map[string]interface{}{"a": "1", "b": "2"},
+			wantKeys:    map[string]any{"a": "1", "b": "2"},
 		},
 		{
 			name:        "override existing field",
-			current:     map[string]interface{}{"a": "1", "b": "2"},
-			desired:     map[string]interface{}{"b": "changed"},
+			current:     map[string]any{"a": "1", "b": "2"},
+			desired:     map[string]any{"b": "changed"},
 			wantChanged: true,
-			wantKeys:    map[string]interface{}{"a": "1", "b": "changed"},
+			wantKeys:    map[string]any{"a": "1", "b": "changed"},
 		},
 		{
 			name:        "add new field",
-			current:     map[string]interface{}{"a": "1"},
-			desired:     map[string]interface{}{"b": "new"},
+			current:     map[string]any{"a": "1"},
+			desired:     map[string]any{"b": "new"},
 			wantChanged: true,
-			wantKeys:    map[string]interface{}{"a": "1", "b": "new"},
+			wantKeys:    map[string]any{"a": "1", "b": "new"},
 		},
 		{
 			name:        "preserve unset fields",
-			current:     map[string]interface{}{"a": "1", "b": "2", "c": "3"},
-			desired:     map[string]interface{}{"a": "updated"},
+			current:     map[string]any{"a": "1", "b": "2", "c": "3"},
+			desired:     map[string]any{"a": "updated"},
 			wantChanged: true,
-			wantKeys:    map[string]interface{}{"a": "updated", "b": "2", "c": "3"},
+			wantKeys:    map[string]any{"a": "updated", "b": "2", "c": "3"},
 		},
 		{
 			name:        "desired as struct",
-			current:     map[string]interface{}{"name": "old"},
+			current:     map[string]any{"name": "old"},
 			desired:     struct{ Name string }{Name: "new"},
 			wantChanged: true,
-			wantKeys:    map[string]interface{}{"Name": "new", "name": "old"},
+			wantKeys:    map[string]any{"Name": "new", "name": "old"},
 		},
 		{
 			name:        "empty desired no change",
-			current:     map[string]interface{}{"a": "1"},
-			desired:     map[string]interface{}{},
+			current:     map[string]any{"a": "1"},
+			desired:     map[string]any{},
 			wantChanged: false,
-			wantKeys:    map[string]interface{}{"a": "1"},
+			wantKeys:    map[string]any{"a": "1"},
 		},
 	}
 	for _, tt := range tests {
@@ -73,44 +75,44 @@ func TestMergeDesiredOverCurrent(t *testing.T) {
 
 func TestMergeDesiredOverCurrent_Error(t *testing.T) {
 	// Channels can't be marshaled to JSON
-	_, _, err := MergeDesiredOverCurrent(map[string]interface{}{}, make(chan int))
+	_, _, err := MergeDesiredOverCurrent(map[string]any{}, make(chan int))
 	assert.Error(t, err)
 }
 
 func TestDeepCopyMap(t *testing.T) {
-	original := map[string]interface{}{
-		"nested": map[string]interface{}{"key": "value"},
-		"slice":  []interface{}{"a", "b"},
+	original := map[string]any{
+		"nested": map[string]any{"key": "value"},
+		"slice":  []any{"a", "b"},
 		"scalar": 42,
 	}
 	copied := deepCopyMap(original)
 
 	// Modify the copy
-	copied["nested"].(map[string]interface{})["key"] = "modified"
-	copied["slice"].([]interface{})[0] = "modified"
+	copied["nested"].(map[string]any)["key"] = testModified
+	copied["slice"].([]any)[0] = testModified
 	copied["scalar"] = 99
 
 	// Original should be unchanged
-	assert.Equal(t, "value", original["nested"].(map[string]interface{})["key"])
-	assert.Equal(t, "a", original["slice"].([]interface{})[0])
+	assert.Equal(t, "value", original["nested"].(map[string]any)["key"])
+	assert.Equal(t, "a", original["slice"].([]any)[0])
 	assert.Equal(t, 42, original["scalar"])
 }
 
 func TestDeepCopySlice(t *testing.T) {
-	original := []interface{}{
-		map[string]interface{}{"key": "value"},
-		[]interface{}{1, 2},
+	original := []any{
+		map[string]any{"key": "value"},
+		[]any{1, 2},
 		"scalar",
 	}
 	copied := deepCopySlice(original)
 
 	// Modify the copy
-	copied[0].(map[string]interface{})["key"] = "modified"
-	copied[1].([]interface{})[0] = 99
+	copied[0].(map[string]any)["key"] = testModified
+	copied[1].([]any)[0] = 99
 
 	// Original should be unchanged
-	assert.Equal(t, "value", original[0].(map[string]interface{})["key"])
-	assert.Equal(t, 1, original[1].([]interface{})[0])
+	assert.Equal(t, "value", original[0].(map[string]any)["key"])
+	assert.Equal(t, 1, original[1].([]any)[0])
 }
 
 func TestMergePreservesUnmanagedFieldEntries(t *testing.T) {
@@ -122,15 +124,15 @@ func TestMergePreservesUnmanagedFieldEntries(t *testing.T) {
 	    {"name":"seedCriteria.seedRatio","value":2.0,"order":2,"type":"number"},
 	    {"name":"additionalParameters","value":"&freeleech=1","order":3,"type":"textbox"}
 	  ]}`
-	var current map[string]interface{}
+	var current map[string]any
 	if err := json.Unmarshal([]byte(currentJSON), &current); err != nil {
 		t.Fatal(err)
 	}
 
-	desired := map[string]interface{}{
+	desired := map[string]any{
 		"name": "TorrentLeech",
-		"fields": []interface{}{
-			map[string]interface{}{"name": "baseUrl", "value": "https://x.org"},
+		"fields": []any{
+			map[string]any{"name": "baseUrl", "value": "https://x.org"},
 		},
 	}
 
@@ -139,7 +141,7 @@ func TestMergePreservesUnmanagedFieldEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fields, ok := merged["fields"].([]interface{})
+	fields, ok := merged["fields"].([]any)
 	if !ok {
 		t.Fatalf("fields missing from merged output")
 	}
@@ -147,7 +149,7 @@ func TestMergePreservesUnmanagedFieldEntries(t *testing.T) {
 		t.Fatalf("expected 4 field entries preserved, got %d", len(fields))
 	}
 	for _, f := range fields {
-		m := f.(map[string]interface{})
+		m := f.(map[string]any)
 		if m["name"] == "minimumSeeders" && m["value"] != float64(5) {
 			t.Errorf("minimumSeeders was clobbered: %v", m["value"])
 		}
@@ -161,15 +163,15 @@ func TestMergePreservesUnmanagedFieldEntries(t *testing.T) {
 }
 
 func TestMergeAppliesFieldValueChange(t *testing.T) {
-	current := map[string]interface{}{
+	current := map[string]any{
 		"name": "TL",
-		"fields": []interface{}{
-			map[string]interface{}{"name": "minimumSeeders", "value": float64(5), "order": float64(1)},
+		"fields": []any{
+			map[string]any{"name": "minimumSeeders", "value": float64(5), "order": float64(1)},
 		},
 	}
-	desired := map[string]interface{}{
-		"fields": []interface{}{
-			map[string]interface{}{"name": "minimumSeeders", "value": float64(9)},
+	desired := map[string]any{
+		"fields": []any{
+			map[string]any{"name": "minimumSeeders", "value": float64(9)},
 		},
 	}
 	merged, changed, err := MergeDesiredOverCurrent(current, desired)
@@ -179,7 +181,7 @@ func TestMergeAppliesFieldValueChange(t *testing.T) {
 	if !changed {
 		t.Fatal("a real value change must report changed=true")
 	}
-	f := merged["fields"].([]interface{})[0].(map[string]interface{})
+	f := merged["fields"].([]any)[0].(map[string]any)
 	if f["value"] != float64(9) {
 		t.Errorf("value not applied: %v", f["value"])
 	}
@@ -189,21 +191,21 @@ func TestMergeAppliesFieldValueChange(t *testing.T) {
 }
 
 func TestMergeAppendsNewFieldEntry(t *testing.T) {
-	current := map[string]interface{}{
-		"fields": []interface{}{
-			map[string]interface{}{"name": "baseUrl", "value": "https://x"},
+	current := map[string]any{
+		"fields": []any{
+			map[string]any{"name": "baseUrl", "value": "https://x"},
 		},
 	}
-	desired := map[string]interface{}{
-		"fields": []interface{}{
-			map[string]interface{}{"name": "apiKey", "value": "abc"},
+	desired := map[string]any{
+		"fields": []any{
+			map[string]any{"name": "apiKey", "value": "abc"},
 		},
 	}
 	merged, _, err := MergeDesiredOverCurrent(current, desired)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := len(merged["fields"].([]interface{})); got != 2 {
+	if got := len(merged["fields"].([]any)); got != 2 {
 		t.Errorf("expected existing + appended = 2 entries, got %d", got)
 	}
 }

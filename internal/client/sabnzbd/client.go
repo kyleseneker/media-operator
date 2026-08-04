@@ -47,16 +47,16 @@ func (c *Client) Ping(ctx context.Context) error {
 	return err
 }
 
-func (c *Client) GetConfig(ctx context.Context) (map[string]interface{}, error) {
+func (c *Client) GetConfig(ctx context.Context) (map[string]any, error) {
 	data, err := c.hc.DoForm(ctx, "/api", c.apiParams("get_config", ""))
 	if err != nil {
 		return nil, err
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, err
 	}
-	if config, ok := result["config"].(map[string]interface{}); ok {
+	if config, ok := result["config"].(map[string]any); ok {
 		return config, nil
 	}
 	return result, nil

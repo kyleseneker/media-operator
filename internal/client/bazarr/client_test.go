@@ -14,7 +14,7 @@ import (
 	"github.com/kyleseneker/media-operator/internal/engine"
 )
 
-func newTestClient(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *Client) {
+func newTestClient(t *testing.T, handler http.HandlerFunc) *Client {
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
@@ -24,11 +24,11 @@ func newTestClient(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *C
 		engine.WithTransport(&http.Transport{}),
 	)
 	require.NoError(t, err)
-	return srv, NewClient(hc)
+	return NewClient(hc)
 }
 
 func TestPing(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/system/health", r.URL.Path)
 		assert.Equal(t, "test-key", r.Header.Get("X-API-KEY"))
 		w.WriteHeader(http.StatusOK)
@@ -42,7 +42,7 @@ func TestPostSettings(t *testing.T) {
 		Port   int    `json:"port"`
 	}
 
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
 		assert.Equal(t, "/api/system/settings", r.URL.Path)
 		assert.Equal(t, "application/x-www-form-urlencoded", r.Header.Get("Content-Type"))
@@ -57,7 +57,7 @@ func TestPostSettings(t *testing.T) {
 }
 
 func TestPostForm(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/system/settings", r.URL.Path)
 		body, _ := io.ReadAll(r.Body)
 		assert.Contains(t, string(body), "custom=value")
@@ -98,7 +98,7 @@ func TestReconcileLanguages(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			called := false
-			_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 				called = true
 				if tt.checkBody != nil {
 					body, _ := io.ReadAll(r.Body)
@@ -129,7 +129,7 @@ func TestStructToFormData(t *testing.T) {
 	tests := []struct {
 		name    string
 		section string
-		obj     interface{}
+		obj     any
 		want    map[string]string
 		absent  []string
 	}{

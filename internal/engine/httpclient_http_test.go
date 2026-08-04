@@ -27,7 +27,7 @@ func TestPing(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.statusCode)
 			})
 			err := hc.Ping(context.Background(), "/health")
@@ -47,16 +47,16 @@ func TestGetJSON(t *testing.T) {
 		statusCode int
 		wantErr    bool
 		wantKey    string
-		wantVal    interface{}
+		wantVal    any
 	}{
 		{"valid object", `{"name":"test","id":1}`, 200, false, "name", "test"},
 		{"server error", `error`, 500, true, "", nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.statusCode)
-				w.Write([]byte(tt.body))
+				_, _ = w.Write([]byte(tt.body))
 			})
 			result, err := hc.GetJSON(context.Background(), "/api/config")
 			if tt.wantErr {
@@ -70,8 +70,8 @@ func TestGetJSON(t *testing.T) {
 }
 
 func TestGetJSON_InvalidJSON(t *testing.T) {
-	_, hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("not json"))
+	hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("not json"))
 	})
 	_, err := hc.GetJSON(context.Background(), "/api/config")
 	assert.Error(t, err)
@@ -92,9 +92,9 @@ func TestGetJSONList(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.statusCode)
-				w.Write([]byte(tt.body))
+				_, _ = w.Write([]byte(tt.body))
 			})
 			result, err := hc.GetJSONList(context.Background(), "/api/list")
 			if tt.wantErr {
@@ -109,17 +109,17 @@ func TestGetJSONList(t *testing.T) {
 
 func TestPutJSON(t *testing.T) {
 	var capturedMethod string
-	var capturedBody map[string]interface{}
+	var capturedBody map[string]any
 
-	_, hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+	hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		capturedMethod = r.Method
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &capturedBody)
+		_ = json.Unmarshal(body, &capturedBody)
 		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
 		w.WriteHeader(http.StatusOK)
 	})
 
-	err := hc.PutJSON(context.Background(), "/api/config/1", map[string]interface{}{"key": "val"})
+	err := hc.PutJSON(context.Background(), "/api/config/1", map[string]any{"key": "val"})
 	require.NoError(t, err)
 	assert.Equal(t, http.MethodPut, capturedMethod)
 	assert.Equal(t, "val", capturedBody["key"])
@@ -128,12 +128,12 @@ func TestPutJSON(t *testing.T) {
 func TestPostJSON(t *testing.T) {
 	var capturedMethod string
 
-	_, hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+	hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		capturedMethod = r.Method
 		w.WriteHeader(http.StatusCreated)
 	})
 
-	err := hc.PostJSON(context.Background(), "/api/resource", map[string]interface{}{"name": "test"})
+	err := hc.PostJSON(context.Background(), "/api/resource", map[string]any{"name": "test"})
 	require.NoError(t, err)
 	assert.Equal(t, http.MethodPost, capturedMethod)
 }
@@ -141,7 +141,7 @@ func TestPostJSON(t *testing.T) {
 func TestDeleteJSON(t *testing.T) {
 	var capturedMethod string
 
-	_, hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+	hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		capturedMethod = r.Method
 		w.WriteHeader(http.StatusOK)
 	})
@@ -163,9 +163,9 @@ func TestDo(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.statusCode)
-				w.Write([]byte(tt.respBody))
+				_, _ = w.Write([]byte(tt.respBody))
 			})
 			data, err := hc.Do(context.Background(), http.MethodGet, "/api/test", nil)
 			if tt.wantErr {
@@ -184,7 +184,7 @@ func TestDo(t *testing.T) {
 func TestDo_WithBody(t *testing.T) {
 	var capturedBody []byte
 
-	_, hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+	hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		capturedBody, _ = io.ReadAll(r.Body)
 		w.WriteHeader(http.StatusOK)
 	})
@@ -200,10 +200,10 @@ func TestDo_WithBody(t *testing.T) {
 func TestDoRaw(t *testing.T) {
 	var capturedCT string
 
-	_, hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+	hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		capturedCT = r.Header.Get("Content-Type")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("raw response"))
+		_, _ = w.Write([]byte("raw response"))
 	})
 
 	data, err := hc.DoRaw(context.Background(), http.MethodPost, "/api/test", nil, "text/plain")
@@ -216,7 +216,7 @@ func TestDoForm(t *testing.T) {
 	var capturedCT string
 	var capturedBody string
 
-	_, hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+	hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		capturedCT = r.Header.Get("Content-Type")
 		body, _ := io.ReadAll(r.Body)
 		capturedBody = string(body)
@@ -234,7 +234,7 @@ func TestDoForm(t *testing.T) {
 func TestAuthHeaderSent(t *testing.T) {
 	var capturedHeader string
 
-	_, hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+	hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		capturedHeader = r.Header.Get("X-Api-Key")
 		w.WriteHeader(http.StatusOK)
 	})
@@ -259,7 +259,7 @@ func TestDo_RecordsErrorMetric(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			before := testutil.ToFloat64(metrics.AppAPIErrorsTotal.WithLabelValues(testAppLabel, tt.wantClass))
 
-			_, hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.statusCode)
 			})
 			_, err := hc.Do(context.Background(), http.MethodGet, "/test", nil)
@@ -274,7 +274,7 @@ func TestDo_RecordsErrorMetric(t *testing.T) {
 // TestDo_RecordsDurationHistogram verifies the duration histogram records samples
 // on both success and error outcomes.
 func TestDo_RecordsDurationHistogram(t *testing.T) {
-	_, hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+	hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 

@@ -41,19 +41,8 @@ func (r *PlexConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if !config.GetDeletionTimestamp().IsZero() {
-		handled, derr := ctrlcommon.HandleDeletion(ctx, r.Client, r.Recorder, &config, nil)
-		if derr != nil {
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-		}
-		if handled {
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, nil
-	}
-
-	if err := ctrlcommon.EnsureFinalizer(ctx, r.Client, &config); err != nil {
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, nil); done {
+		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
 	token, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.TokenSecretRef)
@@ -85,61 +74,7 @@ func (r *PlexConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	var syncErrors []string
 
 	// Reconcile preferences (server, transcoder, network are all Plex prefs)
-	desiredPrefs := make(map[string]string)
-	if s := config.Spec.Server; s != nil {
-		if s.FriendlyName != "" {
-			desiredPrefs["FriendlyName"] = s.FriendlyName
-		}
-		if s.Language != "" {
-			desiredPrefs["language"] = s.Language
-		}
-		if s.AutoEmptyTrash != nil {
-			desiredPrefs["autoEmptyTrash"] = ctrlcommon.BoolTo01(*s.AutoEmptyTrash)
-		}
-		if s.ScanMyLibraryAutomatically != nil {
-			desiredPrefs["ScanMyLibraryAutomatically"] = ctrlcommon.BoolTo01(*s.ScanMyLibraryAutomatically)
-		}
-		if s.ScanMyLibraryPeriodically != nil {
-			desiredPrefs["ScanMyLibraryPeriodically"] = ctrlcommon.BoolTo01(*s.ScanMyLibraryPeriodically)
-		}
-		if s.LogDebug != nil {
-			desiredPrefs["logDebug"] = ctrlcommon.BoolTo01(*s.LogDebug)
-		}
-	}
-	if t := config.Spec.Transcoder; t != nil {
-		if t.TranscodeHwRequested != nil {
-			desiredPrefs["TranscoderHwRequested"] = ctrlcommon.BoolTo01(*t.TranscodeHwRequested)
-		}
-		if t.HardwareAccelerationType != "" {
-			desiredPrefs["HardwareAccelerationType"] = t.HardwareAccelerationType
-		}
-		if t.MaxSimultaneousVideoTranscodes != nil {
-			desiredPrefs["TranscoderMaxSimulTranscodes"] = strconv.Itoa(*t.MaxSimultaneousVideoTranscodes)
-		}
-		if t.TranscodeHwDecodingEnabled != nil {
-			desiredPrefs["TranscodeHwDecodingEnabled"] = ctrlcommon.BoolTo01(*t.TranscodeHwDecodingEnabled)
-		}
-		if t.TranscodeHwEncodingEnabled != nil {
-			desiredPrefs["TranscodeHwEncodingEnabled"] = ctrlcommon.BoolTo01(*t.TranscodeHwEncodingEnabled)
-		}
-		if t.TranscoderTempDirectory != "" {
-			desiredPrefs["TranscoderTempDirectory"] = t.TranscoderTempDirectory
-		}
-	}
-	if n := config.Spec.Network; n != nil {
-		if n.SecureConnections != nil {
-			desiredPrefs["secureConnections"] = strconv.Itoa(*n.SecureConnections)
-		}
-		if n.CustomServerAccessUrls != "" {
-			desiredPrefs["customConnections"] = n.CustomServerAccessUrls
-		}
-		if n.AllowedNetworks != "" {
-			desiredPrefs["allowedNetworks"] = n.AllowedNetworks
-		}
-		if n.EnableIPv6 != nil {
-			desiredPrefs["EnableIPv6"] = ctrlcommon.BoolTo01(*n.EnableIPv6)
-		}
-	}
+	desiredPrefs := buildPlexPreferences(config.Spec)
 
 	if len(desiredPrefs) > 0 {
 		if err := pc.SetPreferences(ctx, desiredPrefs); err != nil {
@@ -221,4 +156,63 @@ func (r *PlexConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		})).
 		Named("plexconfig").
 		Complete(r)
+}
+
+func buildPlexPreferences(spec mediaserversv1alpha1.PlexConfigSpec) map[string]string {
+	desiredPrefs := make(map[string]string)
+	if s := spec.Server; s != nil {
+		if s.FriendlyName != "" {
+			desiredPrefs["FriendlyName"] = s.FriendlyName
+		}
+		if s.Language != "" {
+			desiredPrefs["language"] = s.Language
+		}
+		if s.AutoEmptyTrash != nil {
+			desiredPrefs["autoEmptyTrash"] = ctrlcommon.BoolTo01(*s.AutoEmptyTrash)
+		}
+		if s.ScanMyLibraryAutomatically != nil {
+			desiredPrefs["ScanMyLibraryAutomatically"] = ctrlcommon.BoolTo01(*s.ScanMyLibraryAutomatically)
+		}
+		if s.ScanMyLibraryPeriodically != nil {
+			desiredPrefs["ScanMyLibraryPeriodically"] = ctrlcommon.BoolTo01(*s.ScanMyLibraryPeriodically)
+		}
+		if s.LogDebug != nil {
+			desiredPrefs["logDebug"] = ctrlcommon.BoolTo01(*s.LogDebug)
+		}
+	}
+	if t := spec.Transcoder; t != nil {
+		if t.TranscodeHwRequested != nil {
+			desiredPrefs["TranscoderHwRequested"] = ctrlcommon.BoolTo01(*t.TranscodeHwRequested)
+		}
+		if t.HardwareAccelerationType != "" {
+			desiredPrefs["HardwareAccelerationType"] = t.HardwareAccelerationType
+		}
+		if t.MaxSimultaneousVideoTranscodes != nil {
+			desiredPrefs["TranscoderMaxSimulTranscodes"] = strconv.Itoa(*t.MaxSimultaneousVideoTranscodes)
+		}
+		if t.TranscodeHwDecodingEnabled != nil {
+			desiredPrefs["TranscodeHwDecodingEnabled"] = ctrlcommon.BoolTo01(*t.TranscodeHwDecodingEnabled)
+		}
+		if t.TranscodeHwEncodingEnabled != nil {
+			desiredPrefs["TranscodeHwEncodingEnabled"] = ctrlcommon.BoolTo01(*t.TranscodeHwEncodingEnabled)
+		}
+		if t.TranscoderTempDirectory != "" {
+			desiredPrefs["TranscoderTempDirectory"] = t.TranscoderTempDirectory
+		}
+	}
+	if n := spec.Network; n != nil {
+		if n.SecureConnections != nil {
+			desiredPrefs["secureConnections"] = strconv.Itoa(*n.SecureConnections)
+		}
+		if n.CustomServerAccessUrls != "" {
+			desiredPrefs["customConnections"] = n.CustomServerAccessUrls
+		}
+		if n.AllowedNetworks != "" {
+			desiredPrefs["allowedNetworks"] = n.AllowedNetworks
+		}
+		if n.EnableIPv6 != nil {
+			desiredPrefs["EnableIPv6"] = ctrlcommon.BoolTo01(*n.EnableIPv6)
+		}
+	}
+	return desiredPrefs
 }

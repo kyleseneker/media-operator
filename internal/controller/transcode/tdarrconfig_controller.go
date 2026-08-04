@@ -42,19 +42,8 @@ func (r *TdarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if !config.GetDeletionTimestamp().IsZero() {
-		handled, derr := ctrlcommon.HandleDeletion(ctx, r.Client, r.Recorder, &config, nil)
-		if derr != nil {
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-		}
-		if handled {
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, nil
-	}
-
-	if err := ctrlcommon.EnsureFinalizer(ctx, r.Client, &config); err != nil {
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, nil); done {
+		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
 	// Resolve API key
@@ -121,7 +110,7 @@ func (r *TdarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 }
 
 func reconcileTdarrLibrary(ctx context.Context, tc *tdarrclient.Client, lib transcodev1alpha1.TdarrLibrary) error {
-	obj := map[string]interface{}{
+	obj := map[string]any{
 		"_id":  lib.ID,
 		"name": lib.Name,
 	}
@@ -163,7 +152,7 @@ func reconcileTdarrLibrary(ctx context.Context, tc *tdarrclient.Client, lib tran
 }
 
 func reconcileTdarrFlow(ctx context.Context, tc *tdarrclient.Client, flow transcodev1alpha1.TdarrFlow) error {
-	obj := map[string]interface{}{
+	obj := map[string]any{
 		"_id":  flow.ID,
 		"name": flow.Name,
 	}
@@ -172,13 +161,13 @@ func reconcileTdarrFlow(ctx context.Context, tc *tdarrclient.Client, flow transc
 	}
 
 	// Unmarshal RawExtension fields
-	var flowPlugins interface{}
+	var flowPlugins any
 	if err := json.Unmarshal(flow.FlowPlugins.Raw, &flowPlugins); err != nil {
 		return fmt.Errorf("unmarshaling flowPlugins: %w", err)
 	}
 	obj["flowPlugins"] = flowPlugins
 
-	var flowEdges interface{}
+	var flowEdges any
 	if err := json.Unmarshal(flow.FlowEdges.Raw, &flowEdges); err != nil {
 		return fmt.Errorf("unmarshaling flowEdges: %w", err)
 	}

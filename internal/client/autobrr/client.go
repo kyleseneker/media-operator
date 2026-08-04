@@ -26,78 +26,78 @@ func (c *Client) Ping(ctx context.Context) error {
 
 // --- Download Clients ---
 
-func (c *Client) ListDownloadClients(ctx context.Context) ([]map[string]interface{}, error) {
+func (c *Client) ListDownloadClients(ctx context.Context) ([]map[string]any, error) {
 	return c.hc.GetJSONList(ctx, "/api/download_clients")
 }
 
-func (c *Client) CreateDownloadClient(ctx context.Context, dc map[string]interface{}) error {
+func (c *Client) CreateDownloadClient(ctx context.Context, dc map[string]any) error {
 	return c.hc.PostJSON(ctx, "/api/download_clients", dc)
 }
 
-func (c *Client) UpdateDownloadClient(ctx context.Context, id int, dc map[string]interface{}) error {
+func (c *Client) UpdateDownloadClient(ctx context.Context, id int, dc map[string]any) error {
 	return c.hc.PutJSON(ctx, fmt.Sprintf("/api/download_clients/%d", id), dc)
 }
 
 // --- Indexers ---
 
-func (c *Client) ListIndexers(ctx context.Context) ([]map[string]interface{}, error) {
+func (c *Client) ListIndexers(ctx context.Context) ([]map[string]any, error) {
 	return c.hc.GetJSONList(ctx, "/api/indexer")
 }
 
-func (c *Client) CreateIndexer(ctx context.Context, idx map[string]interface{}) error {
+func (c *Client) CreateIndexer(ctx context.Context, idx map[string]any) error {
 	return c.hc.PostJSON(ctx, "/api/indexer", idx)
 }
 
-func (c *Client) UpdateIndexer(ctx context.Context, id int, idx map[string]interface{}) error {
+func (c *Client) UpdateIndexer(ctx context.Context, id int, idx map[string]any) error {
 	return c.hc.PutJSON(ctx, fmt.Sprintf("/api/indexer/%d", id), idx)
 }
 
 // --- IRC Networks ---
 
-func (c *Client) ListIRCNetworks(ctx context.Context) ([]map[string]interface{}, error) {
+func (c *Client) ListIRCNetworks(ctx context.Context) ([]map[string]any, error) {
 	return c.hc.GetJSONList(ctx, "/api/irc")
 }
 
-func (c *Client) CreateIRCNetwork(ctx context.Context, net map[string]interface{}) error {
+func (c *Client) CreateIRCNetwork(ctx context.Context, net map[string]any) error {
 	return c.hc.PostJSON(ctx, "/api/irc", net)
 }
 
-func (c *Client) UpdateIRCNetwork(ctx context.Context, id int, net map[string]interface{}) error {
+func (c *Client) UpdateIRCNetwork(ctx context.Context, id int, net map[string]any) error {
 	return c.hc.PutJSON(ctx, fmt.Sprintf("/api/irc/%d", id), net)
 }
 
 // --- Feeds ---
 
-func (c *Client) ListFeeds(ctx context.Context) ([]map[string]interface{}, error) {
+func (c *Client) ListFeeds(ctx context.Context) ([]map[string]any, error) {
 	return c.hc.GetJSONList(ctx, "/api/feeds")
 }
 
-func (c *Client) CreateFeed(ctx context.Context, feed map[string]interface{}) error {
+func (c *Client) CreateFeed(ctx context.Context, feed map[string]any) error {
 	return c.hc.PostJSON(ctx, "/api/feeds", feed)
 }
 
-func (c *Client) UpdateFeed(ctx context.Context, id int, feed map[string]interface{}) error {
+func (c *Client) UpdateFeed(ctx context.Context, id int, feed map[string]any) error {
 	return c.hc.PutJSON(ctx, fmt.Sprintf("/api/feeds/%d", id), feed)
 }
 
 // --- Filters ---
 
-func (c *Client) ListFilters(ctx context.Context) ([]map[string]interface{}, error) {
+func (c *Client) ListFilters(ctx context.Context) ([]map[string]any, error) {
 	return c.hc.GetJSONList(ctx, "/api/filters")
 }
 
-func (c *Client) CreateFilter(ctx context.Context, filter map[string]interface{}) (map[string]interface{}, error) {
+func (c *Client) CreateFilter(ctx context.Context, filter map[string]any) (map[string]any, error) {
 	data, err := c.hc.Do(ctx, http.MethodPost, "/api/filters", filter)
 	if err != nil {
 		return nil, err
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, fmt.Errorf("unmarshaling created filter: %w", err)
 	}
 	return result, nil
 }
 
-func (c *Client) UpdateFilter(ctx context.Context, id int, filter map[string]interface{}) error {
+func (c *Client) UpdateFilter(ctx context.Context, id int, filter map[string]any) error {
 	return c.hc.PutJSON(ctx, fmt.Sprintf("/api/filters/%d", id), filter)
 }

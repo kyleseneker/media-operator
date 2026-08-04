@@ -30,7 +30,7 @@ func ProwlarrDefinition() engine.AppDefinition {
 // ProwlarrOptions holds all the inputs needed to reconcile Prowlarr.
 type ProwlarrOptions struct {
 	Tags            []commonv1alpha1.Tag
-	Applications    []map[string]interface{}
+	Applications    []map[string]any
 	Indexers        []servarrv1alpha1.ProwlarrIndexer
 	Proxies         []servarrv1alpha1.ProwlarrProxy
 	DownloadClients []servarrv1alpha1.ProwlarrDownloadClient
@@ -38,13 +38,13 @@ type ProwlarrOptions struct {
 }
 
 // ProwlarrResources builds the resources map from the options.
-func ProwlarrResources(opts ProwlarrOptions) map[string][]map[string]interface{} {
-	resources := make(map[string][]map[string]interface{})
+func ProwlarrResources(opts ProwlarrOptions) map[string][]map[string]any {
+	resources := make(map[string][]map[string]any)
 
 	if len(opts.Tags) > 0 {
-		var tags []map[string]interface{}
+		tags := make([]map[string]any, 0, len(opts.Tags))
 		for _, t := range opts.Tags {
-			tags = append(tags, map[string]interface{}{"label": t.Label})
+			tags = append(tags, map[string]any{"label": t.Label})
 		}
 		resources["tags"] = tags
 	}
@@ -55,7 +55,7 @@ func ProwlarrResources(opts ProwlarrOptions) map[string][]map[string]interface{}
 	}
 
 	if len(opts.Indexers) > 0 {
-		var idxs []map[string]interface{}
+		idxs := make([]map[string]any, 0, len(opts.Indexers))
 		for _, idx := range opts.Indexers {
 			idxs = append(idxs, BuildProwlarrIndexerPayload(idx))
 		}
@@ -63,7 +63,7 @@ func ProwlarrResources(opts ProwlarrOptions) map[string][]map[string]interface{}
 	}
 
 	if len(opts.Proxies) > 0 {
-		var proxies []map[string]interface{}
+		proxies := make([]map[string]any, 0, len(opts.Proxies))
 		for _, p := range opts.Proxies {
 			proxies = append(proxies, BuildProwlarrProxyPayload(p))
 		}
@@ -71,7 +71,7 @@ func ProwlarrResources(opts ProwlarrOptions) map[string][]map[string]interface{}
 	}
 
 	if len(opts.DownloadClients) > 0 {
-		var dcs []map[string]interface{}
+		dcs := make([]map[string]any, 0, len(opts.DownloadClients))
 		for _, dc := range opts.DownloadClients {
 			dcs = append(dcs, BuildProwlarrDownloadClientPayload(dc))
 		}
@@ -79,7 +79,7 @@ func ProwlarrResources(opts ProwlarrOptions) map[string][]map[string]interface{}
 	}
 
 	if len(opts.Notifications) > 0 {
-		var notifs []map[string]interface{}
+		notifs := make([]map[string]any, 0, len(opts.Notifications))
 		for _, n := range opts.Notifications {
 			notifs = append(notifs, servarrclient.BuildNotificationPayload(n))
 		}
@@ -96,19 +96,19 @@ func ProwlarrResources(opts ProwlarrOptions) map[string][]map[string]interface{}
 
 // BuildProwlarrApplicationPayload builds the API payload for a Prowlarr application.
 // apiKey is the resolved secret value.
-func BuildProwlarrApplicationPayload(app servarrv1alpha1.ProwlarrApplication, apiKey string) map[string]interface{} {
-	syncCats := make([]interface{}, len(app.SyncCategories))
+func BuildProwlarrApplicationPayload(app servarrv1alpha1.ProwlarrApplication, apiKey string) map[string]any {
+	syncCats := make([]any, len(app.SyncCategories))
 	for i, c := range app.SyncCategories {
 		syncCats[i] = c
 	}
-	tags := make([]interface{}, len(app.Tags))
+	tags := make([]any, len(app.Tags))
 	for i, t := range app.Tags {
 		tags[i] = t
 	}
-	return map[string]interface{}{
+	return map[string]any{
 		"name": app.Name, "syncLevel": app.SyncLevel,
 		"implementation": app.Implementation, "configContract": app.ConfigContract,
-		"fields": []map[string]interface{}{
+		"fields": []map[string]any{
 			{"name": "prowlarrUrl", "value": app.ProwlarrUrl},
 			{"name": "baseUrl", "value": app.BaseUrl},
 			{"name": "apiKey", "value": apiKey},
@@ -119,17 +119,17 @@ func BuildProwlarrApplicationPayload(app servarrv1alpha1.ProwlarrApplication, ap
 }
 
 // BuildProwlarrIndexerPayload builds the API payload for a Prowlarr indexer.
-func BuildProwlarrIndexerPayload(idx servarrv1alpha1.ProwlarrIndexer) map[string]interface{} {
+func BuildProwlarrIndexerPayload(idx servarrv1alpha1.ProwlarrIndexer) map[string]any {
 	enable := idx.Enable == nil || *idx.Enable
-	fields := make([]map[string]interface{}, 0, len(idx.Fields))
+	fields := make([]map[string]any, 0, len(idx.Fields))
 	for _, f := range idx.Fields {
 		val := ""
 		if f.Value != nil {
 			val = *f.Value
 		}
-		fields = append(fields, map[string]interface{}{"name": f.Name, "value": val})
+		fields = append(fields, map[string]any{"name": f.Name, "value": val})
 	}
-	desired := map[string]interface{}{
+	desired := map[string]any{
 		"name": idx.Name, "enable": enable,
 		"implementation": idx.Implementation, "configContract": idx.ConfigContract,
 		"fields": fields, "tags": intSliceToInterface(idx.Tags),
@@ -144,12 +144,12 @@ func BuildProwlarrIndexerPayload(idx servarrv1alpha1.ProwlarrIndexer) map[string
 }
 
 // BuildProwlarrProxyPayload builds the API payload for a Prowlarr proxy.
-func BuildProwlarrProxyPayload(proxy servarrv1alpha1.ProwlarrProxy) map[string]interface{} {
-	fields := []map[string]interface{}{{"name": "host", "value": proxy.Host}}
+func BuildProwlarrProxyPayload(proxy servarrv1alpha1.ProwlarrProxy) map[string]any {
+	fields := []map[string]any{{"name": "host", "value": proxy.Host}}
 	if proxy.RequestTimeout != nil {
-		fields = append(fields, map[string]interface{}{"name": "requestTimeout", "value": *proxy.RequestTimeout})
+		fields = append(fields, map[string]any{"name": "requestTimeout", "value": *proxy.RequestTimeout})
 	}
-	return map[string]interface{}{
+	return map[string]any{
 		"name": proxy.Name, "implementation": proxy.Implementation,
 		"configContract": proxy.ConfigContract, "fields": fields,
 		"tags": intSliceToInterface(proxy.Tags),
@@ -157,7 +157,7 @@ func BuildProwlarrProxyPayload(proxy servarrv1alpha1.ProwlarrProxy) map[string]i
 }
 
 // BuildProwlarrDownloadClientPayload builds the API payload for a Prowlarr download client.
-func BuildProwlarrDownloadClientPayload(dc servarrv1alpha1.ProwlarrDownloadClient) map[string]interface{} {
+func BuildProwlarrDownloadClientPayload(dc servarrv1alpha1.ProwlarrDownloadClient) map[string]any {
 	enable := dc.Enable == nil || *dc.Enable
 
 	configContract := dc.Implementation + "Settings"
@@ -165,28 +165,28 @@ func BuildProwlarrDownloadClientPayload(dc servarrv1alpha1.ProwlarrDownloadClien
 		configContract = dc.ConfigContract
 	}
 
-	fields := make([]map[string]interface{}, 0, len(dc.Fields))
+	fields := make([]map[string]any, 0, len(dc.Fields))
 	for _, f := range dc.Fields {
 		val := ""
 		if f.Value != nil {
 			val = *f.Value
 		}
-		fields = append(fields, map[string]interface{}{"name": f.Name, "value": val})
+		fields = append(fields, map[string]any{"name": f.Name, "value": val})
 	}
 
-	categories := make([]map[string]interface{}, 0, len(dc.Categories))
+	categories := make([]map[string]any, 0, len(dc.Categories))
 	for _, cat := range dc.Categories {
-		cats := make([]interface{}, len(cat.Categories))
+		cats := make([]any, len(cat.Categories))
 		for i, c := range cat.Categories {
 			cats[i] = c
 		}
-		categories = append(categories, map[string]interface{}{
+		categories = append(categories, map[string]any{
 			"clientCategory": cat.ClientCategory,
 			"categories":     cats,
 		})
 	}
 
-	desired := map[string]interface{}{
+	desired := map[string]any{
 		"name":           dc.Name,
 		"enable":         enable,
 		"protocol":       dc.Protocol,
@@ -205,8 +205,8 @@ func BuildProwlarrDownloadClientPayload(dc servarrv1alpha1.ProwlarrDownloadClien
 }
 
 // intSliceToInterface converts an int slice to an interface slice for JSON serialization.
-func intSliceToInterface(s []int) []interface{} {
-	r := make([]interface{}, len(s))
+func intSliceToInterface(s []int) []any {
+	r := make([]any, len(s))
 	for i, v := range s {
 		r[i] = v
 	}

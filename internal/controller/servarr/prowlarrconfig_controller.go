@@ -37,19 +37,8 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if !config.GetDeletionTimestamp().IsZero() {
-		handled, derr := ctrlcommon.HandleDeletion(ctx, r.Client, r.Recorder, &config, nil)
-		if derr != nil {
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-		}
-		if handled {
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, nil
-	}
-
-	if err := ctrlcommon.EnsureFinalizer(ctx, r.Client, &config); err != nil {
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, nil); done {
+		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
 	apiKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.APIKeySecretRef)
@@ -112,8 +101,8 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 }
 
 // buildApplicationPayloads resolves per-application API key secrets and builds payloads.
-func (r *ProwlarrConfigReconciler) buildApplicationPayloads(ctx context.Context, namespace string, apps []servarrv1alpha1.ProwlarrApplication) ([]map[string]interface{}, error) {
-	payloads := make([]map[string]interface{}, 0, len(apps))
+func (r *ProwlarrConfigReconciler) buildApplicationPayloads(ctx context.Context, namespace string, apps []servarrv1alpha1.ProwlarrApplication) ([]map[string]any, error) {
+	payloads := make([]map[string]any, 0, len(apps))
 	for _, app := range apps {
 		appAPIKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, namespace, app.APIKeySecretRef)
 		if err != nil {

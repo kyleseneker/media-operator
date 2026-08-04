@@ -41,19 +41,8 @@ func (r *JellyfinConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if !config.GetDeletionTimestamp().IsZero() {
-		handled, derr := ctrlcommon.HandleDeletion(ctx, r.Client, r.Recorder, &config, nil)
-		if derr != nil {
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-		}
-		if handled {
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, nil
-	}
-
-	if err := ctrlcommon.EnsureFinalizer(ctx, r.Client, &config); err != nil {
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, nil); done {
+		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
 	// Resolve admin credentials
@@ -208,7 +197,7 @@ func reconcileJellyfinLibrary(ctx context.Context, jf *jellyfinclient.Client, li
 		}
 	}
 
-	libraryOptions := map[string]interface{}{
+	libraryOptions := map[string]any{
 		"PathInfos": buildPathInfos(lib.Paths),
 	}
 	if lib.EnableRealtimeMonitor != nil {
@@ -230,10 +219,10 @@ func reconcileJellyfinLibrary(ctx context.Context, jf *jellyfinclient.Client, li
 	return jf.CreateLibrary(ctx, lib.Name, lib.CollectionType, libraryOptions)
 }
 
-func buildPathInfos(paths []string) []map[string]interface{} {
-	infos := make([]map[string]interface{}, len(paths))
+func buildPathInfos(paths []string) []map[string]any {
+	infos := make([]map[string]any, len(paths))
 	for i, p := range paths {
-		infos[i] = map[string]interface{}{"Path": p}
+		infos[i] = map[string]any{"Path": p}
 	}
 	return infos
 }

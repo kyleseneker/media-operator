@@ -41,19 +41,8 @@ func (r *AutobrrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if !config.GetDeletionTimestamp().IsZero() {
-		handled, derr := ctrlcommon.HandleDeletion(ctx, r.Client, r.Recorder, &config, nil)
-		if derr != nil {
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-		}
-		if handled {
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, nil
-	}
-
-	if err := ctrlcommon.EnsureFinalizer(ctx, r.Client, &config); err != nil {
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, nil); done {
+		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
 	// Resolve API key
@@ -141,7 +130,7 @@ func reconcileAutobrrDownloadClient(ctx context.Context, c client.Reader, ac *au
 		return fmt.Errorf("listing download clients: %w", err)
 	}
 
-	obj := map[string]interface{}{
+	obj := map[string]any{
 		"name":    dc.Name,
 		"type":    dc.Type,
 		"host":    dc.Host,
@@ -178,7 +167,7 @@ func reconcileAutobrrDownloadClient(ctx context.Context, c client.Reader, ac *au
 	}
 
 	if dc.Settings != nil {
-		settings := make(map[string]interface{})
+		settings := make(map[string]any)
 		if dc.Settings.Category != "" {
 			settings["category"] = dc.Settings.Category
 		}
@@ -217,7 +206,7 @@ func reconcileAutobrrIndexer(ctx context.Context, c client.Reader, ac *autobrrcl
 		return fmt.Errorf("listing indexers: %w", err)
 	}
 
-	obj := map[string]interface{}{
+	obj := map[string]any{
 		"name":           idx.Name,
 		"enabled":        idx.Enable == nil || *idx.Enable,
 		"implementation": idx.Implementation,
@@ -256,7 +245,7 @@ func reconcileAutobrrIRCNetwork(ctx context.Context, c client.Reader, ac *autobr
 		return fmt.Errorf("listing IRC networks: %w", err)
 	}
 
-	obj := map[string]interface{}{
+	obj := map[string]any{
 		"name":    irc.Name,
 		"enabled": irc.Enable == nil || *irc.Enable,
 		"server":  irc.Server,
@@ -290,9 +279,9 @@ func reconcileAutobrrIRCNetwork(ctx context.Context, c client.Reader, ac *autobr
 
 	// Build channels list
 	if len(irc.Channels) > 0 {
-		channels := make([]map[string]interface{}, 0, len(irc.Channels))
+		channels := make([]map[string]any, 0, len(irc.Channels))
 		for _, ch := range irc.Channels {
-			chObj := map[string]interface{}{"name": ch.Name}
+			chObj := map[string]any{"name": ch.Name}
 			if ch.PasswordSecretRef != nil {
 				val, err := reconciler.ResolveSecretKeyRef(ctx, c, namespace, *ch.PasswordSecretRef)
 				if err != nil {
@@ -325,7 +314,7 @@ func reconcileAutobrrFeed(ctx context.Context, c client.Reader, ac *autobrrclien
 		return fmt.Errorf("listing feeds: %w", err)
 	}
 
-	obj := map[string]interface{}{
+	obj := map[string]any{
 		"name":    feed.Name,
 		"enabled": feed.Enable == nil || *feed.Enable,
 		"type":    feed.Type,
@@ -365,7 +354,7 @@ func reconcileAutobrrFilter(ctx context.Context, ac *autobrrclient.Client, filte
 		return fmt.Errorf("listing filters: %w", err)
 	}
 
-	obj := map[string]interface{}{
+	obj := map[string]any{
 		"name":    filter.Name,
 		"enabled": filter.Enable == nil || *filter.Enable,
 	}
@@ -411,9 +400,9 @@ func reconcileAutobrrFilter(ctx context.Context, ac *autobrrclient.Client, filte
 
 	// Build actions
 	if len(filter.Actions) > 0 {
-		actions := make([]map[string]interface{}, 0, len(filter.Actions))
+		actions := make([]map[string]any, 0, len(filter.Actions))
 		for _, a := range filter.Actions {
-			aObj := map[string]interface{}{
+			aObj := map[string]any{
 				"name":    a.Name,
 				"type":    a.Type,
 				"enabled": a.Enable == nil || *a.Enable,

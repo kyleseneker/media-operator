@@ -19,7 +19,7 @@ func TestReconcileSetting_NoChange(t *testing.T) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"id": 1, "rename": true, "createEmpty": false,
 			})
 		case http.MethodPut:
@@ -27,8 +27,8 @@ func TestReconcileSetting_NoChange(t *testing.T) {
 		}
 	}
 
-	_, hc := newTestServer(t, handler)
-	err := reconcileSetting(context.Background(), hc, "/api/v3/config/naming", map[string]interface{}{
+	hc := newTestServer(t, handler)
+	err := reconcileSetting(context.Background(), hc, "/api/v3/config/naming", map[string]any{
 		"rename": true, "createEmpty": false,
 	})
 	assert.NoError(t, err)
@@ -36,24 +36,24 @@ func TestReconcileSetting_NoChange(t *testing.T) {
 
 func TestReconcileSetting_WithChange(t *testing.T) {
 	var putCalled bool
-	var putBody map[string]interface{}
+	var putBody map[string]any
 
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"id": 1, "rename": false, "extra": "preserved",
 			})
 		case http.MethodPut:
 			putCalled = true
-			json.NewDecoder(r.Body).Decode(&putBody)
+			_ = json.NewDecoder(r.Body).Decode(&putBody)
 			assert.True(t, strings.HasSuffix(r.URL.Path, "/1"), "PUT path should include id")
 			w.WriteHeader(http.StatusOK)
 		}
 	}
 
-	_, hc := newTestServer(t, handler)
-	err := reconcileSetting(context.Background(), hc, "/api/v3/config/naming", map[string]interface{}{
+	hc := newTestServer(t, handler)
+	err := reconcileSetting(context.Background(), hc, "/api/v3/config/naming", map[string]any{
 		"rename": true,
 	})
 	require.NoError(t, err)
@@ -63,10 +63,10 @@ func TestReconcileSetting_WithChange(t *testing.T) {
 }
 
 func TestReconcileSetting_NoID(t *testing.T) {
-	_, hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{"rename": true})
+	hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"rename": true})
 	})
-	err := reconcileSetting(context.Background(), hc, "/api/v3/config/naming", map[string]interface{}{"rename": true})
+	err := reconcileSetting(context.Background(), hc, "/api/v3/config/naming", map[string]any{"rename": true})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no id")
 }
@@ -77,16 +77,16 @@ func TestReconcileResource_CreateNew(t *testing.T) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			json.NewEncoder(w).Encode([]map[string]interface{}{})
+			_ = json.NewEncoder(w).Encode([]map[string]any{})
 		case http.MethodPost:
 			postCalled = true
 			w.WriteHeader(http.StatusCreated)
 		}
 	}
 
-	_, hc := newTestServer(t, handler)
+	hc := newTestServer(t, handler)
 	endpoint := ResourceEndpoint{Name: "tags", Path: "/api/v3/tag", MatchField: "label", Policy: CreateOrUpdate}
-	err := reconcileResource(context.Background(), hc, endpoint, map[string]interface{}{"label": "test"})
+	err := reconcileResource(context.Background(), hc, endpoint, map[string]any{"label": "test"})
 	require.NoError(t, err)
 	assert.True(t, postCalled)
 }
@@ -97,7 +97,7 @@ func TestReconcileResource_UpdateExisting(t *testing.T) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			json.NewEncoder(w).Encode([]map[string]interface{}{
+			_ = json.NewEncoder(w).Encode([]map[string]any{
 				{"id": float64(5), "name": "test-dc", "host": "old-host"},
 			})
 		case http.MethodPut:
@@ -107,9 +107,9 @@ func TestReconcileResource_UpdateExisting(t *testing.T) {
 		}
 	}
 
-	_, hc := newTestServer(t, handler)
+	hc := newTestServer(t, handler)
 	endpoint := ResourceEndpoint{Name: "downloadClients", Path: "/api/v3/downloadclient", MatchField: "name", Policy: CreateOrUpdate}
-	err := reconcileResource(context.Background(), hc, endpoint, map[string]interface{}{
+	err := reconcileResource(context.Background(), hc, endpoint, map[string]any{
 		"name": "test-dc", "host": "new-host",
 	})
 	require.NoError(t, err)
@@ -120,7 +120,7 @@ func TestReconcileResource_CreateOnly(t *testing.T) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			json.NewEncoder(w).Encode([]map[string]interface{}{
+			_ = json.NewEncoder(w).Encode([]map[string]any{
 				{"id": float64(1), "path": "/tv"},
 			})
 		case http.MethodPut:
@@ -130,9 +130,9 @@ func TestReconcileResource_CreateOnly(t *testing.T) {
 		}
 	}
 
-	_, hc := newTestServer(t, handler)
+	hc := newTestServer(t, handler)
 	endpoint := ResourceEndpoint{Name: "rootFolders", Path: "/api/v3/rootfolder", MatchField: "path", Policy: CreateOnly}
-	err := reconcileResource(context.Background(), hc, endpoint, map[string]interface{}{"path": "/tv"})
+	err := reconcileResource(context.Background(), hc, endpoint, map[string]any{"path": "/tv"})
 	assert.NoError(t, err)
 }
 
@@ -142,7 +142,7 @@ func TestPruneResources(t *testing.T) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			json.NewEncoder(w).Encode([]map[string]interface{}{
+			_ = json.NewEncoder(w).Encode([]map[string]any{
 				{"id": float64(1), "name": "managed"},
 				{"id": float64(2), "name": "unmanaged-1"},
 				{"id": float64(3), "name": "unmanaged-2"},
@@ -153,9 +153,9 @@ func TestPruneResources(t *testing.T) {
 		}
 	}
 
-	_, hc := newTestServer(t, handler)
+	hc := newTestServer(t, handler)
 	endpoint := ResourceEndpoint{Name: "downloadClients", Path: "/api/v3/downloadclient", MatchField: "name", Policy: CreateOrUpdate, Prunable: true}
-	desired := []map[string]interface{}{{"name": "managed"}}
+	desired := []map[string]any{{"name": "managed"}}
 
 	before := testutil.ToFloat64(metrics.ResourcesPrunedTotal.WithLabelValues(testAppLabel, "downloadClients"))
 	pruned, err := pruneResources(context.Background(), hc, endpoint, desired, []string{"managed", "unmanaged-1", "unmanaged-2"})
@@ -170,23 +170,23 @@ func TestPruneResources(t *testing.T) {
 
 func TestPruneResources_SafetyThreshold(t *testing.T) {
 	// Create more than DefaultMaxPruneCount (25) unmanaged resources
-	existing := make([]map[string]interface{}, 30)
+	existing := make([]map[string]any, 30)
 	for i := range existing {
-		existing[i] = map[string]interface{}{"id": float64(i + 1), "name": fmt.Sprintf("item-%d", i+1)}
+		existing[i] = map[string]any{"id": float64(i + 1), "name": fmt.Sprintf("item-%d", i+1)}
 	}
 
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			json.NewEncoder(w).Encode(existing)
+			_ = json.NewEncoder(w).Encode(existing)
 		case http.MethodDelete:
 			t.Error("DELETE should not be called when safety threshold exceeded")
 		}
 	}
 
-	_, hc := newTestServer(t, handler)
+	hc := newTestServer(t, handler)
 	endpoint := ResourceEndpoint{Name: "indexers", Path: "/api/v3/indexer", MatchField: "name", Prunable: true}
-	desired := []map[string]interface{}{} // No desired items, all 30 would be pruned
+	desired := []map[string]any{} // No desired items, all 30 would be pruned
 
 	before := testutil.ToFloat64(metrics.ResourcesPrunedTotal.WithLabelValues(testAppLabel, "indexers"))
 	allManaged := make([]string, len(existing))
@@ -212,13 +212,13 @@ func TestReconcileApp(t *testing.T) {
 		switch {
 		// Settings: naming
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v3/config/naming":
-			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(1), "rename": false})
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": float64(1), "rename": false})
 		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/api/v3/config/naming/"):
 			w.WriteHeader(http.StatusOK)
 
 		// Resources: tags
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v3/tag":
-			json.NewEncoder(w).Encode([]map[string]interface{}{})
+			_ = json.NewEncoder(w).Encode([]map[string]any{})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v3/tag":
 			w.WriteHeader(http.StatusCreated)
 
@@ -227,7 +227,7 @@ func TestReconcileApp(t *testing.T) {
 		}
 	}
 
-	_, hc := newTestServer(t, handler)
+	hc := newTestServer(t, handler)
 
 	def := AppDefinition{
 		Settings: []SettingEndpoint{
@@ -237,10 +237,10 @@ func TestReconcileApp(t *testing.T) {
 			{Name: "tags", Path: "/api/v3/tag", MatchField: "label", Policy: CreateOrUpdate},
 		},
 	}
-	sections := map[string]interface{}{
-		"naming": map[string]interface{}{"rename": true},
+	sections := map[string]any{
+		"naming": map[string]any{"rename": true},
 	}
-	resources := map[string][]map[string]interface{}{
+	resources := map[string][]map[string]any{
 		"tags": {{"label": "test"}},
 	}
 
@@ -251,14 +251,14 @@ func TestReconcileApp(t *testing.T) {
 }
 
 func TestReconcileApp_SkipsNilSections(t *testing.T) {
-	_, hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+	hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("no HTTP calls expected, got %s %s", r.Method, r.URL.Path)
 	})
 
 	def := AppDefinition{
 		Settings: []SettingEndpoint{{Name: "naming", Path: "/api/v3/config/naming"}},
 	}
-	result := ReconcileApp(context.Background(), hc, def, map[string]interface{}{}, nil, false, nil)
+	result := ReconcileApp(context.Background(), hc, def, map[string]any{}, nil, false, nil)
 	assert.True(t, result.Success())
 	assert.Empty(t, result.Synced)
 }
@@ -268,7 +268,7 @@ func TestPruneSkipsResourcesTheOperatorNeverCreated(t *testing.T) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			json.NewEncoder(w).Encode([]map[string]interface{}{
+			_ = json.NewEncoder(w).Encode([]map[string]any{
 				{"id": float64(1), "name": "operator-made"},
 				{"id": float64(2), "name": "hand-built-by-human"},
 			})
@@ -277,13 +277,13 @@ func TestPruneSkipsResourcesTheOperatorNeverCreated(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		}
 	}
-	_, hc := newTestServer(t, handler)
+	hc := newTestServer(t, handler)
 	endpoint := ResourceEndpoint{Name: "indexers", Path: "/api/v3/indexer", MatchField: "name", Prunable: true}
 
 	// The CR no longer declares either one, but the operator only ever created
 	// "operator-made". The hand-built indexer must survive.
 	pruned, err := pruneResources(context.Background(), hc, endpoint,
-		[]map[string]interface{}{}, []string{"operator-made"})
+		[]map[string]any{}, []string{"operator-made"})
 	require.NoError(t, err)
 
 	assert.Len(t, pruned, 1)
@@ -297,17 +297,17 @@ func TestPruneIsNoOpOnFirstReconcile(t *testing.T) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			json.NewEncoder(w).Encode([]map[string]interface{}{
+			_ = json.NewEncoder(w).Encode([]map[string]any{
 				{"id": float64(1), "name": "pre-existing"},
 			})
 		case http.MethodDelete:
 			t.Error("nothing may be deleted when the operator has no recorded managed set")
 		}
 	}
-	_, hc := newTestServer(t, handler)
+	hc := newTestServer(t, handler)
 	endpoint := ResourceEndpoint{Name: "indexers", Path: "/api/v3/indexer", MatchField: "name", Prunable: true}
 
-	pruned, err := pruneResources(context.Background(), hc, endpoint, []map[string]interface{}{}, nil)
+	pruned, err := pruneResources(context.Background(), hc, endpoint, []map[string]any{}, nil)
 	require.NoError(t, err)
 	assert.Empty(t, pruned)
 }

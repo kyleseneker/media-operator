@@ -59,7 +59,7 @@ func (c *Client) Ping(ctx context.Context) error {
 }
 
 // SetPreferences updates qBittorrent application preferences.
-func (c *Client) SetPreferences(ctx context.Context, prefs map[string]interface{}) error {
+func (c *Client) SetPreferences(ctx context.Context, prefs map[string]any) error {
 	prefsJSON, err := json.Marshal(prefs)
 	if err != nil {
 		return fmt.Errorf("marshaling preferences: %w", err)
@@ -73,12 +73,12 @@ func (c *Client) SetPreferences(ctx context.Context, prefs map[string]interface{
 }
 
 // GetPreferences returns the current qBittorrent application preferences.
-func (c *Client) GetPreferences(ctx context.Context) (map[string]interface{}, error) {
+func (c *Client) GetPreferences(ctx context.Context) (map[string]any, error) {
 	return c.hc.GetJSON(ctx, "/api/v2/app/preferences")
 }
 
 // ListCategories returns all torrent categories.
-func (c *Client) ListCategories(ctx context.Context) (map[string]interface{}, error) {
+func (c *Client) ListCategories(ctx context.Context) (map[string]any, error) {
 	return c.hc.GetJSON(ctx, "/api/v2/torrents/categories")
 }
 

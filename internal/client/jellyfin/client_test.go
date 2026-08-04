@@ -13,7 +13,7 @@ import (
 	"github.com/kyleseneker/media-operator/internal/engine"
 )
 
-func newTestClient(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *Client) {
+func newTestClient(t *testing.T, handler http.HandlerFunc) *Client {
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
@@ -21,24 +21,24 @@ func newTestClient(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *C
 		engine.WithTransport(&http.Transport{}),
 	)
 	require.NoError(t, err)
-	return srv, NewClient(hc)
+	return NewClient(hc)
 }
 
 func TestIsSetupComplete(t *testing.T) {
 	tests := []struct {
-		name     string
-		body     map[string]interface{}
-		want     bool
+		name string
+		body map[string]any
+		want bool
 	}{
-		{"completed", map[string]interface{}{"StartupWizardCompleted": true}, true},
-		{"not completed", map[string]interface{}{"StartupWizardCompleted": false}, false},
-		{"missing field", map[string]interface{}{}, false},
+		{"completed", map[string]any{"StartupWizardCompleted": true}, true},
+		{"not completed", map[string]any{"StartupWizardCompleted": false}, false},
+		{"missing field", map[string]any{}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 				assert.Equal(t, "/System/Info/Public", r.URL.Path)
-				json.NewEncoder(w).Encode(tt.body)
+				_ = json.NewEncoder(w).Encode(tt.body)
 			})
 			result, err := c.IsSetupComplete(context.Background())
 			require.NoError(t, err)
@@ -49,7 +49,7 @@ func TestIsSetupComplete(t *testing.T) {
 
 func TestRunSetupWizard(t *testing.T) {
 	var calls []string
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		calls = append(calls, r.URL.Path)
 		w.WriteHeader(http.StatusOK)
 	})
@@ -64,17 +64,17 @@ func TestRunSetupWizard(t *testing.T) {
 }
 
 func TestAuthenticate(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/Users/AuthenticateByName", r.URL.Path)
-		json.NewEncoder(w).Encode(map[string]interface{}{"AccessToken": "test-token-123"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"AccessToken": "test-token-123"})
 	})
 	err := c.Authenticate(context.Background(), "admin", "pass")
 	assert.NoError(t, err)
 }
 
 func TestAuthenticate_NoToken(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{})
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{})
 	})
 	err := c.Authenticate(context.Background(), "admin", "pass")
 	assert.Error(t, err)
@@ -82,9 +82,9 @@ func TestAuthenticate_NoToken(t *testing.T) {
 }
 
 func TestGetConfig(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/System/Configuration/encoding", r.URL.Path)
-		json.NewEncoder(w).Encode(map[string]interface{}{"EnableHardwareEncoding": true})
+		_ = json.NewEncoder(w).Encode(map[string]any{"EnableHardwareEncoding": true})
 	})
 	cfg, err := c.GetConfig(context.Background(), "/System/Configuration/encoding")
 	require.NoError(t, err)
@@ -92,9 +92,9 @@ func TestGetConfig(t *testing.T) {
 }
 
 func TestListLibraries(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/Library/VirtualFolders", r.URL.Path)
-		json.NewEncoder(w).Encode([]map[string]interface{}{
+		_ = json.NewEncoder(w).Encode([]map[string]any{
 			{"Name": "Movies"}, {"Name": "TV"},
 		})
 	})
@@ -104,12 +104,12 @@ func TestListLibraries(t *testing.T) {
 }
 
 func TestCreateLibrary(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
 		assert.Contains(t, r.URL.RawQuery, "name=Movies")
 		assert.Contains(t, r.URL.RawQuery, "collectionType=movies")
 		w.WriteHeader(http.StatusOK)
 	})
-	err := c.CreateLibrary(context.Background(), "Movies", "movies", map[string]interface{}{})
+	err := c.CreateLibrary(context.Background(), "Movies", "movies", map[string]any{})
 	assert.NoError(t, err)
 }

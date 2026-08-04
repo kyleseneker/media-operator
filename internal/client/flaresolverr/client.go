@@ -28,7 +28,7 @@ type response struct {
 	Version  string   `json:"version,omitempty"`
 }
 
-func (c *Client) do(ctx context.Context, body interface{}) (*response, error) {
+func (c *Client) do(ctx context.Context, body any) (*response, error) {
 	data, err := c.hc.Do(ctx, http.MethodPost, "/v1", body)
 	if err != nil {
 		return nil, fmt.Errorf("executing request: %w", err)

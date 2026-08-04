@@ -13,7 +13,7 @@ import (
 	"github.com/kyleseneker/media-operator/internal/engine"
 )
 
-func newTestClient(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *Client) {
+func newTestClient(t *testing.T, handler http.HandlerFunc) *Client {
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
@@ -23,11 +23,11 @@ func newTestClient(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *C
 		engine.WithTransport(&http.Transport{}),
 	)
 	require.NoError(t, err)
-	return srv, NewClient(hc)
+	return NewClient(hc)
 }
 
 func TestPing(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v2/status", r.URL.Path)
 		w.WriteHeader(http.StatusOK)
 	})
@@ -35,10 +35,10 @@ func TestPing(t *testing.T) {
 }
 
 func TestCrudDB(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
 		assert.Equal(t, "/api/v2/cruddb", r.URL.Path)
-		json.NewEncoder(w).Encode(map[string]interface{}{"_id": "lib1", "name": "Movies"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"_id": "lib1", "name": "Movies"})
 	})
 	result, err := c.CrudDB(context.Background(), "LibraryDB", "getById", "lib1", nil)
 	require.NoError(t, err)
@@ -46,8 +46,8 @@ func TestCrudDB(t *testing.T) {
 }
 
 func TestGetByID(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{"_id": "lib1"})
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"_id": "lib1"})
 	})
 	result, err := c.GetByID(context.Background(), "LibraryDB", "lib1")
 	require.NoError(t, err)
@@ -55,48 +55,48 @@ func TestGetByID(t *testing.T) {
 }
 
 func TestInsert(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 	})
-	assert.NoError(t, c.Insert(context.Background(), "LibraryDB", "lib2", map[string]interface{}{"name": "TV"}))
+	assert.NoError(t, c.Insert(context.Background(), "LibraryDB", "lib2", map[string]any{"name": "TV"}))
 }
 
 func TestUpsert_Exists(t *testing.T) {
 	callCount := 0
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		callCount++
 		if callCount == 1 {
 			// GetByID returns existing
-			json.NewEncoder(w).Encode(map[string]interface{}{"_id": "lib1", "name": "Old"})
+			_ = json.NewEncoder(w).Encode(map[string]any{"_id": "lib1", "name": "Old"})
 		} else {
 			// Update
-			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 		}
 	})
-	assert.NoError(t, c.Upsert(context.Background(), "LibraryDB", "lib1", map[string]interface{}{"name": "New"}))
+	assert.NoError(t, c.Upsert(context.Background(), "LibraryDB", "lib1", map[string]any{"name": "New"}))
 	assert.Equal(t, 2, callCount)
 }
 
 func TestUpsert_NotExists(t *testing.T) {
 	callCount := 0
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		callCount++
 		if callCount == 1 {
 			// GetByID returns empty
-			json.NewEncoder(w).Encode(map[string]interface{}{})
+			_ = json.NewEncoder(w).Encode(map[string]any{})
 		} else {
 			// Insert
-			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 		}
 	})
-	assert.NoError(t, c.Upsert(context.Background(), "LibraryDB", "lib1", map[string]interface{}{"name": "New"}))
+	assert.NoError(t, c.Upsert(context.Background(), "LibraryDB", "lib1", map[string]any{"name": "New"}))
 	assert.Equal(t, 2, callCount)
 }
 
 func TestGetNodes(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v2/get-nodes", r.URL.Path)
-		json.NewEncoder(w).Encode(map[string]interface{}{"node1": map[string]interface{}{}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"node1": map[string]any{}})
 	})
 	nodes, err := c.GetNodes(context.Background())
 	require.NoError(t, err)

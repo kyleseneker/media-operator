@@ -13,7 +13,7 @@ import (
 	"github.com/kyleseneker/media-operator/internal/engine"
 )
 
-func newTestClient(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *Client) {
+func newTestClient(t *testing.T, handler http.HandlerFunc) *Client {
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
@@ -22,11 +22,11 @@ func newTestClient(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *C
 		engine.WithTransport(&http.Transport{}),
 	)
 	require.NoError(t, err)
-	return srv, NewClient(hc)
+	return NewClient(hc)
 }
 
 func TestPing(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/", r.URL.Path)
 		w.WriteHeader(http.StatusOK)
 	})
@@ -34,9 +34,9 @@ func TestPing(t *testing.T) {
 }
 
 func TestGetPreferences(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/:/prefs", r.URL.Path)
-		json.NewEncoder(w).Encode(map[string]interface{}{"FriendlyName": "Plex"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"FriendlyName": "Plex"})
 	})
 	prefs, err := c.GetPreferences(context.Background())
 	require.NoError(t, err)
@@ -44,7 +44,7 @@ func TestGetPreferences(t *testing.T) {
 }
 
 func TestSetPreferences(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPut, r.Method)
 		assert.Contains(t, r.URL.RawQuery, "FriendlyName=MyPlex")
 		w.WriteHeader(http.StatusOK)
@@ -54,13 +54,13 @@ func TestSetPreferences(t *testing.T) {
 }
 
 func TestListLibraries(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/library/sections", r.URL.Path)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"MediaContainer": map[string]interface{}{
-				"Directory": []interface{}{
-					map[string]interface{}{"title": "Movies", "type": "movie"},
-					map[string]interface{}{"title": "TV", "type": "show"},
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"MediaContainer": map[string]any{
+				"Directory": []any{
+					map[string]any{"title": "Movies", "type": "movie"},
+					map[string]any{"title": "TV", "type": "show"},
 				},
 			},
 		})
@@ -72,7 +72,7 @@ func TestListLibraries(t *testing.T) {
 }
 
 func TestCreateLibrary(t *testing.T) {
-	_, c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
 		assert.Contains(t, r.URL.RawQuery, "name=Movies")
 		assert.Contains(t, r.URL.RawQuery, "type=movie")

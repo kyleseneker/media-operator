@@ -116,11 +116,11 @@ func (v *FieldValue) UnmarshalJSON(data []byte) error {
 }
 
 // ToInterface returns the underlying Go value (string, float64, bool, or nil).
-func (v FieldValue) ToInterface() interface{} {
+func (v FieldValue) ToInterface() any {
 	if v.Raw == nil {
 		return nil
 	}
-	var val interface{}
+	var val any
 	if err := json.Unmarshal(v.Raw, &val); err != nil {
 		return string(v.Raw)
 	}

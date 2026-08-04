@@ -42,19 +42,8 @@ func (r *QBittorrentConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if !config.GetDeletionTimestamp().IsZero() {
-		handled, derr := ctrlcommon.HandleDeletion(ctx, r.Client, r.Recorder, &config, nil)
-		if derr != nil {
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-		}
-		if handled {
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, nil
-	}
-
-	if err := ctrlcommon.EnsureFinalizer(ctx, r.Client, &config); err != nil {
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, nil); done {
+		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
 	// Resolve username
@@ -132,7 +121,7 @@ func reconcileQBPreferences(ctx context.Context, qb *qbclient.Client, prefs *dow
 	if err != nil {
 		return fmt.Errorf("marshaling preferences: %w", err)
 	}
-	var prefsMap map[string]interface{}
+	var prefsMap map[string]any
 	if err := json.Unmarshal(data, &prefsMap); err != nil {
 		return fmt.Errorf("unmarshaling preferences to map: %w", err)
 	}

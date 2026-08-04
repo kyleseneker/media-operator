@@ -16,7 +16,7 @@ import (
 // resolve its formatItems, which is only possible if the CF IDs are looked up
 // after the custom formats have been written.
 func TestQualityProfileResolvesCustomFormatsCreatedInTheSameRun(t *testing.T) {
-	customFormats := []map[string]interface{}{}
+	customFormats := []map[string]any{}
 	var qpBodies []string
 	nextID := 100
 
@@ -24,7 +24,7 @@ func TestQualityProfileResolvesCustomFormatsCreatedInTheSameRun(t *testing.T) {
 		switch {
 		case strings.Contains(r.URL.Path, "customformat"):
 			if r.Method == http.MethodPost {
-				var body map[string]interface{}
+				var body map[string]any
 				_ = json.NewDecoder(r.Body).Decode(&body)
 				nextID++
 				body["id"] = float64(nextID)
@@ -43,9 +43,9 @@ func TestQualityProfileResolvesCustomFormatsCreatedInTheSameRun(t *testing.T) {
 				_, _ = w.Write([]byte(`{"id":1}`))
 				return
 			}
-			_ = json.NewEncoder(w).Encode([]map[string]interface{}{})
+			_ = json.NewEncoder(w).Encode([]map[string]any{})
 		default:
-			_ = json.NewEncoder(w).Encode([]map[string]interface{}{})
+			_ = json.NewEncoder(w).Encode([]map[string]any{})
 		}
 	}))
 	defer srv.Close()
