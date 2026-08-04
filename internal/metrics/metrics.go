@@ -59,6 +59,20 @@ var (
 		},
 		[]string{"app", "resource_type"},
 	)
+
+	// ConfigSynced reports whether each config resource last reconciled
+	// successfully. 1 = synced, 0 = failed or unreachable. Alert on 0 to catch
+	// silent failure, which no error counter can express while controllers
+	// handle their own retries.
+	// Labels: kind, namespace, name.
+	ConfigSynced = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "config_synced",
+			Help:      "1 if the config resource last reconciled successfully, 0 otherwise.",
+		},
+		[]string{"kind", "namespace", "name"},
+	)
 )
 
 func init() {
@@ -67,5 +81,6 @@ func init() {
 		AppAPIErrorsTotal,
 		ResourcesPrunedTotal,
 		ManagedResources,
+		ConfigSynced,
 	)
 }

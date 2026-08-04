@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -17,6 +18,7 @@ import (
 	servarrv1alpha1 "github.com/kyleseneker/media-operator/api/servarr/v1alpha1"
 	servarrclient "github.com/kyleseneker/media-operator/internal/client/servarr"
 	"github.com/kyleseneker/media-operator/internal/engine"
+	"github.com/kyleseneker/media-operator/internal/metrics"
 	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
 
@@ -69,9 +71,21 @@ func UpdateStatus(ctx context.Context, sw client.SubResourceWriter, obj ConfigRe
 	// If we got far enough to reconcile, the app is reachable.
 	reconciler.SetCondition(conditions, generation, engine.ConditionReady, string(metav1.ConditionTrue), engine.ReasonSynced, "app is reachable")
 	*obj.GetObservedGeneration() = generation
+	recordSynced(obj, synced)
 	if err := sw.Update(ctx, obj); err != nil {
 		log.FromContext(ctx).Error(err, "failed to update status")
 	}
+}
+
+func recordSynced(obj ConfigResource, synced bool) {
+	v := 0.0
+	if synced {
+		v = 1.0
+	}
+	// TypeMeta is cleared on typed objects after a client round-trip, so the
+	// concrete Go type is the reliable source for the kind label.
+	kind := reflect.TypeOf(obj).Elem().Name()
+	metrics.ConfigSynced.WithLabelValues(kind, obj.GetNamespace(), obj.GetName()).Set(v)
 }
 
 // UpdateStatusUnreachable sets Ready=False and Synced=False when the app cannot be reached.
@@ -81,6 +95,7 @@ func UpdateStatusUnreachable(ctx context.Context, sw client.SubResourceWriter, o
 	reconciler.SetCondition(conditions, generation, engine.ConditionReady, string(metav1.ConditionFalse), reason, message)
 	reconciler.SetCondition(conditions, generation, engine.ConditionSynced, string(metav1.ConditionFalse), reason, message)
 	*obj.GetObservedGeneration() = generation
+	recordSynced(obj, false)
 	if err := sw.Update(ctx, obj); err != nil {
 		log.FromContext(ctx).Error(err, "failed to update status")
 	}

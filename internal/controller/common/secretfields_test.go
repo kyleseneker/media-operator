@@ -11,6 +11,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
+	servarrv1alpha1 "github.com/kyleseneker/media-operator/api/servarr/v1alpha1"
+	"github.com/kyleseneker/media-operator/internal/metrics"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 func newSecretClient() *fake.ClientBuilder {
@@ -74,5 +77,25 @@ func TestListsReferenceSecret(t *testing.T) {
 	}
 	if ListsReferenceSecret(idx, nil, nil, "other") {
 		t.Error("should not match an unrelated secret")
+	}
+}
+
+func TestConfigSyncedGaugeTracksOutcome(t *testing.T) {
+	c := &servarrv1alpha1.SonarrConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "s", Namespace: "arr"},
+		TypeMeta:   metav1.TypeMeta{Kind: "SonarrConfig"},
+	}
+	_ = servarrv1alpha1.AddToScheme(scheme.Scheme)
+	cl := fake.NewClientBuilder().WithScheme(scheme.Scheme).
+		WithObjects(c).WithStatusSubresource(c).Build()
+
+	UpdateStatus(context.Background(), cl.Status(), c, true, "Synced", "ok")
+	if v := testutil.ToFloat64(metrics.ConfigSynced.WithLabelValues("SonarrConfig", "arr", "s")); v != 1 {
+		t.Errorf("expected gauge 1 after a successful sync, got %v", v)
+	}
+
+	UpdateStatusUnreachable(context.Background(), cl.Status(), c, "AppUnreachable", "boom")
+	if v := testutil.ToFloat64(metrics.ConfigSynced.WithLabelValues("SonarrConfig", "arr", "s")); v != 0 {
+		t.Errorf("expected gauge 0 after failure, got %v", v)
 	}
 }
