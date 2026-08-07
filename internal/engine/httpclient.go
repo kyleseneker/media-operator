@@ -229,15 +229,13 @@ func (c *HTTPClient) SetCookieSessionID(sid string) {
 	c.cookieSessionID = sid
 }
 
-// SetCookieSession sets the session cookie under a specific name, for apps that
-// do not call it SID.
+// SetCookieSession sets the session cookie under a specific name.
 func (c *HTTPClient) SetCookieSession(name, value string) {
 	c.cookieSessionName = name
 	c.cookieSessionID = value
 }
 
-// CookieValuePrefix returns the value of the first cookie whose name starts with
-// prefix, for apps that put a variable suffix in the name.
+// CookieValuePrefix returns the name and value of the first cookie whose name starts with prefix.
 func (c *HTTPClient) CookieValuePrefix(prefix string) (string, string) {
 	u, err := url.Parse(c.baseURL)
 	if err != nil {

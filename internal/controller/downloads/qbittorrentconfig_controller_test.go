@@ -9,9 +9,6 @@ import (
 
 func ptr[T any](v T) *T { return &v }
 
-// qBittorrent silently ignores preference keys it does not recognise and still
-// returns 200, so a wrong key name produces a green sync that changes nothing.
-// These are the names its API actually accepts.
 func TestQBPreferencePayloadUsesAPIKeyNames(t *testing.T) {
 	prefs := &downloadsv1alpha1.QBittorrentPreferences{
 		SavePath:              "/data/torrents",
@@ -65,8 +62,6 @@ func TestQBPreferencePayloadUsesAPIKeyNames(t *testing.T) {
 	}
 }
 
-// A field added to the spec but not mapped in qbPreferencePayload would be
-// accepted by the CRD and then quietly dropped, so fail here instead.
 func TestQBPreferencePayloadCoversEverySpecField(t *testing.T) {
 	prefs := &downloadsv1alpha1.QBittorrentPreferences{}
 	v := reflect.ValueOf(prefs).Elem()
@@ -79,7 +74,6 @@ func TestQBPreferencePayloadCoversEverySpecField(t *testing.T) {
 			f.SetString("x")
 		}
 	}
-	// MaxRatio and MaxRatioAction parse their values, so give them valid ones.
 	prefs.MaxRatio = ptr("1.0")
 	prefs.MaxRatioAction = ptr("stop")
 

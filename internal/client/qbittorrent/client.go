@@ -38,16 +38,12 @@ func (c *Client) Login(ctx context.Context) error {
 		return fmt.Errorf("executing login request: %w", err)
 	}
 
-	// Older builds answer 200 with "Ok."; newer ones answer 204 with no body.
-	// Bad credentials are reported as "Fails." either way.
 	if resp := strings.TrimSpace(string(body)); resp != "" && !strings.EqualFold(resp, "Ok.") {
 		return fmt.Errorf("login failed: %s", resp)
 	}
 
-	// The cookie jar captured the session cookie from the Set-Cookie header
-	// automatically. Extract it and register it with the engine's cookie-based
-	// auth so applyAuth includes it on every subsequent request. Recent versions
-	// name it QBT_SID_<port> rather than SID.
+	// The cookie jar captured the session cookie automatically. Register it with
+	// the engine's cookie-based auth so applyAuth includes it on later requests.
 	name, value := c.hc.CookieValuePrefix("QBT_SID_")
 	if value == "" {
 		name, value = "SID", c.hc.CookieValue("SID")

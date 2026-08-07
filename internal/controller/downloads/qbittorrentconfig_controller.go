@@ -117,8 +117,6 @@ func (r *QBittorrentConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
 
-// maxRatioActions maps the spec's action names to the integers qBittorrent
-// uses for max_ratio_act.
 var maxRatioActions = map[string]int{
 	"stop":               0,
 	"remove":             1,
@@ -126,10 +124,7 @@ var maxRatioActions = map[string]int{
 	"removeWithContent":  3,
 }
 
-// qbPreferencePayload maps spec fields to the snake_case keys qBittorrent's
-// API expects. Keys it does not recognise are dropped silently and the request
-// still returns 200, so the names have to be spelled out rather than derived
-// from the JSON tags.
+// qbPreferencePayload maps spec fields to the keys qBittorrent's API expects.
 func qbPreferencePayload(prefs *downloadsv1alpha1.QBittorrentPreferences) (map[string]any, error) {
 	out := map[string]any{}
 	set := func(key string, v any) {

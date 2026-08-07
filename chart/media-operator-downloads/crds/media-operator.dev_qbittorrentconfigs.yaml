@@ -171,10 +171,8 @@ spec:
                       Represented as a string to preserve decimal precision in JSON.
                     type: string
                   maxRatioAction:
-                    description: |-
-                      maxRatioAction is what qBittorrent does when a share limit is reached.
-                      removeWithContent deletes the downloaded files, which the *arr apps
-                      see as a failed import.
+                    description: maxRatioAction is what qBittorrent does when a share
+                      limit is reached.
                     enum:
                     - stop
                     - remove

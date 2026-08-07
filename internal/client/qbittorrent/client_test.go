@@ -105,8 +105,6 @@ func TestEditCategory(t *testing.T) {
 	assert.NoError(t, c.EditCategory(context.Background(), "movies", "/new-movies"))
 }
 
-// qBittorrent 5.x answers login with 204 and no body, and names the session
-// cookie QBT_SID_<port>. Both differ from the older 200 "Ok." + SID behaviour.
 func TestLogin_NoContentWithPortSuffixedCookie(t *testing.T) {
 	var sawCookie string
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
