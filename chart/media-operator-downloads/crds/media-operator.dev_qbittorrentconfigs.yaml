@@ -170,6 +170,17 @@ spec:
                       maxRatio is the global share ratio limit (e.g., "2.0").
                       Represented as a string to preserve decimal precision in JSON.
                     type: string
+                  maxRatioAction:
+                    description: |-
+                      maxRatioAction is what qBittorrent does when a share limit is reached.
+                      removeWithContent deletes the downloaded files, which the *arr apps
+                      see as a failed import.
+                    enum:
+                    - stop
+                    - remove
+                    - enableSuperSeeding
+                    - removeWithContent
+                    type: string
                   maxRatioEnabled:
                     description: maxRatioEnabled enables the global share ratio limit.
                     type: boolean

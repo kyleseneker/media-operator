@@ -253,6 +253,11 @@ func (in *QBittorrentPreferences) DeepCopyInto(out *QBittorrentPreferences) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.MaxRatioAction != nil {
+		in, out := &in.MaxRatioAction, &out.MaxRatioAction
+		*out = new(string)
+		**out = **in
+	}
 	if in.MaxSeedingTimeEnabled != nil {
 		in, out := &in.MaxSeedingTimeEnabled, &out.MaxSeedingTimeEnabled
 		*out = new(bool)

@@ -2,13 +2,14 @@ package downloads
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"reflect"
+	"strconv"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -26,7 +27,7 @@ import (
 type QBittorrentConfigReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+	Recorder events.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=media-operator.dev,resources=qbittorrentconfigs,verbs=get;list;watch;create;update;patch;delete
@@ -116,16 +117,75 @@ func (r *QBittorrentConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
 
+// maxRatioActions maps the spec's action names to the integers qBittorrent
+// uses for max_ratio_act.
+var maxRatioActions = map[string]int{
+	"stop":               0,
+	"remove":             1,
+	"enableSuperSeeding": 2,
+	"removeWithContent":  3,
+}
+
+// qbPreferencePayload maps spec fields to the snake_case keys qBittorrent's
+// API expects. Keys it does not recognise are dropped silently and the request
+// still returns 200, so the names have to be spelled out rather than derived
+// from the JSON tags.
+func qbPreferencePayload(prefs *downloadsv1alpha1.QBittorrentPreferences) (map[string]any, error) {
+	out := map[string]any{}
+	set := func(key string, v any) {
+		if !reflect.ValueOf(v).IsNil() {
+			out[key] = reflect.ValueOf(v).Elem().Interface()
+		}
+	}
+
+	if prefs.SavePath != "" {
+		out["save_path"] = prefs.SavePath
+	}
+	if prefs.Locale != "" {
+		out["locale"] = prefs.Locale
+	}
+	set("temp_path_enabled", prefs.TempPathEnabled)
+	set("dht", prefs.DHT)
+	set("pex", prefs.PEX)
+	set("lsd", prefs.LSD)
+	set("encryption", prefs.Encryption)
+	set("max_connec", prefs.MaxConnec)
+	set("max_connec_per_torrent", prefs.MaxConnecPerTorrent)
+	set("max_uploads", prefs.MaxUploads)
+	set("max_uploads_per_torrent", prefs.MaxUploadsPerTorrent)
+	set("max_ratio_enabled", prefs.MaxRatioEnabled)
+	set("max_seeding_time_enabled", prefs.MaxSeedingTimeEnabled)
+	set("max_seeding_time", prefs.MaxSeedingTime)
+	set("preallocate_all", prefs.PreallocateAll)
+	set("web_ui_port", prefs.WebUIPort)
+
+	if prefs.MaxRatio != nil {
+		ratio, err := strconv.ParseFloat(*prefs.MaxRatio, 64)
+		if err != nil {
+			return nil, fmt.Errorf("parsing maxRatio %q: %w", *prefs.MaxRatio, err)
+		}
+		out["max_ratio"] = ratio
+	}
+	if prefs.MaxRatioAction != nil {
+		act, ok := maxRatioActions[*prefs.MaxRatioAction]
+		if !ok {
+			return nil, fmt.Errorf("unknown maxRatioAction %q", *prefs.MaxRatioAction)
+		}
+		out["max_ratio_act"] = act
+	}
+
+	return out, nil
+}
+
 func reconcileQBPreferences(ctx context.Context, qb *qbclient.Client, prefs *downloadsv1alpha1.QBittorrentPreferences) error {
-	data, err := json.Marshal(prefs)
+	payload, err := qbPreferencePayload(prefs)
 	if err != nil {
-		return fmt.Errorf("marshaling preferences: %w", err)
+		return err
 	}
-	var prefsMap map[string]any
-	if err := json.Unmarshal(data, &prefsMap); err != nil {
-		return fmt.Errorf("unmarshaling preferences to map: %w", err)
+	if len(payload) == 0 {
+		return nil
 	}
-	return qb.SetPreferences(ctx, prefsMap)
+	return qb.SetPreferences(ctx, payload)
 }
 
 func reconcileQBCategory(ctx context.Context, qb *qbclient.Client, cat downloadsv1alpha1.QBittorrentCategory) error {

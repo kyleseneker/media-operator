@@ -114,6 +114,13 @@ type QBittorrentPreferences struct {
 	// +optional
 	MaxRatio *string `json:"maxRatio,omitempty"`
 
+	// maxRatioAction is what qBittorrent does when a share limit is reached.
+	// removeWithContent deletes the downloaded files, which the *arr apps
+	// see as a failed import.
+	// +optional
+	// +kubebuilder:validation:Enum=stop;remove;enableSuperSeeding;removeWithContent
+	MaxRatioAction *string `json:"maxRatioAction,omitempty"`
+
 	// maxSeedingTimeEnabled enables the global seeding time limit.
 	// +optional
 	MaxSeedingTimeEnabled *bool `json:"maxSeedingTimeEnabled,omitempty"`
