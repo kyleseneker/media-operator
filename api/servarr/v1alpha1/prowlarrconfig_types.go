@@ -91,9 +91,10 @@ type ProwlarrApplication struct {
 	// +optional
 	SyncCategories []int `json:"syncCategories,omitempty"`
 
-	// tags is the list of tag IDs to associate with this application.
+	// tags is the list of tag labels to associate with this application.
+	// Labels are resolved to Prowlarr tag IDs at apply time.
 	// +optional
-	Tags []int `json:"tags,omitempty"`
+	Tags []string `json:"tags,omitempty"`
 }
 
 // ProwlarrIndexer defines an indexer configuration in Prowlarr.
@@ -127,9 +128,10 @@ type ProwlarrIndexer struct {
 	// +optional
 	Fields []ProwlarrField `json:"fields,omitempty"`
 
-	// tags is the list of tag IDs to associate with this indexer.
+	// tags is the list of tag labels to associate with this indexer.
+	// Labels are resolved to Prowlarr tag IDs at apply time.
 	// +optional
-	Tags []int `json:"tags,omitempty"`
+	Tags []string `json:"tags,omitempty"`
 }
 
 // ProwlarrField represents a key-value configuration field.
@@ -169,9 +171,10 @@ type ProwlarrProxy struct {
 	// +optional
 	RequestTimeout *int `json:"requestTimeout,omitempty"`
 
-	// tags is the list of tag IDs to associate with this proxy.
+	// tags is the list of tag labels to associate with this proxy.
+	// Labels are resolved to Prowlarr tag IDs at apply time.
 	// +optional
-	Tags []int `json:"tags,omitempty"`
+	Tags []string `json:"tags,omitempty"`
 }
 
 // ProwlarrDownloadClient defines a download client for Prowlarr manual grabs.
@@ -207,9 +210,10 @@ type ProwlarrDownloadClient struct {
 	// +optional
 	Categories []ProwlarrDownloadClientCategory `json:"categories,omitempty"`
 
-	// tags is the list of tag IDs to associate with this download client.
+	// tags is the list of tag labels to associate with this download client.
+	// Labels are resolved to Prowlarr tag IDs at apply time.
 	// +optional
-	Tags []int `json:"tags,omitempty"`
+	Tags []string `json:"tags,omitempty"`
 
 	// fields defines the download client's configuration fields (e.g., host, port, apiKey).
 	// +optional

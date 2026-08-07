@@ -1,6 +1,9 @@
 package prowlarr
 
 import (
+	"context"
+	"fmt"
+
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	servarrv1alpha1 "github.com/kyleseneker/media-operator/api/servarr/v1alpha1"
 	servarrclient "github.com/kyleseneker/media-operator/internal/client/servarr"
@@ -38,7 +41,7 @@ type ProwlarrOptions struct {
 }
 
 // ProwlarrResources builds the resources map from the options.
-func ProwlarrResources(opts ProwlarrOptions) map[string][]map[string]any {
+func ProwlarrResources(opts ProwlarrOptions, tagIDs map[string]int) map[string][]map[string]any {
 	resources := make(map[string][]map[string]any)
 
 	if len(opts.Tags) > 0 {
@@ -57,7 +60,7 @@ func ProwlarrResources(opts ProwlarrOptions) map[string][]map[string]any {
 	if len(opts.Indexers) > 0 {
 		idxs := make([]map[string]any, 0, len(opts.Indexers))
 		for _, idx := range opts.Indexers {
-			idxs = append(idxs, BuildProwlarrIndexerPayload(idx))
+			idxs = append(idxs, BuildProwlarrIndexerPayload(idx, tagIDs))
 		}
 		resources["indexers"] = idxs
 	}
@@ -65,7 +68,7 @@ func ProwlarrResources(opts ProwlarrOptions) map[string][]map[string]any {
 	if len(opts.Proxies) > 0 {
 		proxies := make([]map[string]any, 0, len(opts.Proxies))
 		for _, p := range opts.Proxies {
-			proxies = append(proxies, BuildProwlarrProxyPayload(p))
+			proxies = append(proxies, BuildProwlarrProxyPayload(p, tagIDs))
 		}
 		resources["proxies"] = proxies
 	}
@@ -73,7 +76,7 @@ func ProwlarrResources(opts ProwlarrOptions) map[string][]map[string]any {
 	if len(opts.DownloadClients) > 0 {
 		dcs := make([]map[string]any, 0, len(opts.DownloadClients))
 		for _, dc := range opts.DownloadClients {
-			dcs = append(dcs, BuildProwlarrDownloadClientPayload(dc))
+			dcs = append(dcs, BuildProwlarrDownloadClientPayload(dc, tagIDs))
 		}
 		resources["downloadClients"] = dcs
 	}
@@ -96,15 +99,12 @@ func ProwlarrResources(opts ProwlarrOptions) map[string][]map[string]any {
 
 // BuildProwlarrApplicationPayload builds the API payload for a Prowlarr application.
 // apiKey is the resolved secret value.
-func BuildProwlarrApplicationPayload(app servarrv1alpha1.ProwlarrApplication, apiKey string) map[string]any {
+func BuildProwlarrApplicationPayload(app servarrv1alpha1.ProwlarrApplication, apiKey string, tagIDs map[string]int) map[string]any {
 	syncCats := make([]any, len(app.SyncCategories))
 	for i, c := range app.SyncCategories {
 		syncCats[i] = c
 	}
-	tags := make([]any, len(app.Tags))
-	for i, t := range app.Tags {
-		tags[i] = t
-	}
+	tags := resolveTags(app.Tags, tagIDs)
 	return map[string]any{
 		"name": app.Name, "syncLevel": app.SyncLevel,
 		"implementation": app.Implementation, "configContract": app.ConfigContract,
@@ -119,7 +119,7 @@ func BuildProwlarrApplicationPayload(app servarrv1alpha1.ProwlarrApplication, ap
 }
 
 // BuildProwlarrIndexerPayload builds the API payload for a Prowlarr indexer.
-func BuildProwlarrIndexerPayload(idx servarrv1alpha1.ProwlarrIndexer) map[string]any {
+func BuildProwlarrIndexerPayload(idx servarrv1alpha1.ProwlarrIndexer, tagIDs map[string]int) map[string]any {
 	enable := idx.Enable == nil || *idx.Enable
 	fields := make([]map[string]any, 0, len(idx.Fields))
 	for _, f := range idx.Fields {
@@ -132,7 +132,7 @@ func BuildProwlarrIndexerPayload(idx servarrv1alpha1.ProwlarrIndexer) map[string
 	desired := map[string]any{
 		"name": idx.Name, "enable": enable,
 		"implementation": idx.Implementation, "configContract": idx.ConfigContract,
-		"fields": fields, "tags": intSliceToInterface(idx.Tags),
+		"fields": fields, "tags": resolveTags(idx.Tags, tagIDs),
 	}
 	if idx.AppProfileId != nil {
 		desired["appProfileId"] = *idx.AppProfileId
@@ -144,7 +144,7 @@ func BuildProwlarrIndexerPayload(idx servarrv1alpha1.ProwlarrIndexer) map[string
 }
 
 // BuildProwlarrProxyPayload builds the API payload for a Prowlarr proxy.
-func BuildProwlarrProxyPayload(proxy servarrv1alpha1.ProwlarrProxy) map[string]any {
+func BuildProwlarrProxyPayload(proxy servarrv1alpha1.ProwlarrProxy, tagIDs map[string]int) map[string]any {
 	fields := []map[string]any{{"name": "host", "value": proxy.Host}}
 	if proxy.RequestTimeout != nil {
 		fields = append(fields, map[string]any{"name": "requestTimeout", "value": *proxy.RequestTimeout})
@@ -152,12 +152,12 @@ func BuildProwlarrProxyPayload(proxy servarrv1alpha1.ProwlarrProxy) map[string]a
 	return map[string]any{
 		"name": proxy.Name, "implementation": proxy.Implementation,
 		"configContract": proxy.ConfigContract, "fields": fields,
-		"tags": intSliceToInterface(proxy.Tags),
+		"tags": resolveTags(proxy.Tags, tagIDs),
 	}
 }
 
 // BuildProwlarrDownloadClientPayload builds the API payload for a Prowlarr download client.
-func BuildProwlarrDownloadClientPayload(dc servarrv1alpha1.ProwlarrDownloadClient) map[string]any {
+func BuildProwlarrDownloadClientPayload(dc servarrv1alpha1.ProwlarrDownloadClient, tagIDs map[string]int) map[string]any {
 	enable := dc.Enable == nil || *dc.Enable
 
 	configContract := dc.Implementation + "Settings"
@@ -194,7 +194,7 @@ func BuildProwlarrDownloadClientPayload(dc servarrv1alpha1.ProwlarrDownloadClien
 		"configContract": configContract,
 		"fields":         fields,
 		"categories":     categories,
-		"tags":           intSliceToInterface(dc.Tags),
+		"tags":           resolveTags(dc.Tags, tagIDs),
 	}
 
 	if dc.Priority != nil {
@@ -211,4 +211,33 @@ func intSliceToInterface(s []int) []any {
 		r[i] = v
 	}
 	return r
+}
+
+// resolveTags maps tag labels to the IDs Prowlarr assigned them. Labels with no
+// known ID are dropped rather than sent as-is, since Prowlarr expects integers.
+func resolveTags(labels []string, tagIDs map[string]int) []any {
+	out := make([]any, 0, len(labels))
+	for _, l := range labels {
+		if id, ok := tagIDs[l]; ok {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// FetchTagIDs returns a label -> id map of the tags currently defined in Prowlarr.
+func FetchTagIDs(ctx context.Context, client *engine.HTTPClient) (map[string]int, error) {
+	existing, err := client.GetJSONList(ctx, "/api/v1/tag")
+	if err != nil {
+		return nil, fmt.Errorf("fetching tags: %w", err)
+	}
+	ids := make(map[string]int, len(existing))
+	for _, e := range existing {
+		label, _ := e["label"].(string)
+		id, ok := e["id"].(float64)
+		if label != "" && ok {
+			ids[label] = int(id)
+		}
+	}
+	return ids, nil
 }

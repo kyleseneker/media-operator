@@ -65,13 +65,6 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
-	// Build application payloads (requires per-app secret resolution).
-	apps, err := r.buildApplicationPayloads(ctx, config.Namespace, config.Spec.Applications)
-	if err != nil {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSecretNotFound, err.Error())
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-	}
-
 	indexers := make([]servarrv1alpha1.ProwlarrIndexer, len(config.Spec.Indexers))
 	copy(indexers, config.Spec.Indexers)
 	for i := range indexers {
@@ -83,16 +76,42 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		indexers[i].Fields = f
 	}
 
+	// Tags must exist before anything can reference their IDs, so they are
+	// applied first and the labels resolved against what Prowlarr assigned.
+	prune := ctrlcommon.PruneEnabled(config.Spec.Reconcile)
+	tagsOnly := prowlarrclient.ProwlarrResources(prowlarrclient.ProwlarrOptions{Tags: config.Spec.Tags}, nil)
+	result := engine.ReconcileApp(ctx, hc, def, nil, tagsOnly, prune, config.Status.ManagedResources)
+
+	tagIDs, terr := prowlarrclient.FetchTagIDs(ctx, hc)
+	if terr != nil {
+		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, terr.Error())
+		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
+	}
+
+	appPayloads, aerr := r.buildApplicationPayloads(ctx, config.Namespace, config.Spec.Applications, tagIDs)
+	if aerr != nil {
+		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSecretNotFound, aerr.Error())
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+
 	resources := prowlarrclient.ProwlarrResources(prowlarrclient.ProwlarrOptions{
-		Tags:            config.Spec.Tags,
-		Applications:    apps,
+		Applications:    appPayloads,
 		Indexers:        indexers,
 		Proxies:         config.Spec.Proxies,
 		DownloadClients: config.Spec.DownloadClients,
 		Notifications:   config.Spec.Notifications,
-	})
+	}, tagIDs)
 
-	result := engine.ReconcileApp(ctx, hc, def, nil, resources, ctrlcommon.PruneEnabled(config.Spec.Reconcile), config.Status.ManagedResources)
+	rest := engine.ReconcileApp(ctx, hc, def, nil, resources, prune, config.Status.ManagedResources)
+	result.Synced = append(result.Synced, rest.Synced...)
+	result.Errors = append(result.Errors, rest.Errors...)
+	result.Pruned = append(result.Pruned, rest.Pruned...)
+	if result.Managed == nil {
+		result.Managed = map[string][]string{}
+	}
+	for k, v := range rest.Managed {
+		result.Managed[k] = append(result.Managed[k], v...)
+	}
 	ctrlcommon.UpdateStatusManaged(&config, result.Managed)
 	ctrlcommon.EmitPruneEvents(r.Recorder, &config, result.Pruned)
 	ctrlcommon.UpdateStatus(ctx, r.Status(), &config, result.Success(), ctrlcommon.ResultReason(result), result.Message())
@@ -101,14 +120,14 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 }
 
 // buildApplicationPayloads resolves per-application API key secrets and builds payloads.
-func (r *ProwlarrConfigReconciler) buildApplicationPayloads(ctx context.Context, namespace string, apps []servarrv1alpha1.ProwlarrApplication) ([]map[string]any, error) {
+func (r *ProwlarrConfigReconciler) buildApplicationPayloads(ctx context.Context, namespace string, apps []servarrv1alpha1.ProwlarrApplication, tagIDs map[string]int) ([]map[string]any, error) {
 	payloads := make([]map[string]any, 0, len(apps))
 	for _, app := range apps {
 		appAPIKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, namespace, app.APIKeySecretRef)
 		if err != nil {
 			return nil, fmt.Errorf("application %q apiKeySecretRef: %w", app.Name, err)
 		}
-		payloads = append(payloads, prowlarrclient.BuildProwlarrApplicationPayload(app, appAPIKey))
+		payloads = append(payloads, prowlarrclient.BuildProwlarrApplicationPayload(app, appAPIKey, tagIDs))
 	}
 	return payloads, nil
 }

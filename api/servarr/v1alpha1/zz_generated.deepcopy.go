@@ -837,7 +837,7 @@ func (in *ProwlarrApplication) DeepCopyInto(out *ProwlarrApplication) {
 	}
 	if in.Tags != nil {
 		in, out := &in.Tags, &out.Tags
-		*out = make([]int, len(*in))
+		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
 }
@@ -1036,7 +1036,7 @@ func (in *ProwlarrDownloadClient) DeepCopyInto(out *ProwlarrDownloadClient) {
 	}
 	if in.Tags != nil {
 		in, out := &in.Tags, &out.Tags
-		*out = make([]int, len(*in))
+		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
 	if in.Fields != nil {
@@ -1130,7 +1130,7 @@ func (in *ProwlarrIndexer) DeepCopyInto(out *ProwlarrIndexer) {
 	}
 	if in.Tags != nil {
 		in, out := &in.Tags, &out.Tags
-		*out = make([]int, len(*in))
+		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
 }
@@ -1155,7 +1155,7 @@ func (in *ProwlarrProxy) DeepCopyInto(out *ProwlarrProxy) {
 	}
 	if in.Tags != nil {
 		in, out := &in.Tags, &out.Tags
-		*out = make([]int, len(*in))
+		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
 }

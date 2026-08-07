@@ -64,7 +64,7 @@ func TestProwlarrResources(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resources := ProwlarrResources(tt.opts)
+			resources := ProwlarrResources(tt.opts, nil)
 			assert.Len(t, resources, len(tt.wantKeys))
 			for _, k := range tt.wantKeys {
 				assert.Contains(t, resources, k)
@@ -82,10 +82,10 @@ func TestBuildProwlarrApplicationPayload(t *testing.T) {
 		ProwlarrUrl:    "http://prowlarr:9696",
 		BaseUrl:        "http://sonarr:8989",
 		SyncCategories: []int{5030, 5040},
-		Tags:           []int{1, 2},
+		Tags:           []string{"tag1", "tag2"},
 	}
 
-	p := BuildProwlarrApplicationPayload(app, "sonarr-api-key")
+	p := BuildProwlarrApplicationPayload(app, "sonarr-api-key", map[string]int{"tag1": 1, "tag2": 2})
 
 	assert.Equal(t, "Sonarr", p["name"])
 	assert.Equal(t, "fullSync", p["syncLevel"])
@@ -105,6 +105,7 @@ func TestBuildProwlarrApplicationPayload(t *testing.T) {
 
 	tags := p["tags"].([]any)
 	assert.Len(t, tags, 2)
+	assert.Equal(t, []any{1, 2}, tags, "labels must be resolved to the IDs Prowlarr assigned")
 }
 
 func TestBuildProwlarrIndexerPayload(t *testing.T) {
@@ -135,7 +136,7 @@ func TestBuildProwlarrIndexerPayload(t *testing.T) {
 					{Name: "baseUrl", Value: strPtr("http://nzbgeek.info")},
 					{Name: "apiKey", Value: nil},
 				},
-				Tags: []int{1},
+				Tags: []string{"tag1"},
 			},
 			check: func(t *testing.T, p map[string]any) {
 				assert.Equal(t, false, p["enable"])
@@ -151,7 +152,7 @@ func TestBuildProwlarrIndexerPayload(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := BuildProwlarrIndexerPayload(tt.idx)
+			p := BuildProwlarrIndexerPayload(tt.idx, nil)
 			tt.check(t, p)
 		})
 	}
@@ -189,7 +190,7 @@ func TestBuildProwlarrProxyPayload(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := BuildProwlarrProxyPayload(tt.proxy)
+			p := BuildProwlarrProxyPayload(tt.proxy, nil)
 			tt.check(t, p)
 		})
 	}
@@ -239,7 +240,7 @@ func TestBuildProwlarrDownloadClientPayload(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := BuildProwlarrDownloadClientPayload(tt.dc)
+			p := BuildProwlarrDownloadClientPayload(tt.dc, nil)
 			tt.check(t, p)
 		})
 	}
@@ -259,4 +260,15 @@ func TestIntSliceToInterface(t *testing.T) {
 			assert.Equal(t, tt.want, intSliceToInterface(tt.input))
 		})
 	}
+}
+
+func TestResolveTagsMapsLabelsToIDs(t *testing.T) {
+	ids := map[string]int{"flaresolverr": 7, "public": 9}
+	got := resolveTags([]string{"flaresolverr", "public"}, ids)
+	assert.Equal(t, []any{7, 9}, got)
+}
+
+func TestResolveTagsDropsUnknownLabels(t *testing.T) {
+	got := resolveTags([]string{"never-declared"}, map[string]int{"other": 1})
+	assert.Empty(t, got, "an unknown label must not be sent as a string; Prowlarr expects integer tag IDs")
 }

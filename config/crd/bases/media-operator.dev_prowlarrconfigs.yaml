@@ -106,10 +106,11 @@ spec:
                       - fullSync
                       type: string
                     tags:
-                      description: tags is the list of tag IDs to associate with this
-                        application.
+                      description: |-
+                        tags is the list of tag labels to associate with this application.
+                        Labels are resolved to Prowlarr tag IDs at apply time.
                       items:
-                        type: integer
+                        type: string
                       type: array
                   required:
                   - apiKeySecretRef
@@ -259,10 +260,11 @@ spec:
                       - usenet
                       type: string
                     tags:
-                      description: tags is the list of tag IDs to associate with this
-                        download client.
+                      description: |-
+                        tags is the list of tag labels to associate with this download client.
+                        Labels are resolved to Prowlarr tag IDs at apply time.
                       items:
-                        type: integer
+                        type: string
                       type: array
                   required:
                   - implementation
@@ -330,10 +332,11 @@ spec:
                         are higher priority.
                       type: integer
                     tags:
-                      description: tags is the list of tag IDs to associate with this
-                        indexer.
+                      description: |-
+                        tags is the list of tag labels to associate with this indexer.
+                        Labels are resolved to Prowlarr tag IDs at apply time.
                       items:
-                        type: integer
+                        type: string
                       type: array
                   required:
                   - configContract
@@ -484,10 +487,11 @@ spec:
                       description: requestTimeout is the request timeout in seconds.
                       type: integer
                     tags:
-                      description: tags is the list of tag IDs to associate with this
-                        proxy.
+                      description: |-
+                        tags is the list of tag labels to associate with this proxy.
+                        Labels are resolved to Prowlarr tag IDs at apply time.
                       items:
-                        type: integer
+                        type: string
                       type: array
                   required:
                   - configContract
