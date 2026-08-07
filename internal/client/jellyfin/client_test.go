@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -112,4 +113,27 @@ func TestCreateLibrary(t *testing.T) {
 	})
 	err := c.CreateLibrary(context.Background(), "Movies", "movies", map[string]any{})
 	assert.NoError(t, err)
+}
+
+func TestCreateLibraryNestsOptionsUnderLibraryOptions(t *testing.T) {
+	var body map[string]any
+	var query url.Values
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		query = r.URL.Query()
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	opts := map[string]any{"PathInfos": []map[string]any{{"Path": "/data/media/movies"}}}
+	require.NoError(t, c.CreateLibrary(context.Background(), "Movies", "movies", opts))
+
+	assert.Equal(t, "Movies", query.Get("name"))
+	assert.Equal(t, "movies", query.Get("collectionType"))
+
+	lo, ok := body["LibraryOptions"].(map[string]any)
+	require.True(t, ok, "options must be nested under LibraryOptions, got %v", body)
+	infos, ok := lo["PathInfos"].([]any)
+	require.True(t, ok, "PathInfos missing from LibraryOptions")
+	require.Len(t, infos, 1)
+	assert.Equal(t, "/data/media/movies", infos[0].(map[string]any)["Path"])
 }

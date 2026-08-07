@@ -117,5 +117,5 @@ func (c *Client) CreateLibrary(ctx context.Context, name, collectionType string,
 	params.Set("refreshLibrary", "false")
 
 	path := "/Library/VirtualFolders?" + params.Encode()
-	return c.hc.PostJSON(ctx, path, libraryOptions)
+	return c.hc.PostJSON(ctx, path, map[string]any{"LibraryOptions": libraryOptions})
 }
