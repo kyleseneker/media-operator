@@ -54,7 +54,8 @@ type HTTPClient struct {
 	plexToken string
 
 	// Cookie auth
-	cookieSessionID string
+	cookieSessionID   string
+	cookieSessionName string
 
 	// MediaBrowser auth
 	mediaToken string
@@ -228,6 +229,28 @@ func (c *HTTPClient) SetCookieSessionID(sid string) {
 	c.cookieSessionID = sid
 }
 
+// SetCookieSession sets the session cookie under a specific name, for apps that
+// do not call it SID.
+func (c *HTTPClient) SetCookieSession(name, value string) {
+	c.cookieSessionName = name
+	c.cookieSessionID = value
+}
+
+// CookieValuePrefix returns the value of the first cookie whose name starts with
+// prefix, for apps that put a variable suffix in the name.
+func (c *HTTPClient) CookieValuePrefix(prefix string) (string, string) {
+	u, err := url.Parse(c.baseURL)
+	if err != nil {
+		return "", ""
+	}
+	for _, cookie := range c.httpClient.Jar.Cookies(u) {
+		if strings.HasPrefix(cookie.Name, prefix) {
+			return cookie.Name, cookie.Value
+		}
+	}
+	return "", ""
+}
+
 // CookieValue returns the value of the named cookie from the cookie jar for the client's base URL.
 // Returns an empty string if the cookie is not found.
 func (c *HTTPClient) CookieValue(name string) string {
@@ -327,7 +350,11 @@ func (c *HTTPClient) applyAuth(req *http.Request) {
 		req.Header.Set("Authorization", auth)
 	case AuthCookie:
 		if c.cookieSessionID != "" {
-			req.AddCookie(&http.Cookie{Name: "SID", Value: c.cookieSessionID})
+			name := c.cookieSessionName
+			if name == "" {
+				name = "SID"
+			}
+			req.AddCookie(&http.Cookie{Name: name, Value: c.cookieSessionID})
 		}
 	case AuthSession:
 		if c.apiKey != "" {

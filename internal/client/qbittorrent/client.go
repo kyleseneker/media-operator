@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/kyleseneker/media-operator/internal/engine"
 )
@@ -37,18 +38,24 @@ func (c *Client) Login(ctx context.Context) error {
 		return fmt.Errorf("executing login request: %w", err)
 	}
 
-	if string(body) != "Ok." {
-		return fmt.Errorf("login failed: %s", string(body))
+	// Older builds answer 200 with "Ok."; newer ones answer 204 with no body.
+	// Bad credentials are reported as "Fails." either way.
+	if resp := strings.TrimSpace(string(body)); resp != "" && !strings.EqualFold(resp, "Ok.") {
+		return fmt.Errorf("login failed: %s", resp)
 	}
 
-	// The cookie jar captured the SID from the Set-Cookie header automatically.
-	// Extract it and register it with the engine's cookie-based auth so that
-	// applyAuth includes it on every subsequent request.
-	sid := c.hc.CookieValue("SID")
-	if sid == "" {
-		return fmt.Errorf("login succeeded but no SID cookie returned")
+	// The cookie jar captured the session cookie from the Set-Cookie header
+	// automatically. Extract it and register it with the engine's cookie-based
+	// auth so applyAuth includes it on every subsequent request. Recent versions
+	// name it QBT_SID_<port> rather than SID.
+	name, value := c.hc.CookieValuePrefix("QBT_SID_")
+	if value == "" {
+		name, value = "SID", c.hc.CookieValue("SID")
 	}
-	c.hc.SetCookieSessionID(sid)
+	if value == "" {
+		return fmt.Errorf("login succeeded but no session cookie returned")
+	}
+	c.hc.SetCookieSession(name, value)
 
 	return nil
 }
