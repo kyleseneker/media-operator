@@ -2,12 +2,12 @@ package common
 
 import (
 	"context"
-	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -39,7 +39,7 @@ func EnsureFinalizer(ctx context.Context, c client.Client, obj ConfigResource) e
 // when the deletion policy is "delete", then releases the finalizer. If remove
 // fails it retries until DeletionGiveUpAfter has elapsed since deletion was
 // requested, after which the finalizer is released regardless.
-func HandleDeletion(ctx context.Context, c client.Client, recorder record.EventRecorder, obj ConfigResource, remove func(context.Context) error) (bool, error) {
+func HandleDeletion(ctx context.Context, c client.Client, recorder events.EventRecorder, obj ConfigResource, remove func(context.Context) error) (bool, error) {
 	if !controllerutil.ContainsFinalizer(obj, Finalizer) {
 		return false, nil
 	}
@@ -55,8 +55,8 @@ func HandleDeletion(ctx context.Context, c client.Client, recorder record.EventR
 			if expired(obj) {
 				logger.Error(err, "giving up removing remote resources; releasing finalizer")
 				if recorder != nil {
-					recorder.Event(obj, "Warning", engine.ReasonSyncFailed,
-						fmt.Sprintf("released finalizer after %s without removing remote resources: %v", DeletionGiveUpAfter, err))
+					recorder.Eventf(obj, nil, corev1.EventTypeWarning, engine.ReasonSyncFailed, "ReleaseFinalizer",
+						"released finalizer after %s without removing remote resources: %v", DeletionGiveUpAfter, err)
 				}
 			} else {
 				return true, err
@@ -83,7 +83,7 @@ func expired(obj ConfigResource) bool {
 // controller shares. It returns done=true when the caller should stop
 // reconciling, either because the object is being deleted or because the
 // finalizer could not be written.
-func HandleLifecycle(ctx context.Context, c client.Client, recorder record.EventRecorder, obj ConfigResource, remove func(context.Context) error) (bool, time.Duration) {
+func HandleLifecycle(ctx context.Context, c client.Client, recorder events.EventRecorder, obj ConfigResource, remove func(context.Context) error) (bool, time.Duration) {
 	if !obj.GetDeletionTimestamp().IsZero() {
 		if _, err := HandleDeletion(ctx, c, recorder, obj, remove); err != nil {
 			return true, 30 * time.Second

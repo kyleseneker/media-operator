@@ -70,7 +70,7 @@ var allControllers = []controllerFactory{
 
 			Scheme: mgr.GetScheme(),
 
-			Recorder: mgr.GetEventRecorderFor("flaresolverr-controller"),
+			Recorder: mgr.GetEventRecorder("flaresolverr-controller"),
 		}
 	}},
 }

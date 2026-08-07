@@ -70,7 +70,7 @@ var allControllers = []controllerFactory{
 
 			Scheme: mgr.GetScheme(),
 
-			Recorder: mgr.GetEventRecorderFor("sonarr-controller"),
+			Recorder: mgr.GetEventRecorder("sonarr-controller"),
 		}
 	}},
 	{name: "radarr", setup: func(mgr ctrl.Manager) controllerSetup {
@@ -80,7 +80,7 @@ var allControllers = []controllerFactory{
 
 			Scheme: mgr.GetScheme(),
 
-			Recorder: mgr.GetEventRecorderFor("radarr-controller"),
+			Recorder: mgr.GetEventRecorder("radarr-controller"),
 		}
 	}},
 	{name: "prowlarr", setup: func(mgr ctrl.Manager) controllerSetup {
@@ -90,7 +90,7 @@ var allControllers = []controllerFactory{
 
 			Scheme: mgr.GetScheme(),
 
-			Recorder: mgr.GetEventRecorderFor("prowlarr-controller"),
+			Recorder: mgr.GetEventRecorder("prowlarr-controller"),
 		}
 	}},
 	{name: "lidarr", setup: func(mgr ctrl.Manager) controllerSetup {
@@ -100,7 +100,7 @@ var allControllers = []controllerFactory{
 
 			Scheme: mgr.GetScheme(),
 
-			Recorder: mgr.GetEventRecorderFor("lidarr-controller"),
+			Recorder: mgr.GetEventRecorder("lidarr-controller"),
 		}
 	}},
 	{name: "readarr", setup: func(mgr ctrl.Manager) controllerSetup {
@@ -110,7 +110,7 @@ var allControllers = []controllerFactory{
 
 			Scheme: mgr.GetScheme(),
 
-			Recorder: mgr.GetEventRecorderFor("readarr-controller"),
+			Recorder: mgr.GetEventRecorder("readarr-controller"),
 		}
 	}},
 	{name: "bazarr", setup: func(mgr ctrl.Manager) controllerSetup {
@@ -120,7 +120,7 @@ var allControllers = []controllerFactory{
 
 			Scheme: mgr.GetScheme(),
 
-			Recorder: mgr.GetEventRecorderFor("bazarr-controller"),
+			Recorder: mgr.GetEventRecorder("bazarr-controller"),
 		}
 	}},
 }

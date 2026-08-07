@@ -9,7 +9,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -304,9 +304,9 @@ func DownloadClientReferencesSecret(downloadClients []commonv1alpha1.DownloadCli
 }
 
 // EmitPruneEvents emits a Kubernetes Warning event for each pruned resource.
-func EmitPruneEvents(recorder record.EventRecorder, obj client.Object, pruned []engine.PrunedResource) {
+func EmitPruneEvents(recorder events.EventRecorder, obj client.Object, pruned []engine.PrunedResource) {
 	for _, p := range pruned {
-		recorder.Eventf(obj, corev1.EventTypeWarning, "ResourcePruned",
+		recorder.Eventf(obj, nil, corev1.EventTypeWarning, "ResourcePruned", "Prune",
 			"Pruned unmanaged %s %q (id=%d)", p.Type, p.Name, p.ID)
 	}
 }

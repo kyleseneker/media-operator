@@ -70,7 +70,7 @@ var allControllers = []controllerFactory{
 
 			Scheme: mgr.GetScheme(),
 
-			Recorder: mgr.GetEventRecorderFor("autobrr-controller"),
+			Recorder: mgr.GetEventRecorder("autobrr-controller"),
 		}
 	}},
 }

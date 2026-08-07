@@ -70,7 +70,7 @@ var allControllers = []controllerFactory{
 
 			Scheme: mgr.GetScheme(),
 
-			Recorder: mgr.GetEventRecorderFor("seerr-controller"),
+			Recorder: mgr.GetEventRecorder("seerr-controller"),
 		}
 	}},
 	{name: "maintainerr", setup: func(mgr ctrl.Manager) controllerSetup {
@@ -80,7 +80,7 @@ var allControllers = []controllerFactory{
 
 			Scheme: mgr.GetScheme(),
 
-			Recorder: mgr.GetEventRecorderFor("maintainerr-controller"),
+			Recorder: mgr.GetEventRecorder("maintainerr-controller"),
 		}
 	}},
 }

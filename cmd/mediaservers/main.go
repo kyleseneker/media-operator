@@ -70,7 +70,7 @@ var allControllers = []controllerFactory{
 
 			Scheme: mgr.GetScheme(),
 
-			Recorder: mgr.GetEventRecorderFor("jellyfin-controller"),
+			Recorder: mgr.GetEventRecorder("jellyfin-controller"),
 		}
 	}},
 	{name: "plex", setup: func(mgr ctrl.Manager) controllerSetup {
@@ -80,7 +80,7 @@ var allControllers = []controllerFactory{
 
 			Scheme: mgr.GetScheme(),
 
-			Recorder: mgr.GetEventRecorderFor("plex-controller"),
+			Recorder: mgr.GetEventRecorder("plex-controller"),
 		}
 	}},
 }

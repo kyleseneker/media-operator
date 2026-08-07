@@ -70,7 +70,7 @@ var allControllers = []controllerFactory{
 
 			Scheme: mgr.GetScheme(),
 
-			Recorder: mgr.GetEventRecorderFor("qbittorrent-controller"),
+			Recorder: mgr.GetEventRecorder("qbittorrent-controller"),
 		}
 	}},
 	{name: "sabnzbd", setup: func(mgr ctrl.Manager) controllerSetup {
@@ -80,7 +80,7 @@ var allControllers = []controllerFactory{
 
 			Scheme: mgr.GetScheme(),
 
-			Recorder: mgr.GetEventRecorderFor("sabnzbd-controller"),
+			Recorder: mgr.GetEventRecorder("sabnzbd-controller"),
 		}
 	}},
 }
