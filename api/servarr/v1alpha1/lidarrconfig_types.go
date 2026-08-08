@@ -223,10 +223,16 @@ type LidarrConfigStatus struct {
 
 // LidarrConfig is the Schema for the lidarrconfigs API.
 type LidarrConfig struct {
-	metav1.TypeMeta   `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
+
+	// +optional
 	metav1.ObjectMeta `json:"metadata,omitzero"`
-	Spec              LidarrConfigSpec   `json:"spec"`
-	Status            LidarrConfigStatus `json:"status,omitzero"`
+
+	// +required
+	Spec LidarrConfigSpec `json:"spec"`
+
+	// +optional
+	Status LidarrConfigStatus `json:"status,omitzero"`
 }
 
 // +kubebuilder:object:root=true

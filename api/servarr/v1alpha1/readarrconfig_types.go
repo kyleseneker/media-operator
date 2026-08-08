@@ -219,10 +219,16 @@ type ReadarrConfigStatus struct {
 
 // ReadarrConfig is the Schema for the readarrconfigs API.
 type ReadarrConfig struct {
-	metav1.TypeMeta   `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
+
+	// +optional
 	metav1.ObjectMeta `json:"metadata,omitzero"`
-	Spec              ReadarrConfigSpec   `json:"spec"`
-	Status            ReadarrConfigStatus `json:"status,omitzero"`
+
+	// +required
+	Spec ReadarrConfigSpec `json:"spec"`
+
+	// +optional
+	Status ReadarrConfigStatus `json:"status,omitzero"`
 }
 
 // +kubebuilder:object:root=true

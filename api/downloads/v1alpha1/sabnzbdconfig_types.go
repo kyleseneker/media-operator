@@ -166,10 +166,16 @@ type SabnzbdConfigStatus struct {
 
 // SabnzbdConfig is the Schema for the sabnzbdconfigs API.
 type SabnzbdConfig struct {
-	metav1.TypeMeta   `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
+
+	// +optional
 	metav1.ObjectMeta `json:"metadata,omitzero"`
-	Spec              SabnzbdConfigSpec   `json:"spec"`
-	Status            SabnzbdConfigStatus `json:"status,omitzero"`
+
+	// +required
+	Spec SabnzbdConfigSpec `json:"spec"`
+
+	// +optional
+	Status SabnzbdConfigStatus `json:"status,omitzero"`
 }
 
 // +kubebuilder:object:root=true

@@ -179,10 +179,16 @@ type PlexConfigStatus struct {
 
 // PlexConfig is the Schema for the plexconfigs API.
 type PlexConfig struct {
-	metav1.TypeMeta   `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
+
+	// +optional
 	metav1.ObjectMeta `json:"metadata,omitzero"`
-	Spec              PlexConfigSpec   `json:"spec"`
-	Status            PlexConfigStatus `json:"status,omitzero"`
+
+	// +required
+	Spec PlexConfigSpec `json:"spec"`
+
+	// +optional
+	Status PlexConfigStatus `json:"status,omitzero"`
 }
 
 // +kubebuilder:object:root=true
