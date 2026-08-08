@@ -83,13 +83,26 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 		// Sync media server libraries
 		if config.Spec.JellyfinAuth != nil {
-			if _, err := sc.Post(ctx, "/api/v1/settings/jellyfin/library/sync", map[string]any{}); err != nil {
+			jfPort := 0
+			if config.Spec.JellyfinAuth.Port != nil {
+				jfPort = *config.Spec.JellyfinAuth.Port
+			}
+			jfSettings := map[string]any{
+				"hostname": config.Spec.JellyfinAuth.Hostname,
+				"port":     jfPort,
+				"useSsl":   config.Spec.JellyfinAuth.UseSsl != nil && *config.Spec.JellyfinAuth.UseSsl,
+				"urlBase":  config.Spec.JellyfinAuth.UrlBase,
+			}
+			if _, err := sc.Post(ctx, "/api/v1/settings/jellyfin", jfSettings); err != nil {
+				logger.Error(err, "failed to configure Jellyfin server settings")
+				initErrors = append(initErrors, fmt.Sprintf("jellyfin settings: %v", err))
+			} else if _, err := sc.Post(ctx, "/api/v1/settings/jellyfin/sync", map[string]any{}); err != nil {
 				logger.Error(err, "failed to sync Jellyfin libraries")
 				initErrors = append(initErrors, fmt.Sprintf("jellyfin library sync: %v", err))
 			}
 		}
 		if config.Spec.PlexAuth != nil {
-			if _, err := sc.Post(ctx, "/api/v1/settings/plex/library/sync", map[string]any{}); err != nil {
+			if _, err := sc.Post(ctx, "/api/v1/settings/plex/sync", map[string]any{}); err != nil {
 				logger.Error(err, "failed to sync Plex libraries")
 				initErrors = append(initErrors, fmt.Sprintf("plex library sync: %v", err))
 			}
