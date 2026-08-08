@@ -1,0 +1,87 @@
+name: Bug report
+description: Something the operator does wrong
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please redact API keys, tokens, and anything else you wouldn't post publicly
+        before pasting configs or logs.
+
+  - type: dropdown
+    id: app
+    attributes:
+      label: App
+      description: Which app is being configured?
+      options:
+        - Sonarr
+        - Radarr
+        - Lidarr
+        - Readarr
+        - Prowlarr
+        - Bazarr
+        - qBittorrent
+        - SABnzbd
+        - Jellyfin
+        - Plex
+        - Seerr / Jellyseerr
+        - Maintainerr
+        - Tdarr
+        - Autobrr
+        - FlareSolverr
+        - Not app-specific
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      description: >
+        The version of the app itself, not the operator. These APIs change between
+        releases without much warning, so this is usually the first thing to check.
+      placeholder: "Sonarr 4.0.10.2544"
+    validations:
+      required: true
+
+  - type: input
+    id: operator-version
+    attributes:
+      label: Operator version
+      description: Chart version, image tag, or commit.
+      placeholder: "v0.12.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: manifest
+    attributes:
+      label: The CR you applied
+      description: Secrets redacted. This is autoformatted as YAML, no backticks needed.
+      render: yaml
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Operator logs
+      description: >
+        `kubectl logs -n media deployment/media-operator-<domain>`. The reconcile
+        error is usually enough; no need for the whole stream.
+      render: shell
+
+  - type: textarea
+    id: status
+    attributes:
+      label: Resource status
+      description: Output of `kubectl describe <kind> <name> -n media`, if relevant.
+      render: shell

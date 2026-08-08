@@ -31,7 +31,8 @@ securityContext:
 # Metrics & observability.
 # The operator exposes Prometheus metrics on :8443 over HTTPS with k8s TokenReview auth.
 # Built-in controller-runtime metrics and custom media_operator_* metrics are both served
-# on the same endpoint. See README's "Metrics & Observability" section for details.
+# on the same endpoint. media_operator_config_synced goes to 0 when a resource stops
+# reconciling, which is the one worth alerting on.
 metrics:
   enabled: true
   serviceMonitor:
