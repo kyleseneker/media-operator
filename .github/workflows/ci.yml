@@ -27,6 +27,15 @@ jobs:
       - run: make test
       - run: make verify-crds
 
+  envtest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make test-envtest
+
   build:
     runs-on: ubuntu-latest
     steps:
