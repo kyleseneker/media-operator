@@ -44,6 +44,8 @@ jobs:
           - media-operator-mediaservers
           - media-operator-requests
           - media-operator-transcode
+          - media-operator-automation
+          - media-operator-utilities
     steps:
       - uses: actions/checkout@v4
       - name: Update chart version
