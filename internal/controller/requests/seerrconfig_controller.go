@@ -83,22 +83,9 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 		// Sync media server libraries
 		if config.Spec.JellyfinAuth != nil {
-			jfPort := 0
-			if config.Spec.JellyfinAuth.Port != nil {
-				jfPort = *config.Spec.JellyfinAuth.Port
-			}
-			jfSettings := map[string]any{
-				"hostname": config.Spec.JellyfinAuth.Hostname,
-				"port":     jfPort,
-				"useSsl":   config.Spec.JellyfinAuth.UseSsl != nil && *config.Spec.JellyfinAuth.UseSsl,
-				"urlBase":  config.Spec.JellyfinAuth.UrlBase,
-			}
-			if _, err := sc.Post(ctx, "/api/v1/settings/jellyfin", jfSettings); err != nil {
-				logger.Error(err, "failed to configure Jellyfin server settings")
-				initErrors = append(initErrors, fmt.Sprintf("jellyfin settings: %v", err))
-			} else if _, err := sc.Post(ctx, "/api/v1/settings/jellyfin/sync", map[string]any{}); err != nil {
-				logger.Error(err, "failed to sync Jellyfin libraries")
-				initErrors = append(initErrors, fmt.Sprintf("jellyfin library sync: %v", err))
+			if err := syncJellyfinLibraries(ctx, sc, config.Spec.JellyfinAuth); err != nil {
+				logger.Error(err, "failed to configure Jellyfin libraries")
+				initErrors = append(initErrors, err.Error())
 			}
 		}
 		if config.Spec.PlexAuth != nil {
@@ -390,6 +377,26 @@ func (r *SeerrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		})).
 		Named("seerrconfig").
 		Complete(r)
+}
+
+func syncJellyfinLibraries(ctx context.Context, sc *seerrclient.Client, auth *requestsv1alpha1.SeerrJellyfinAuth) error {
+	port := 0
+	if auth.Port != nil {
+		port = *auth.Port
+	}
+	settings := map[string]any{
+		"hostname": auth.Hostname,
+		"port":     port,
+		"useSsl":   auth.UseSsl != nil && *auth.UseSsl,
+		"urlBase":  auth.UrlBase,
+	}
+	if _, err := sc.Post(ctx, "/api/v1/settings/jellyfin", settings); err != nil {
+		return fmt.Errorf("jellyfin settings: %w", err)
+	}
+	if _, err := sc.Post(ctx, "/api/v1/settings/jellyfin/sync", map[string]any{}); err != nil {
+		return fmt.Errorf("jellyfin library sync: %w", err)
+	}
+	return nil
 }
 
 func (r *SeerrConfigReconciler) authenticate(ctx context.Context, sc *seerrclient.Client, config *requestsv1alpha1.SeerrConfig) error {
