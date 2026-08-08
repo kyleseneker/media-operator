@@ -3,6 +3,7 @@ package requests
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -401,6 +402,26 @@ func syncJellyfinLibraries(ctx context.Context, sc *seerrclient.Client, auth *re
 	}
 	if _, err := sc.Post(ctx, "/api/v1/settings/jellyfin/sync", map[string]any{}); err != nil {
 		return fmt.Errorf("jellyfin library sync: %w", err)
+	}
+	return enableJellyfinLibraries(ctx, sc)
+}
+
+func enableJellyfinLibraries(ctx context.Context, sc *seerrclient.Client) error {
+	libraries, err := sc.GetList(ctx, "/api/v1/settings/jellyfin/library?sync=true")
+	if err != nil {
+		return fmt.Errorf("listing jellyfin libraries: %w", err)
+	}
+	ids := make([]string, 0, len(libraries))
+	for _, lib := range libraries {
+		if id, ok := lib["id"].(string); ok && id != "" {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	if _, err := sc.GetList(ctx, "/api/v1/settings/jellyfin/library?enable="+strings.Join(ids, ",")); err != nil {
+		return fmt.Errorf("enabling jellyfin libraries: %w", err)
 	}
 	return nil
 }
