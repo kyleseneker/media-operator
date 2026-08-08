@@ -180,6 +180,9 @@ func (r *SeerrConfigReconciler) reconcileSonarrConnection(ctx context.Context, s
 	}
 
 	payload := buildServicePayload(config.Spec.Sonarr, sonarrAPIKey)
+	if _, ok := payload["enableSeasonFolders"]; !ok {
+		payload["enableSeasonFolders"] = false
+	}
 
 	if createOnly {
 		_, err := sc.Post(ctx, "/api/v1/settings/sonarr", payload)
@@ -212,6 +215,9 @@ func (r *SeerrConfigReconciler) reconcileRadarrConnection(ctx context.Context, s
 	}
 
 	payload := buildServicePayload(config.Spec.Radarr, radarrAPIKey)
+	if _, ok := payload["minimumAvailability"]; !ok {
+		payload["minimumAvailability"] = "released"
+	}
 
 	if createOnly {
 		_, err := sc.Post(ctx, "/api/v1/settings/radarr", payload)
@@ -239,9 +245,16 @@ func (r *SeerrConfigReconciler) reconcileRadarrConnection(ctx context.Context, s
 
 func buildServicePayload(svc *requestsv1alpha1.SeerrServiceConnection, apiKey string) map[string]any {
 	payload := map[string]any{
-		"name":     svc.Name,
-		"hostname": svc.Hostname,
-		"apiKey":   apiKey,
+		"name":              svc.Name,
+		"hostname":          svc.Hostname,
+		"apiKey":            apiKey,
+		"port":              0,
+		"useSsl":            false,
+		"activeProfileId":   0,
+		"activeProfileName": svc.ActiveProfileName,
+		"activeDirectory":   svc.ActiveDirectory,
+		"is4k":              false,
+		"isDefault":         false,
 	}
 	if svc.Port != nil {
 		payload["port"] = *svc.Port
