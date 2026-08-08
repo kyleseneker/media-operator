@@ -118,6 +118,10 @@ spec:
                   port:
                     description: port is the Jellyfin server port.
                     type: integer
+                  urlBase:
+                    description: urlBase is the subpath Jellyfin is served under,
+                      if any.
+                    type: string
                   useSsl:
                     description: useSsl enables SSL for the Jellyfin connection.
                     type: boolean

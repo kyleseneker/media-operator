@@ -9,6 +9,9 @@ import (
 	"github.com/kyleseneker/media-operator/internal/engine"
 )
 
+// mediaServerTypeJellyfin is Seerr's MediaServerType.JELLYFIN.
+const mediaServerTypeJellyfin = 2
+
 // Client is an HTTP client for the Seerr API v1.
 // It delegates all HTTP work to an engine.HTTPClient configured with AuthSession.
 type Client struct {
@@ -47,12 +50,15 @@ func (c *Client) AuthenticatePlex(ctx context.Context, plexToken string) error {
 
 // AuthenticateJellyfin logs in via the Jellyfin auth provider.
 // The session cookie is stored in the engine client's cookie jar.
-func (c *Client) AuthenticateJellyfin(ctx context.Context, username, password, jellyfinHost string, jellyfinPort int) error {
+func (c *Client) AuthenticateJellyfin(ctx context.Context, username, password, jellyfinHost string, jellyfinPort int, urlBase string, useSsl bool) error {
 	payload := map[string]any{
-		"username": username,
-		"password": password,
-		"hostname": jellyfinHost,
-		"port":     jellyfinPort,
+		"username":   username,
+		"password":   password,
+		"hostname":   jellyfinHost,
+		"port":       jellyfinPort,
+		"urlBase":    urlBase,
+		"useSsl":     useSsl,
+		"serverType": mediaServerTypeJellyfin,
 	}
 	_, err := c.hc.Do(ctx, http.MethodPost, "/api/v1/auth/jellyfin", payload)
 	return err

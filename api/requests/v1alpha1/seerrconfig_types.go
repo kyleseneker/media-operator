@@ -130,6 +130,10 @@ type SeerrJellyfinAuth struct {
 	// +optional
 	UseSsl *bool `json:"useSsl,omitempty"`
 
+	// urlBase is the subpath Jellyfin is served under, if any.
+	// +optional
+	UrlBase string `json:"urlBase,omitempty"`
+
 	// usernameSecretRef references a Secret containing the Jellyfin username.
 	// +required
 	UsernameSecretRef commonv1alpha1.SecretKeyRef `json:"usernameSecretRef"`

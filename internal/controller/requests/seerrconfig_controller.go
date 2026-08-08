@@ -400,7 +400,8 @@ func (r *SeerrConfigReconciler) authenticate(ctx context.Context, sc *seerrclien
 		if config.Spec.JellyfinAuth.Port != nil {
 			jfPort = *config.Spec.JellyfinAuth.Port
 		}
-		return sc.AuthenticateJellyfin(ctx, jfUsername, jfPassword, config.Spec.JellyfinAuth.Hostname, jfPort)
+		useSsl := config.Spec.JellyfinAuth.UseSsl != nil && *config.Spec.JellyfinAuth.UseSsl
+		return sc.AuthenticateJellyfin(ctx, jfUsername, jfPassword, config.Spec.JellyfinAuth.Hostname, jfPort, config.Spec.JellyfinAuth.UrlBase, useSsl)
 	}
 	return fmt.Errorf("either jellyfinAuth or plexAuth must be configured")
 }

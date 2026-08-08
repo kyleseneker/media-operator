@@ -59,7 +59,7 @@ func TestAuthenticateJellyfin(t *testing.T) {
 		assert.Equal(t, "/api/v1/auth/jellyfin", r.URL.Path)
 		w.WriteHeader(http.StatusOK)
 	})
-	assert.NoError(t, c.AuthenticateJellyfin(context.Background(), "admin", "pass", "jf.local", 8096))
+	assert.NoError(t, c.AuthenticateJellyfin(context.Background(), "admin", "pass", "jf.local", 8096, "", false))
 }
 
 func TestGetAPIKey(t *testing.T) {
@@ -105,4 +105,24 @@ func TestPing(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	assert.NoError(t, c.Ping(context.Background()))
+}
+
+func TestAuthenticateJellyfinPayload(t *testing.T) {
+	var body map[string]any
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":1}`))
+	})
+
+	require.NoError(t, c.AuthenticateJellyfin(context.Background(), "admin", "pw", "jf.svc", 8096, "", false))
+
+	assert.Equal(t, "admin", body["username"])
+	assert.Equal(t, "jf.svc", body["hostname"])
+	assert.Equal(t, float64(8096), body["port"])
+	assert.Equal(t, float64(2), body["serverType"])
+	if _, ok := body["urlBase"]; !ok {
+		t.Error("urlBase must be sent; Seerr concatenates it and builds host:port+undefined without it")
+	}
+	assert.Equal(t, false, body["useSsl"])
 }
