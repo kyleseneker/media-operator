@@ -66,17 +66,10 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
-	if err := r.authenticate(ctx, sc, &config); err != nil {
+	if err := r.establishSession(ctx, sc, &config); err != nil {
 		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
-
-	apiKey, err := sc.GetAPIKey(ctx)
-	if err != nil {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("get api key: %v", err))
-		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
-	}
-	sc.SetAPIKey(apiKey)
 
 	if !isInitialized {
 		var initErrors []string
@@ -396,6 +389,26 @@ func syncJellyfinLibraries(ctx context.Context, sc *seerrclient.Client, auth *re
 	if _, err := sc.Post(ctx, "/api/v1/settings/jellyfin/sync", map[string]any{}); err != nil {
 		return fmt.Errorf("jellyfin library sync: %w", err)
 	}
+	return nil
+}
+
+func (r *SeerrConfigReconciler) establishSession(ctx context.Context, sc *seerrclient.Client, config *requestsv1alpha1.SeerrConfig) error {
+	if ref := config.Spec.Connection.APIKeySecretRef; ref != nil {
+		apiKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, *ref)
+		if err != nil {
+			return err
+		}
+		sc.SetAPIKey(apiKey)
+		return nil
+	}
+	if err := r.authenticate(ctx, sc, config); err != nil {
+		return err
+	}
+	apiKey, err := sc.GetAPIKey(ctx)
+	if err != nil {
+		return fmt.Errorf("get api key: %w", err)
+	}
+	sc.SetAPIKey(apiKey)
 	return nil
 }
 

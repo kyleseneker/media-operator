@@ -57,6 +57,21 @@ spec:
               connection:
                 description: connection defines how to connect to the Seerr instance.
                 properties:
+                  apiKeySecretRef:
+                    description: |-
+                      apiKeySecretRef references a Secret containing Seerr's API key. When set,
+                      it is used instead of logging in through the media server.
+                    properties:
+                      key:
+                        description: key is the key within the Secret.
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
                   tls:
                     description: |-
                       tls configures TLS settings for the connection.

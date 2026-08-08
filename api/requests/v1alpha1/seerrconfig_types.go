@@ -90,6 +90,11 @@ type SeerrConnection struct {
 	// +required
 	URL string `json:"url"`
 
+	// apiKeySecretRef references a Secret containing Seerr's API key. When set,
+	// it is used instead of logging in through the media server.
+	// +optional
+	APIKeySecretRef *commonv1alpha1.SecretKeyRef `json:"apiKeySecretRef,omitempty"`
+
 	// tls configures TLS settings for the connection.
 	// Only needed when Seerr uses HTTPS with self-signed or private CA certificates.
 	// +optional
