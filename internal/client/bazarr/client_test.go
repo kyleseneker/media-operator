@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	servarrv1alpha1 "github.com/kyleseneker/media-operator/api/servarr/v1alpha1"
+	subtitlesv1alpha1 "github.com/kyleseneker/media-operator/api/subtitles/v1alpha1"
 	"github.com/kyleseneker/media-operator/internal/engine"
 )
 
@@ -72,13 +72,13 @@ func TestPostForm(t *testing.T) {
 func TestReconcileLanguages(t *testing.T) {
 	tests := []struct {
 		name       string
-		langs      *servarrv1alpha1.BazarrLanguages
+		langs      *subtitlesv1alpha1.BazarrLanguages
 		expectCall bool
 		checkBody  func(t *testing.T, body string)
 	}{
 		{
 			name: "enabled languages only",
-			langs: &servarrv1alpha1.BazarrLanguages{
+			langs: &subtitlesv1alpha1.BazarrLanguages{
 				Enabled: []string{"en", "es"},
 			},
 			expectCall: true,
@@ -90,7 +90,7 @@ func TestReconcileLanguages(t *testing.T) {
 		},
 		{
 			name:       "empty languages — no API call",
-			langs:      &servarrv1alpha1.BazarrLanguages{},
+			langs:      &subtitlesv1alpha1.BazarrLanguages{},
 			expectCall: false,
 		},
 	}

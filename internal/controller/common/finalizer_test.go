@@ -12,11 +12,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
-	servarrv1alpha1 "github.com/kyleseneker/media-operator/api/servarr/v1alpha1"
+	pvrv1alpha1 "github.com/kyleseneker/media-operator/api/pvr/v1alpha1"
 )
 
-func newConfig(policy string, deletedAgo time.Duration) *servarrv1alpha1.SonarrConfig {
-	c := &servarrv1alpha1.SonarrConfig{
+func newConfig(policy string, deletedAgo time.Duration) *pvrv1alpha1.SonarrConfig {
+	c := &pvrv1alpha1.SonarrConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "s", Namespace: "arr", Finalizers: []string{Finalizer}},
 	}
 	if policy != "" {
@@ -29,8 +29,8 @@ func newConfig(policy string, deletedAgo time.Duration) *servarrv1alpha1.SonarrC
 	return c
 }
 
-func testClient(o *servarrv1alpha1.SonarrConfig) *fake.ClientBuilder {
-	_ = servarrv1alpha1.AddToScheme(scheme.Scheme)
+func testClient(o *pvrv1alpha1.SonarrConfig) *fake.ClientBuilder {
+	_ = pvrv1alpha1.AddToScheme(scheme.Scheme)
 	return fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(o)
 }
 

@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"strings"
 
-	servarrv1alpha1 "github.com/kyleseneker/media-operator/api/servarr/v1alpha1"
+	subtitlesv1alpha1 "github.com/kyleseneker/media-operator/api/subtitles/v1alpha1"
 	"github.com/kyleseneker/media-operator/internal/engine"
 )
 
@@ -41,7 +41,7 @@ func (c *Client) PostForm(ctx context.Context, path string, form url.Values) err
 
 // ReconcileLanguages posts language configuration to /api/system/settings.
 // Returns nil without calling the API if neither enabled languages nor profiles are set.
-func (c *Client) ReconcileLanguages(ctx context.Context, langs *servarrv1alpha1.BazarrLanguages) error {
+func (c *Client) ReconcileLanguages(ctx context.Context, langs *subtitlesv1alpha1.BazarrLanguages) error {
 	form := url.Values{}
 
 	if len(langs.Enabled) > 0 {

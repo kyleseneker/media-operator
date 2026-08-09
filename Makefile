@@ -130,8 +130,8 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 
 ##@ Build
 
-BINARIES = servarr downloads mediaservers requests transcode utilities automation
-BINARY ?= servarr
+BINARIES = pvr indexers subtitles curation downloads mediaservers requests transcode automation
+BINARY ?= pvr
 
 .PHONY: build
 build: manifests generate fmt vet ## Build all manager binaries.

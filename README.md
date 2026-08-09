@@ -34,21 +34,24 @@ install.
 
 ## Install
 
-Seven independent operators, one chart each. Install the ones you need:
+Nine independent operators, grouped by what the app does, one chart each.
+Install the ones you need:
 
 ```bash
-helm install media-operator-servarr \
-  oci://ghcr.io/kyleseneker/media-operator/media-operator-servarr \
+helm install media-operator-pvr \
+  oci://ghcr.io/kyleseneker/media-operator/media-operator-pvr \
   --namespace media
 ```
 
-- `servarr` — SonarrConfig, RadarrConfig, LidarrConfig, ReadarrConfig, ProwlarrConfig, BazarrConfig
+- `pvr` — SonarrConfig, RadarrConfig, LidarrConfig, ReadarrConfig
+- `indexers` — ProwlarrConfig, FlareSolverrConfig
+- `subtitles` — BazarrConfig
 - `downloads` — QBittorrentConfig, SabnzbdConfig
 - `mediaservers` — JellyfinConfig, PlexConfig
-- `requests` — SeerrConfig, MaintainerrConfig
+- `requests` — SeerrConfig
+- `curation` — MaintainerrConfig
 - `transcode` — TdarrConfig
 - `automation` — AutobrrConfig
-- `utilities` — FlareSolverrConfig
 
 Each chart ships only its own CRDs and RBAC. Set `watchNamespace` to restrict an
 operator to a single namespace; it watches everything by default.
@@ -90,8 +93,8 @@ a resource stops reconciling, which no error counter will tell you.
 Needs Go 1.25+ and kubebuilder.
 
 ```bash
-BINARY=servarr make run      # run one operator against your current kube context
-make build                   # all seven binaries
+BINARY=pvr make run          # run one operator against your current kube context
+make build                   # all nine binaries
 make test
 make manifests generate      # after editing api/
 make sync-crds               # copy generated CRDs into the charts

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: media-operator-pvr
+description: Kubernetes operator for declarative Sonarr, Radarr, Lidarr and Readarr configuration
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

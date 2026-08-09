@@ -11,7 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
-	servarrv1alpha1 "github.com/kyleseneker/media-operator/api/servarr/v1alpha1"
+	pvrv1alpha1 "github.com/kyleseneker/media-operator/api/pvr/v1alpha1"
 	"github.com/kyleseneker/media-operator/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
@@ -81,11 +81,11 @@ func TestListsReferenceSecret(t *testing.T) {
 }
 
 func TestConfigSyncedGaugeTracksOutcome(t *testing.T) {
-	c := &servarrv1alpha1.SonarrConfig{
+	c := &pvrv1alpha1.SonarrConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "s", Namespace: "arr"},
 		TypeMeta:   metav1.TypeMeta{Kind: "SonarrConfig"},
 	}
-	_ = servarrv1alpha1.AddToScheme(scheme.Scheme)
+	_ = pvrv1alpha1.AddToScheme(scheme.Scheme)
 	cl := fake.NewClientBuilder().WithScheme(scheme.Scheme).
 		WithObjects(c).WithStatusSubresource(c).Build()
 

@@ -16,7 +16,7 @@ resources:
   domain: dev
   group: media-operator
   kind: SonarrConfig
-  path: github.com/kyleseneker/media-operator/api/servarr/v1alpha1
+  path: github.com/kyleseneker/media-operator/api/pvr/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -25,7 +25,7 @@ resources:
   domain: dev
   group: media-operator
   kind: RadarrConfig
-  path: github.com/kyleseneker/media-operator/api/servarr/v1alpha1
+  path: github.com/kyleseneker/media-operator/api/pvr/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -34,7 +34,7 @@ resources:
   domain: dev
   group: media-operator
   kind: ProwlarrConfig
-  path: github.com/kyleseneker/media-operator/api/servarr/v1alpha1
+  path: github.com/kyleseneker/media-operator/api/indexers/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -43,7 +43,7 @@ resources:
   domain: dev
   group: media-operator
   kind: BazarrConfig
-  path: github.com/kyleseneker/media-operator/api/servarr/v1alpha1
+  path: github.com/kyleseneker/media-operator/api/subtitles/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -52,7 +52,7 @@ resources:
   domain: dev
   group: media-operator
   kind: LidarrConfig
-  path: github.com/kyleseneker/media-operator/api/servarr/v1alpha1
+  path: github.com/kyleseneker/media-operator/api/pvr/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -61,7 +61,7 @@ resources:
   domain: dev
   group: media-operator
   kind: ReadarrConfig
-  path: github.com/kyleseneker/media-operator/api/servarr/v1alpha1
+  path: github.com/kyleseneker/media-operator/api/pvr/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -124,7 +124,7 @@ resources:
   domain: dev
   group: media-operator
   kind: FlareSolverrConfig
-  path: github.com/kyleseneker/media-operator/api/utilities/v1alpha1
+  path: github.com/kyleseneker/media-operator/api/indexers/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -142,6 +142,6 @@ resources:
   domain: dev
   group: media-operator
   kind: MaintainerrConfig
-  path: github.com/kyleseneker/media-operator/api/requests/v1alpha1
+  path: github.com/kyleseneker/media-operator/api/curation/v1alpha1
   version: v1alpha1
 version: "3"

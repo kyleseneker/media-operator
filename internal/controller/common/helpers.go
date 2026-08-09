@@ -15,8 +15,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
-	servarrv1alpha1 "github.com/kyleseneker/media-operator/api/servarr/v1alpha1"
-	servarrclient "github.com/kyleseneker/media-operator/internal/client/servarr"
+	indexersv1alpha1 "github.com/kyleseneker/media-operator/api/indexers/v1alpha1"
+	pvrclient "github.com/kyleseneker/media-operator/internal/client/pvr"
 	"github.com/kyleseneker/media-operator/internal/engine"
 	"github.com/kyleseneker/media-operator/internal/metrics"
 	"github.com/kyleseneker/media-operator/internal/reconciler"
@@ -122,10 +122,10 @@ func FindConfigsBySecret[L client.ObjectList](ctx context.Context, c client.Clie
 
 // ResolveDownloadClientSecrets resolves all secret references for a list of download clients.
 // Returns a map keyed by download client name.
-func ResolveDownloadClientSecrets(ctx context.Context, c client.Reader, namespace string, downloadClients []commonv1alpha1.DownloadClient) (map[string]servarrclient.DownloadClientResolvedSecrets, error) {
-	resolved := make(map[string]servarrclient.DownloadClientResolvedSecrets, len(downloadClients))
+func ResolveDownloadClientSecrets(ctx context.Context, c client.Reader, namespace string, downloadClients []commonv1alpha1.DownloadClient) (map[string]pvrclient.DownloadClientResolvedSecrets, error) {
+	resolved := make(map[string]pvrclient.DownloadClientResolvedSecrets, len(downloadClients))
 	for _, dc := range downloadClients {
-		var s servarrclient.DownloadClientResolvedSecrets
+		var s pvrclient.DownloadClientResolvedSecrets
 		if dc.UsernameSecretRef != nil {
 			val, err := reconciler.ResolveSecretKeyRef(ctx, c, namespace, *dc.UsernameSecretRef)
 			if err != nil {
@@ -224,11 +224,11 @@ func ResolveImportListSecrets(ctx context.Context, c client.Reader, namespace st
 }
 
 // ResolveProwlarrFields returns a copy of fields with any valueFrom reference resolved.
-func ResolveProwlarrFields(ctx context.Context, c client.Reader, namespace, owner string, fields []servarrv1alpha1.ProwlarrField) ([]servarrv1alpha1.ProwlarrField, error) {
+func ResolveProwlarrFields(ctx context.Context, c client.Reader, namespace, owner string, fields []indexersv1alpha1.ProwlarrField) ([]indexersv1alpha1.ProwlarrField, error) {
 	if len(fields) == 0 {
 		return fields, nil
 	}
-	out := make([]servarrv1alpha1.ProwlarrField, len(fields))
+	out := make([]indexersv1alpha1.ProwlarrField, len(fields))
 	copy(out, fields)
 	for i := range out {
 		if out[i].ValueFrom == nil {
@@ -248,7 +248,7 @@ func ResolveProwlarrFields(ctx context.Context, c client.Reader, namespace, owne
 }
 
 // ProwlarrFieldsReferenceSecret returns true if any field sources from the named secret.
-func ProwlarrFieldsReferenceSecret(fields []servarrv1alpha1.ProwlarrField, secretName string) bool {
+func ProwlarrFieldsReferenceSecret(fields []indexersv1alpha1.ProwlarrField, secretName string) bool {
 	for _, f := range fields {
 		if f.ValueFrom != nil && f.ValueFrom.Name == secretName {
 			return true

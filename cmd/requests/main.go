@@ -65,22 +65,9 @@ type controllerSetup interface {
 var allControllers = []controllerFactory{
 	{name: "seerr", setup: func(mgr ctrl.Manager) controllerSetup {
 		return &requests.SeerrConfigReconciler{
-
-			Client: mgr.GetClient(),
-
-			Scheme: mgr.GetScheme(),
-
+			Client:   mgr.GetClient(),
+			Scheme:   mgr.GetScheme(),
 			Recorder: mgr.GetEventRecorder("seerr-controller"),
-		}
-	}},
-	{name: "maintainerr", setup: func(mgr ctrl.Manager) controllerSetup {
-		return &requests.MaintainerrConfigReconciler{
-
-			Client: mgr.GetClient(),
-
-			Scheme: mgr.GetScheme(),
-
-			Recorder: mgr.GetEventRecorder("maintainerr-controller"),
 		}
 	}},
 }

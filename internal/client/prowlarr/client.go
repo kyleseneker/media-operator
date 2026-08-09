@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
-	servarrv1alpha1 "github.com/kyleseneker/media-operator/api/servarr/v1alpha1"
-	servarrclient "github.com/kyleseneker/media-operator/internal/client/servarr"
+	indexersv1alpha1 "github.com/kyleseneker/media-operator/api/indexers/v1alpha1"
+	pvrclient "github.com/kyleseneker/media-operator/internal/client/pvr"
 	"github.com/kyleseneker/media-operator/internal/engine"
 	"github.com/kyleseneker/media-operator/internal/metrics"
 )
@@ -34,9 +34,9 @@ func ProwlarrDefinition() engine.AppDefinition {
 type ProwlarrOptions struct {
 	Tags            []commonv1alpha1.Tag
 	Applications    []map[string]any
-	Indexers        []servarrv1alpha1.ProwlarrIndexer
-	Proxies         []servarrv1alpha1.ProwlarrProxy
-	DownloadClients []servarrv1alpha1.ProwlarrDownloadClient
+	Indexers        []indexersv1alpha1.ProwlarrIndexer
+	Proxies         []indexersv1alpha1.ProwlarrProxy
+	DownloadClients []indexersv1alpha1.ProwlarrDownloadClient
 	Notifications   []commonv1alpha1.Notification
 }
 
@@ -84,7 +84,7 @@ func ProwlarrResources(opts ProwlarrOptions, tagIDs map[string]int) map[string][
 	if len(opts.Notifications) > 0 {
 		notifs := make([]map[string]any, 0, len(opts.Notifications))
 		for _, n := range opts.Notifications {
-			notifs = append(notifs, servarrclient.BuildNotificationPayload(n))
+			notifs = append(notifs, pvrclient.BuildNotificationPayload(n))
 		}
 		resources["notifications"] = notifs
 	}
@@ -99,7 +99,7 @@ func ProwlarrResources(opts ProwlarrOptions, tagIDs map[string]int) map[string][
 
 // BuildProwlarrApplicationPayload builds the API payload for a Prowlarr application.
 // apiKey is the resolved secret value.
-func BuildProwlarrApplicationPayload(app servarrv1alpha1.ProwlarrApplication, apiKey string, tagIDs map[string]int) map[string]any {
+func BuildProwlarrApplicationPayload(app indexersv1alpha1.ProwlarrApplication, apiKey string, tagIDs map[string]int) map[string]any {
 	syncCats := make([]any, len(app.SyncCategories))
 	for i, c := range app.SyncCategories {
 		syncCats[i] = c
@@ -119,7 +119,7 @@ func BuildProwlarrApplicationPayload(app servarrv1alpha1.ProwlarrApplication, ap
 }
 
 // BuildProwlarrIndexerPayload builds the API payload for a Prowlarr indexer.
-func BuildProwlarrIndexerPayload(idx servarrv1alpha1.ProwlarrIndexer, tagIDs map[string]int) map[string]any {
+func BuildProwlarrIndexerPayload(idx indexersv1alpha1.ProwlarrIndexer, tagIDs map[string]int) map[string]any {
 	enable := idx.Enable == nil || *idx.Enable
 	fields := make([]map[string]any, 0, len(idx.Fields))
 	for _, f := range idx.Fields {
@@ -144,7 +144,7 @@ func BuildProwlarrIndexerPayload(idx servarrv1alpha1.ProwlarrIndexer, tagIDs map
 }
 
 // BuildProwlarrProxyPayload builds the API payload for a Prowlarr proxy.
-func BuildProwlarrProxyPayload(proxy servarrv1alpha1.ProwlarrProxy, tagIDs map[string]int) map[string]any {
+func BuildProwlarrProxyPayload(proxy indexersv1alpha1.ProwlarrProxy, tagIDs map[string]int) map[string]any {
 	fields := []map[string]any{{"name": "host", "value": proxy.Host}}
 	if proxy.RequestTimeout != nil {
 		fields = append(fields, map[string]any{"name": "requestTimeout", "value": *proxy.RequestTimeout})
@@ -157,7 +157,7 @@ func BuildProwlarrProxyPayload(proxy servarrv1alpha1.ProwlarrProxy, tagIDs map[s
 }
 
 // BuildProwlarrDownloadClientPayload builds the API payload for a Prowlarr download client.
-func BuildProwlarrDownloadClientPayload(dc servarrv1alpha1.ProwlarrDownloadClient, tagIDs map[string]int) map[string]any {
+func BuildProwlarrDownloadClientPayload(dc indexersv1alpha1.ProwlarrDownloadClient, tagIDs map[string]int) map[string]any {
 	enable := dc.Enable == nil || *dc.Enable
 
 	configContract := dc.Implementation + "Settings"

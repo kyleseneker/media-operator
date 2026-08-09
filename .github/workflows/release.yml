@@ -39,13 +39,15 @@ jobs:
     strategy:
       matrix:
         chart:
-          - media-operator-servarr
+          - media-operator-pvr
+          - media-operator-indexers
+          - media-operator-subtitles
+          - media-operator-curation
           - media-operator-downloads
           - media-operator-mediaservers
           - media-operator-requests
           - media-operator-transcode
           - media-operator-automation
-          - media-operator-utilities
     steps:
       - uses: actions/checkout@v4
       - name: Update chart version
