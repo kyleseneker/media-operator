@@ -204,3 +204,34 @@ func TestStructToFormData(t *testing.T) {
 		})
 	}
 }
+
+func TestStructToFormDataUsesBazarrSettingNames(t *testing.T) {
+	conn := &subtitlesv1alpha1.BazarrAppConnection{
+		Host:     "arr-sonarr.arr.svc.cluster.local",
+		BasePath: "/sonarr",
+	}
+	form := StructToFormData("sonarr", conn)
+
+	assert.Equal(t, "arr-sonarr.arr.svc.cluster.local", form.Get("settings-sonarr-ip"))
+	assert.Equal(t, "/sonarr", form.Get("settings-sonarr-base_url"))
+	assert.Empty(t, form.Get("settings-sonarr-host"), "host is inert in Bazarr; the real key is ip")
+	assert.Empty(t, form.Get("settings-sonarr-basePath"))
+}
+
+func TestSettingNameConvertsCamelCaseAndHonoursOverrides(t *testing.T) {
+	cases := []struct{ section, in, want string }{
+		{"general", "useSonarr", "use_sonarr"},
+		{"general", "minimumScoreMovie", "minimum_score_movie"},
+		{"general", "multithreading", "multithreading"},
+		{"sonarr", "onlyMonitored", "only_monitored"},
+		{"sonarr", "httpTimeout", "http_timeout"},
+		{"sonarr", "host", "ip"},
+		{"sonarr", "syncInterval", "series_sync"},
+		{"radarr", "syncInterval", "movies_sync"},
+	}
+	for _, c := range cases {
+		if got := settingName(c.section, c.in); got != c.want {
+			t.Errorf("settingName(%q, %q) = %q, want %q", c.section, c.in, got, c.want)
+		}
+	}
+}

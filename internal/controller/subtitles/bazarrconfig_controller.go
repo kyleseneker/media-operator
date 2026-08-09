@@ -2,7 +2,6 @@ package subtitles
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -179,11 +178,9 @@ func (r *BazarrConfigReconciler) reconcileBazarrProviders(ctx context.Context, b
 		}
 	}
 
-	providersJSON, err := json.Marshal(enabledProviders)
-	if err != nil {
-		return fmt.Errorf("marshaling enabled providers: %w", err)
+	for _, name := range enabledProviders {
+		form.Add("settings-general-enabled_providers", name)
 	}
-	form.Set("settings-general-enabled_providers", string(providersJSON))
 
 	return bc.PostForm(ctx, "/api/system/settings", form)
 }

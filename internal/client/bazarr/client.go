@@ -67,8 +67,36 @@ func (c *Client) ReconcileLanguages(ctx context.Context, langs *subtitlesv1alpha
 	return c.PostForm(ctx, "/api/system/settings", form)
 }
 
+// settingNameOverrides maps a spec field to the Bazarr setting it drives where
+// snake_case alone does not get there.
+var settingNameOverrides = map[string]map[string]string{
+	"sonarr": {"host": "ip", "basePath": "base_url", "syncInterval": "series_sync"},
+	"radarr": {"host": "ip", "basePath": "base_url", "syncInterval": "movies_sync"},
+}
+
+// settingName converts a spec field name to the key Bazarr stores it under.
+// Bazarr accepts and persists unknown keys without complaint, so a wrong name
+// is silently inert rather than an error.
+func settingName(section, jsonName string) string {
+	if o, ok := settingNameOverrides[section][jsonName]; ok {
+		return o
+	}
+	var b strings.Builder
+	for i, r := range jsonName {
+		if r >= 'A' && r <= 'Z' {
+			if i > 0 {
+				b.WriteByte('_')
+			}
+			b.WriteRune(r + 32)
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
 // StructToFormData converts a struct to form data with "settings-{section}-{field}=value" keys.
-// Uses json tags for field names. Skips nil pointers and empty strings.
+// Skips nil pointers and empty strings.
 func StructToFormData(section string, obj any) url.Values {
 	form := url.Values{}
 	v := reflect.ValueOf(obj)
@@ -98,7 +126,7 @@ func StructToFormData(section string, obj any) url.Values {
 			continue
 		}
 
-		key := fmt.Sprintf("settings-%s-%s", section, jsonName)
+		key := fmt.Sprintf("settings-%s-%s", section, settingName(section, jsonName))
 		var val string
 		switch fv.Kind() {
 		case reflect.Ptr:
