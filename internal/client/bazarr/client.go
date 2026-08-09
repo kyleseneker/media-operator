@@ -27,6 +27,48 @@ func (c *Client) Ping(ctx context.Context) error {
 	return c.hc.Ping(ctx, "/api/system/health")
 }
 
+// buildLanguageProfiles renders profiles in the shape Bazarr's languages-profiles
+// handler indexes into. cutoff, mustContain, mustNotContain and originalFormat are
+// read unconditionally, so a profile missing any of them raises a KeyError and no
+// profile is stored.
+func buildLanguageProfiles(profiles []subtitlesv1alpha1.BazarrLanguageProfile) []map[string]any {
+	out := make([]map[string]any, 0, len(profiles))
+	for i, p := range profiles {
+		id := i + 1
+		if p.ProfileId != nil {
+			id = *p.ProfileId
+		}
+		items := make([]map[string]any, 0, len(p.Items))
+		for j, it := range p.Items {
+			items = append(items, map[string]any{
+				"id":            j + 1,
+				"language":      it.Language,
+				"hi":            boolStr(it.HI),
+				"forced":        boolStr(it.Forced),
+				"audio_exclude": boolStr(it.AudioExclude),
+			})
+		}
+		out = append(out, map[string]any{
+			"profileId":      id,
+			"name":           p.Name,
+			"items":          items,
+			"cutoff":         nil,
+			"mustContain":    []string{},
+			"mustNotContain": []string{},
+			"originalFormat": false,
+		})
+	}
+	return out
+}
+
+// boolStr renders a bool the way Bazarr stores profile item flags.
+func boolStr(b *bool) string {
+	if b != nil && *b {
+		return "True"
+	}
+	return "False"
+}
+
 // PostSettings serializes a struct to form data under the given section and posts it to /api/system/settings.
 func (c *Client) PostSettings(ctx context.Context, section string, settings any) error {
 	form := StructToFormData(section, settings)
@@ -53,11 +95,11 @@ func (c *Client) ReconcileLanguages(ctx context.Context, langs *subtitlesv1alpha
 	}
 
 	if len(langs.Profiles) > 0 {
-		profilesJSON, err := json.Marshal(langs.Profiles)
+		profilesJSON, err := json.Marshal(buildLanguageProfiles(langs.Profiles))
 		if err != nil {
 			return fmt.Errorf("marshaling language profiles: %w", err)
 		}
-		form.Set("settings-general-language_profiles", string(profilesJSON))
+		form.Set("languages-profiles", string(profilesJSON))
 	}
 
 	if len(form) == 0 {

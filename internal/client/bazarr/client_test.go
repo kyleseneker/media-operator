@@ -235,3 +235,27 @@ func TestSettingNameConvertsCamelCaseAndHonoursOverrides(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildLanguageProfilesMatchesBazarrSchema(t *testing.T) {
+	hi := true
+	profiles := []subtitlesv1alpha1.BazarrLanguageProfile{
+		{Name: "English", Items: []subtitlesv1alpha1.BazarrLanguageItem{{Language: "en", HI: &hi}}},
+	}
+	out := buildLanguageProfiles(profiles)
+	require.Len(t, out, 1)
+	p := out[0]
+
+	for _, k := range []string{"profileId", "name", "items", "cutoff", "mustContain", "mustNotContain", "originalFormat"} {
+		if _, ok := p[k]; !ok {
+			t.Errorf("profile missing %q; Bazarr indexes it unconditionally and raises KeyError", k)
+		}
+	}
+	assert.Equal(t, 1, p["profileId"], "profileId defaults to a 1-based index")
+
+	items := p["items"].([]map[string]any)
+	require.Len(t, items, 1)
+	assert.Equal(t, "en", items[0]["language"])
+	assert.Equal(t, "True", items[0]["hi"], "Bazarr stores item flags as True/False strings")
+	assert.Equal(t, "False", items[0]["forced"])
+	assert.Equal(t, "False", items[0]["audio_exclude"])
+}
