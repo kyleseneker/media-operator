@@ -63,10 +63,13 @@ func (r *FlareSolverrConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 	var syncErrors []string
 
 	// Reconcile sessions
-	if err := reconcileFlareSolverrSessions(ctx, fc, config.Spec.Sessions); err != nil {
+	managed, err := reconcileFlareSolverrSessions(ctx, fc, config.Spec.Sessions,
+		ctrlcommon.PruneEnabled(config.Spec.Reconcile), config.Status.ManagedResources["sessions"])
+	if err != nil {
 		logger.Error(err, "failed to reconcile sessions")
 		syncErrors = append(syncErrors, fmt.Sprintf("sessions: %v", err))
 	}
+	ctrlcommon.UpdateStatusManaged(&config, map[string][]string{"sessions": managed})
 
 	// Update active session count
 	if sessions, err := fc.ListSessions(ctx); err == nil {
@@ -82,10 +85,16 @@ func (r *FlareSolverrConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
 
-func reconcileFlareSolverrSessions(ctx context.Context, fc *flaresolverrclient.Client, desired []indexersv1alpha1.FlareSolverrSession) error {
+// reconcileFlareSolverrSessions creates the declared sessions and, when prune is
+// enabled, destroys ones this operator previously created that have since been
+// dropped from the spec. Sessions it did not create are left alone: Prowlarr
+// opens sessions on demand, and tearing those down mid-request breaks the very
+// indexers FlareSolverr exists to serve.
+// Returns the session names now under management.
+func reconcileFlareSolverrSessions(ctx context.Context, fc *flaresolverrclient.Client, desired []indexersv1alpha1.FlareSolverrSession, prune bool, previouslyManaged []string) ([]string, error) {
 	existing, err := fc.ListSessions(ctx)
 	if err != nil {
-		return fmt.Errorf("listing sessions: %w", err)
+		return nil, fmt.Errorf("listing sessions: %w", err)
 	}
 
 	existingSet := make(map[string]bool, len(existing))
@@ -98,25 +107,34 @@ func reconcileFlareSolverrSessions(ctx context.Context, fc *flaresolverrclient.C
 		desiredSet[s.Name] = true
 	}
 
-	// Create missing sessions
+	managed := make([]string, 0, len(desired))
 	for _, s := range desired {
 		if !existingSet[s.Name] {
 			if err := fc.CreateSession(ctx, s.Name); err != nil {
-				return fmt.Errorf("creating session %q: %w", s.Name, err)
+				return managed, fmt.Errorf("creating session %q: %w", s.Name, err)
 			}
 		}
+		managed = append(managed, s.Name)
 	}
 
-	// Destroy sessions not in the desired list (only managed sessions)
+	if !prune {
+		return managed, nil
+	}
+
+	managedSet := make(map[string]bool, len(previouslyManaged))
+	for _, s := range previouslyManaged {
+		managedSet[s] = true
+	}
 	for _, s := range existing {
-		if !desiredSet[s] {
-			if err := fc.DestroySession(ctx, s); err != nil {
-				return fmt.Errorf("destroying session %q: %w", s, err)
-			}
+		if desiredSet[s] || !managedSet[s] {
+			continue
+		}
+		if err := fc.DestroySession(ctx, s); err != nil {
+			return managed, fmt.Errorf("destroying session %q: %w", s, err)
 		}
 	}
 
-	return nil
+	return managed, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
