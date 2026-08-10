@@ -1,9 +1,11 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -226,4 +228,26 @@ func TestSetters(t *testing.T) {
 
 	c.SetCookieSessionID("sid")
 	assert.Equal(t, "sid", c.cookieSessionID)
+}
+
+// A dial failure must not be reported as an SSRF block; they lead to completely
+// different investigations.
+func TestSSRFDialErrorDistinguishesBlockedFromUnreachable(t *testing.T) {
+	// localhost resolves only to loopback, which is genuinely blocked.
+	_, err := ssrfSafeDialContext(context.Background(), "tcp", "localhost:9")
+	if err == nil {
+		t.Fatal("expected an error dialing loopback")
+	}
+	if !strings.Contains(err.Error(), "no allowed IP addresses") {
+		t.Errorf("loopback should report as blocked, got: %v", err)
+	}
+
+	// A routable address that refuses the connection must report the dial error.
+	_, err = ssrfSafeDialContext(context.Background(), "tcp", "192.0.2.1:9")
+	if err == nil {
+		t.Fatal("expected an error dialing an unreachable host")
+	}
+	if strings.Contains(err.Error(), "no allowed IP addresses") {
+		t.Errorf("an unreachable but allowed address must not be reported as blocked, got: %v", err)
+	}
 }

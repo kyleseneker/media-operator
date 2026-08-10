@@ -124,17 +124,26 @@ func ssrfSafeDialContext(ctx context.Context, network, addr string) (net.Conn, e
 	}
 
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	var allowed int
+	var lastErr error
 	for _, ip := range ips {
 		if isBlockedIP(ip.IP) {
 			continue
 		}
+		allowed++
 		conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
 		if err == nil {
 			return conn, nil
 		}
+		lastErr = err
 	}
 
-	return nil, fmt.Errorf("no allowed IP addresses for host %q (blocked: loopback, link-local)", host)
+	// Distinguish "every address was blocked" from "the dial failed", which are
+	// very different problems to chase.
+	if allowed == 0 {
+		return nil, fmt.Errorf("no allowed IP addresses for host %q (blocked: loopback, link-local)", host)
+	}
+	return nil, fmt.Errorf("dialing %s: %w", addr, lastErr)
 }
 
 // blockedCIDRs contains network ranges that the operator must never connect to.
@@ -195,6 +204,12 @@ func WithPlexToken(token string) HTTPClientOption {
 
 func WithMediaToken(token string) HTTPClientOption {
 	return func(c *HTTPClient) { c.mediaToken = token }
+}
+
+// WithTimeout overrides the default request timeout. Apps that accept large
+// payloads need longer than the default.
+func WithTimeout(d time.Duration) HTTPClientOption {
+	return func(c *HTTPClient) { c.httpClient.Timeout = d }
 }
 
 // WithTransport overrides the default HTTP transport.
