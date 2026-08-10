@@ -119,12 +119,18 @@ spec:
                     flowEdges:
                       description: flowEdges is the raw JSON definition of flow edge
                         connections.
-                      type: object
+                      items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      type: array
                       x-kubernetes-preserve-unknown-fields: true
                     flowPlugins:
                       description: flowPlugins is the raw JSON definition of flow
                         plugin nodes.
-                      type: object
+                      items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      type: array
                       x-kubernetes-preserve-unknown-fields: true
                     id:
                       description: id is the Tdarr document ID for this flow.

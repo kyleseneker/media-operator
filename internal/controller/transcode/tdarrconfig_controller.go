@@ -179,20 +179,33 @@ func reconcileTdarrFlow(ctx context.Context, tc *tdarrclient.Client, flow transc
 		obj["description"] = flow.Description
 	}
 
-	// Unmarshal RawExtension fields
-	var flowPlugins any
-	if err := json.Unmarshal(flow.FlowPlugins.Raw, &flowPlugins); err != nil {
+	plugins, err := decodeRawList(flow.FlowPlugins)
+	if err != nil {
 		return fmt.Errorf("unmarshaling flowPlugins: %w", err)
 	}
-	obj["flowPlugins"] = flowPlugins
+	obj["flowPlugins"] = plugins
 
-	var flowEdges any
-	if err := json.Unmarshal(flow.FlowEdges.Raw, &flowEdges); err != nil {
+	edges, err := decodeRawList(flow.FlowEdges)
+	if err != nil {
 		return fmt.Errorf("unmarshaling flowEdges: %w", err)
 	}
-	obj["flowEdges"] = flowEdges
+	obj["flowEdges"] = edges
 
 	return tc.Upsert(ctx, "FlowsJSONDB", flow.ID, obj)
+}
+
+// decodeRawList turns a list of raw JSON nodes into plain values. Tdarr stores
+// flowPlugins and flowEdges as arrays, so each element decodes independently.
+func decodeRawList(items []runtime.RawExtension) ([]any, error) {
+	out := make([]any, 0, len(items))
+	for i, it := range items {
+		var v any
+		if err := json.Unmarshal(it.Raw, &v); err != nil {
+			return nil, fmt.Errorf("element %d: %w", i, err)
+		}
+		out = append(out, v)
+	}
+	return out, nil
 }
 
 func reconcileTdarrWorkers(ctx context.Context, tc *tdarrclient.Client, workers *transcodev1alpha1.TdarrWorkers) error {

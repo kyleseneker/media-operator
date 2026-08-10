@@ -132,12 +132,12 @@ type TdarrFlow struct {
 	// flowPlugins is the raw JSON definition of flow plugin nodes.
 	// +required
 	// +kubebuilder:pruning:PreserveUnknownFields
-	FlowPlugins runtime.RawExtension `json:"flowPlugins"`
+	FlowPlugins []runtime.RawExtension `json:"flowPlugins"`
 
 	// flowEdges is the raw JSON definition of flow edge connections.
 	// +required
 	// +kubebuilder:pruning:PreserveUnknownFields
-	FlowEdges runtime.RawExtension `json:"flowEdges"`
+	FlowEdges []runtime.RawExtension `json:"flowEdges"`
 }
 
 // TdarrWorkers configures the number of worker threads.
