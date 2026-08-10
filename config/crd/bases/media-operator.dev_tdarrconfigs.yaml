@@ -203,6 +203,14 @@ spec:
                       description: scheduledScanFindNew enables scheduled scans for
                         new files.
                       type: boolean
+                    variables:
+                      additionalProperties:
+                        type: string
+                      description: |-
+                        variables are user-defined library variables. Flows read them as
+                        {{{args.variables.user.<name>}}}, which is how community flows are
+                        configured without editing the flow itself.
+                      type: object
                   required:
                   - folder
                   - id

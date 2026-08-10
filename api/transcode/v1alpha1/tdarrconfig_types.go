@@ -107,6 +107,12 @@ type TdarrLibrary struct {
 	// pluginStack lists classic plugin IDs to run, for libraries not using a flow.
 	// +optional
 	PluginStack []string `json:"pluginStack,omitempty"`
+
+	// variables are user-defined library variables. Flows read them as
+	// {{{args.variables.user.<name>}}}, which is how community flows are
+	// configured without editing the flow itself.
+	// +optional
+	Variables map[string]string `json:"variables,omitempty"`
 }
 
 // TdarrFlow defines a transcoding flow with plugins and edges.

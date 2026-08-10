@@ -211,3 +211,25 @@ func TestLibraryDocCarriesFlowAttachment(t *testing.T) {
 		t.Errorf("pluginStack missing from library doc: %v", got)
 	}
 }
+
+// Community flows read library variables as {{{args.variables.user.<name>}}},
+// so they must land under the user namespace, not at the top level.
+func TestLibraryVariablesNestUnderUser(t *testing.T) {
+	lib := transcodev1alpha1.TdarrLibrary{
+		ID: "movies", Name: "Movies",
+		Variables: map[string]string{"audio_language": "eng", "do_audio_clean": "true"},
+	}
+	got := buildTdarrLibraryDoc(lib)
+
+	vars, ok := got["variables"].(map[string]any)
+	if !ok {
+		t.Fatalf("variables missing from library doc: %v", got)
+	}
+	user, ok := vars["user"].(map[string]any)
+	if !ok {
+		t.Fatalf("variables must nest under \"user\"; flows read args.variables.user.*, got %v", vars)
+	}
+	if user["audio_language"] != "eng" || user["do_audio_clean"] != "true" {
+		t.Errorf("unexpected user variables: %v", user)
+	}
+}

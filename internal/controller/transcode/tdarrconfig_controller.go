@@ -159,6 +159,13 @@ func buildTdarrLibraryDoc(lib transcodev1alpha1.TdarrLibrary) map[string]any {
 	if len(lib.PluginStack) > 0 {
 		obj["pluginStack"] = lib.PluginStack
 	}
+	if len(lib.Variables) > 0 {
+		user := make(map[string]any, len(lib.Variables))
+		for k, v := range lib.Variables {
+			user[k] = v
+		}
+		obj["variables"] = map[string]any{"user": user}
+	}
 
 	return obj
 }
