@@ -195,3 +195,19 @@ func TestTdarrMissingSecretDoesNotContactApp(t *testing.T) {
 		t.Error("Synced = True despite a missing secret")
 	}
 }
+
+// A library with no flow attached scans and then does nothing, so flowId must
+// reach Tdarr's library document.
+func TestLibraryDocCarriesFlowAttachment(t *testing.T) {
+	lib := transcodev1alpha1.TdarrLibrary{
+		ID: "movies", Name: "Movies", Folder: "/data/media/movies",
+		FlowID: "strip-tracks", PluginStack: []string{"Tdarr_Plugin_MC93_Migz4CleanSubs"},
+	}
+	got := buildTdarrLibraryDoc(lib)
+	if got["flowId"] != "strip-tracks" {
+		t.Errorf("flowId missing from library doc: %v", got)
+	}
+	if _, ok := got["pluginStack"]; !ok {
+		t.Errorf("pluginStack missing from library doc: %v", got)
+	}
+}

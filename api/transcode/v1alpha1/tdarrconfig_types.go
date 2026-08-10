@@ -98,6 +98,15 @@ type TdarrLibrary struct {
 	// priority is the processing priority for this library. Lower values are higher priority.
 	// +optional
 	Priority *int `json:"priority,omitempty"`
+
+	// flowId is the Tdarr flow this library processes files with. Flows are the
+	// current mechanism; classic plugin stacks are the older alternative.
+	// +optional
+	FlowID string `json:"flowId,omitempty"`
+
+	// pluginStack lists classic plugin IDs to run, for libraries not using a flow.
+	// +optional
+	PluginStack []string `json:"pluginStack,omitempty"`
 }
 
 // TdarrFlow defines a transcoding flow with plugins and edges.

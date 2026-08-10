@@ -159,6 +159,11 @@ spec:
                       description: ffmpeg enables using FFmpeg (true) vs HandBrake
                         (false) for transcoding.
                       type: boolean
+                    flowId:
+                      description: |-
+                        flowId is the Tdarr flow this library processes files with. Flows are the
+                        current mechanism; classic plugin stacks are the older alternative.
+                      type: string
                     folder:
                       description: folder is the source media folder path.
                       type: string
@@ -172,6 +177,12 @@ spec:
                     name:
                       description: name is the display name of the library.
                       type: string
+                    pluginStack:
+                      description: pluginStack lists classic plugin IDs to run, for
+                        libraries not using a flow.
+                      items:
+                        type: string
+                      type: array
                     priority:
                       description: priority is the processing priority for this library.
                         Lower values are higher priority.

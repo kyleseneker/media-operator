@@ -111,6 +111,11 @@ func (r *TdarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 }
 
 func reconcileTdarrLibrary(ctx context.Context, tc *tdarrclient.Client, lib transcodev1alpha1.TdarrLibrary) error {
+	return tc.Upsert(ctx, "LibrarySettingsJSONDB", lib.ID, buildTdarrLibraryDoc(lib))
+}
+
+// buildTdarrLibraryDoc renders the library document Tdarr stores.
+func buildTdarrLibraryDoc(lib transcodev1alpha1.TdarrLibrary) map[string]any {
 	obj := map[string]any{
 		"_id":  lib.ID,
 		"name": lib.Name,
@@ -148,8 +153,14 @@ func reconcileTdarrLibrary(ctx context.Context, tc *tdarrclient.Client, lib tran
 	if lib.Priority != nil {
 		obj["priority"] = *lib.Priority
 	}
+	if lib.FlowID != "" {
+		obj["flowId"] = lib.FlowID
+	}
+	if len(lib.PluginStack) > 0 {
+		obj["pluginStack"] = lib.PluginStack
+	}
 
-	return tc.Upsert(ctx, "LibrarySettingsJSONDB", lib.ID, obj)
+	return obj
 }
 
 func reconcileTdarrFlow(ctx context.Context, tc *tdarrclient.Client, flow transcodev1alpha1.TdarrFlow) error {
