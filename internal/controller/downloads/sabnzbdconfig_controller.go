@@ -197,6 +197,9 @@ func buildSabnzbdFolderValues(f *downloadsv1alpha1.SabnzbdFolders) map[string]st
 	if f.NzbBackupDir != "" {
 		vals["nzb_backup_dir"] = f.NzbBackupDir
 	}
+	if f.ScriptDir != "" {
+		vals["script_dir"] = f.ScriptDir
+	}
 	return vals
 }
 
@@ -207,6 +210,15 @@ func buildSabnzbdGeneralValues(g *downloadsv1alpha1.SabnzbdGeneral) map[string]s
 	}
 	if g.PreCheck != nil {
 		vals["pre_check"] = ctrlcommon.BoolTo01(*g.PreCheck)
+	}
+	if g.PauseOnPostProcessing != nil {
+		vals["pause_on_post_processing"] = ctrlcommon.BoolTo01(*g.PauseOnPostProcessing)
+	}
+	if g.AutoSort != nil {
+		vals["auto_sort"] = ctrlcommon.BoolTo01(*g.AutoSort)
+	}
+	if g.ScriptDir != "" {
+		vals["script_dir"] = g.ScriptDir
 	}
 	return vals
 }

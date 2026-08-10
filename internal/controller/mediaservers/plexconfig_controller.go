@@ -179,6 +179,9 @@ func buildPlexPreferences(spec mediaserversv1alpha1.PlexConfigSpec) map[string]s
 		if s.LogDebug != nil {
 			desiredPrefs["logDebug"] = ctrlcommon.BoolTo01(*s.LogDebug)
 		}
+		if s.EnableRemoteAccess != nil {
+			desiredPrefs["PublishServerOnPlexOnlineKey"] = ctrlcommon.BoolTo01(*s.EnableRemoteAccess)
+		}
 	}
 	if t := spec.Transcoder; t != nil {
 		if t.TranscodeHwRequested != nil {

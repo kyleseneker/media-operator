@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	downloadsv1alpha1 "github.com/kyleseneker/media-operator/api/downloads/v1alpha1"
+	"github.com/kyleseneker/media-operator/internal/controller/internal/contract"
 )
 
 func ptr[T any](v T) *T { return &v }
@@ -63,27 +64,18 @@ func TestQBPreferencePayloadUsesAPIKeyNames(t *testing.T) {
 }
 
 func TestQBPreferencePayloadCoversEverySpecField(t *testing.T) {
-	prefs := &downloadsv1alpha1.QBittorrentPreferences{}
-	v := reflect.ValueOf(prefs).Elem()
-	for i := range v.NumField() {
-		f := v.Field(i)
-		switch f.Kind() {
-		case reflect.Pointer:
-			f.Set(reflect.New(f.Type().Elem()))
-		case reflect.String:
-			f.SetString("x")
-		}
-	}
-	prefs.MaxRatio = ptr("1.0")
-	prefs.MaxRatioAction = ptr("stop")
-
-	got, err := qbPreferencePayload(prefs)
-	if err != nil {
-		t.Fatalf("qbPreferencePayload: %v", err)
-	}
-	if len(got) != v.NumField() {
-		t.Errorf("spec has %d fields but payload emitted %d keys; an unmapped field would be silently dropped by qBittorrent", v.NumField(), len(got))
-	}
+	contract.AssertEveryFieldEmitted(t, &downloadsv1alpha1.QBittorrentPreferences{},
+		func(p *downloadsv1alpha1.QBittorrentPreferences) map[string]any {
+			out, err := qbPreferencePayload(p)
+			if err != nil {
+				t.Fatalf("qbPreferencePayload: %v", err)
+			}
+			return out
+		},
+		func(p *downloadsv1alpha1.QBittorrentPreferences) {
+			p.MaxRatio = ptr("1.0")
+			p.MaxRatioAction = ptr("stop")
+		})
 }
 
 func TestQBPreferencePayloadRejectsBadValues(t *testing.T) {
