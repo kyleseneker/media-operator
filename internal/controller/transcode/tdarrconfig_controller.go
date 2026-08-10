@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -196,20 +197,61 @@ func reconcileTdarrWorkers(ctx context.Context, tc *tdarrclient.Client, workers 
 		workerType string
 		limit      *int
 	}{
-		{"transcodeGPU", workers.TranscodeGPU},
-		{"transcodeCPU", workers.TranscodeCPU},
-		{"healthcheckGPU", workers.HealthcheckGPU},
-		{"healthcheckCPU", workers.HealthcheckCPU},
+		{"transcodegpu", workers.TranscodeGPU},
+		{"transcodecpu", workers.TranscodeCPU},
+		{"healthcheckgpu", workers.HealthcheckGPU},
+		{"healthcheckcpu", workers.HealthcheckCPU},
 	}
 
+	current := currentWorkerLimits(nodes[nodeID])
 	for _, wl := range workerLimits {
-		if wl.limit != nil {
-			if err := tc.SetWorkerLimit(ctx, nodeID, wl.workerType, *wl.limit); err != nil {
-				return fmt.Errorf("setting %s limit: %w", wl.workerType, err)
-			}
+		if wl.limit == nil {
+			continue
+		}
+		if err := convergeWorkerLimit(ctx, tc, nodeID, wl.workerType, current[wl.workerType], *wl.limit); err != nil {
+			return fmt.Errorf("setting %s limit: %w", wl.workerType, err)
 		}
 	}
 
+	return nil
+}
+
+// currentWorkerLimits reads a node's per-type worker counts. Tdarr keys them in
+// lower case.
+func currentWorkerLimits(node any) map[string]int {
+	out := map[string]int{}
+	n, ok := node.(map[string]any)
+	if !ok {
+		return out
+	}
+	limits, ok := n["workerLimits"].(map[string]any)
+	if !ok {
+		return out
+	}
+	for k, v := range limits {
+		if f, ok := v.(float64); ok {
+			out[strings.ToLower(k)] = int(f)
+		}
+	}
+	return out
+}
+
+// convergeWorkerLimit steps a worker count toward target. Tdarr's endpoint only
+// increases or decreases by one, so reaching a target takes repeated calls.
+func convergeWorkerLimit(ctx context.Context, tc *tdarrclient.Client, nodeID, workerType string, current, target int) error {
+	if target < 0 {
+		return fmt.Errorf("negative worker count %d", target)
+	}
+	process := "increase"
+	steps := target - current
+	if steps < 0 {
+		process, steps = "decrease", -steps
+	}
+	for range steps {
+		if err := tc.StepWorkerLimit(ctx, nodeID, workerType, process); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

@@ -102,3 +102,33 @@ func TestGetNodes(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, nodes, "node1")
 }
+
+// insert, update and removeOne answer 200 with a zero-length body. Unmarshalling
+// that unconditionally fails the reconcile for a write that already succeeded.
+func TestCrudDBAcceptsEmptyResponseBody(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	res, err := c.CrudDB(context.Background(), "LibrarySettingsJSONDB", "insert", "movies", map[string]any{"name": "Movies"})
+	require.NoError(t, err, "an empty 200 body must not fail the call")
+	assert.Empty(t, res)
+}
+
+func TestStepWorkerLimitPayloadShape(t *testing.T) {
+	var body map[string]any
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{}`))
+	})
+	require.NoError(t, c.StepWorkerLimit(context.Background(), "N4DY4iKvA", "transcodegpu", "increase"))
+
+	data, ok := body["data"].(map[string]any)
+	require.True(t, ok, "Tdarr destructures body.data; a flat payload is rejected with 400, got %v", body)
+	assert.Equal(t, "N4DY4iKvA", data["nodeID"])
+	assert.Equal(t, "transcodegpu", data["workerType"])
+	assert.Equal(t, "increase", data["process"])
+	if _, bad := data["limit"]; bad {
+		t.Error("Tdarr takes a direction, not an absolute limit")
+	}
+}

@@ -1,6 +1,7 @@
 package tdarr
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -34,6 +35,11 @@ func (c *Client) CrudDB(ctx context.Context, collection, mode, docID string, obj
 	data, err := c.hc.Do(ctx, http.MethodPost, "/api/v2/cruddb", payload)
 	if err != nil {
 		return nil, err
+	}
+
+	// insert, update and removeOne answer 200 with an empty body.
+	if len(bytes.TrimSpace(data)) == 0 {
+		return map[string]any{}, nil
 	}
 
 	var result map[string]any
@@ -80,12 +86,15 @@ func (c *Client) GetNodes(ctx context.Context) (map[string]any, error) {
 	return c.hc.GetJSON(ctx, "/api/v2/get-nodes")
 }
 
-// SetWorkerLimit adjusts the worker limit for a specific node and worker type.
-func (c *Client) SetWorkerLimit(ctx context.Context, nodeID, workerType string, limit int) error {
+// StepWorkerLimit nudges a node's worker limit one step. Tdarr's endpoint takes a
+// direction rather than a target, so callers step toward the count they want.
+func (c *Client) StepWorkerLimit(ctx context.Context, nodeID, workerType, process string) error {
 	payload := map[string]any{
-		"nodeID":     nodeID,
-		"workerType": workerType,
-		"limit":      limit,
+		"data": map[string]any{
+			"nodeID":     nodeID,
+			"process":    process,
+			"workerType": workerType,
+		},
 	}
 	return c.hc.PostJSON(ctx, "/api/v2/alter-worker-limit", payload)
 }
