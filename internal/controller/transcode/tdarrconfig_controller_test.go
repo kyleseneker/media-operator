@@ -233,3 +233,23 @@ func TestLibraryVariablesNestUnderUser(t *testing.T) {
 		t.Errorf("unexpected user variables: %v", user)
 	}
 }
+
+// Tdarr indexes schedule by the current hour of the week without a nil check, so a library
+// created without one makes getDisabledLibrariesFromSchedules throw on every pass.
+func TestLibraryDocAlwaysCarriesSchedule(t *testing.T) {
+	got := buildTdarrLibraryDoc(transcodev1alpha1.TdarrLibrary{ID: "movies", Name: "Movies"})
+
+	schedule, ok := got["schedule"].([]any)
+	if !ok {
+		t.Fatalf("schedule missing from library doc: %v", got)
+	}
+	if len(schedule) != scheduleHoursPerWeek {
+		t.Fatalf("schedule must cover every hour of the week, got %d slots", len(schedule))
+	}
+	for i, slot := range schedule {
+		entry, ok := slot.(map[string]any)
+		if !ok || entry["checked"] != true {
+			t.Fatalf("slot %d must be an enabled entry, got %#v", i, slot)
+		}
+	}
+}
