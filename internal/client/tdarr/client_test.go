@@ -132,3 +132,49 @@ func TestStepWorkerLimitPayloadShape(t *testing.T) {
 		t.Error("Tdarr takes a direction, not an absolute limit")
 	}
 }
+
+func TestCrudDBOmitsNilObj(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+		data := payload["data"].(map[string]any)
+		if _, present := data["obj"]; present {
+			t.Error("Tdarr answers 400 when obj is present but null; it must be omitted")
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"_id": "lib1"})
+	})
+	_, err := c.GetByID(context.Background(), "LibrarySettingsJSONDB", "lib1")
+	require.NoError(t, err)
+}
+
+func TestUpsertUpdatesExistingDoc(t *testing.T) {
+	var modes []string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+		data := payload["data"].(map[string]any)
+		modes = append(modes, data["mode"].(string))
+		if data["mode"] == "getById" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"_id": "movies"})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	require.NoError(t, c.Upsert(context.Background(), "LibrarySettingsJSONDB", "movies",
+		map[string]any{"flowId": "hevc-qsv"}))
+	assert.Equal(t, []string{"getById", "update"}, modes)
+}
+
+func TestUpsertDoesNotInsertWhenLookupFails(t *testing.T) {
+	var modes []string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+		modes = append(modes, payload["data"].(map[string]any)["mode"].(string))
+		w.WriteHeader(http.StatusBadRequest)
+	})
+	err := c.Upsert(context.Background(), "LibrarySettingsJSONDB", "movies",
+		map[string]any{"flowId": "hevc-qsv"})
+	require.Error(t, err)
+	assert.Equal(t, []string{"getById"}, modes, "a failed lookup must not silently become an insert")
+}

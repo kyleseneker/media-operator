@@ -22,13 +22,18 @@ func NewClient(hc *engine.HTTPClient) *Client {
 
 // CrudDB performs a generic CRUD operation against /api/v2/cruddb.
 func (c *Client) CrudDB(ctx context.Context, collection, mode, docID string, obj map[string]any) (map[string]any, error) {
+	req := map[string]any{
+		"collection": collection,
+		"mode":       mode,
+		"docID":      docID,
+	}
+	// Tdarr answers 400 when obj is present but null, so omit it entirely for reads.
+	if obj != nil {
+		req["obj"] = obj
+	}
+
 	payload := map[string]any{
-		"data": map[string]any{
-			"collection": collection,
-			"mode":       mode,
-			"docID":      docID,
-			"obj":        obj,
-		},
+		"data":    req,
 		"timeout": 20000,
 	}
 
@@ -71,8 +76,7 @@ func (c *Client) Update(ctx context.Context, collection, docID string, obj map[s
 func (c *Client) Upsert(ctx context.Context, collection, docID string, obj map[string]any) error {
 	existing, err := c.GetByID(ctx, collection, docID)
 	if err != nil {
-		// If GetByID fails, assume the document does not exist and insert.
-		return c.Insert(ctx, collection, docID, obj)
+		return fmt.Errorf("looking up %s/%s: %w", collection, docID, err)
 	}
 	// A nil or empty result means the document was not found.
 	if len(existing) == 0 {
