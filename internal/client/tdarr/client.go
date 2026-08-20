@@ -27,7 +27,6 @@ func (c *Client) CrudDB(ctx context.Context, collection, mode, docID string, obj
 		"mode":       mode,
 		"docID":      docID,
 	}
-	// Tdarr answers 400 when obj is present but null, so omit it entirely for reads.
 	if obj != nil {
 		req["obj"] = obj
 	}

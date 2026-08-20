@@ -234,8 +234,6 @@ func TestLibraryVariablesNestUnderUser(t *testing.T) {
 	}
 }
 
-// Tdarr indexes schedule by the current hour of the week without a nil check, so a library
-// created without one makes getDisabledLibrariesFromSchedules throw on every pass.
 func TestLibraryDocAlwaysCarriesSchedule(t *testing.T) {
 	got := buildTdarrLibraryDoc(transcodev1alpha1.TdarrLibrary{ID: "movies", Name: "Movies"})
 
@@ -251,5 +249,19 @@ func TestLibraryDocAlwaysCarriesSchedule(t *testing.T) {
 		if !ok || entry["checked"] != true {
 			t.Fatalf("slot %d must be an enabled entry, got %#v", i, slot)
 		}
+	}
+}
+
+func TestLibraryDocAlwaysCarriesFoldersToIgnoreAsString(t *testing.T) {
+	got := buildTdarrLibraryDoc(transcodev1alpha1.TdarrLibrary{ID: "movies", Name: "Movies"})
+	if v, ok := got["foldersToIgnore"].(string); !ok || v != "" {
+		t.Fatalf("foldersToIgnore must default to an empty string, got %#v", got["foldersToIgnore"])
+	}
+
+	got = buildTdarrLibraryDoc(transcodev1alpha1.TdarrLibrary{
+		ID: "movies", Name: "Movies", FoldersToIgnore: "extras,featurettes",
+	})
+	if got["foldersToIgnore"] != "extras,featurettes" {
+		t.Errorf("foldersToIgnore not carried through: %#v", got["foldersToIgnore"])
 	}
 }

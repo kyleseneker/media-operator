@@ -114,11 +114,9 @@ func reconcileTdarrLibrary(ctx context.Context, tc *tdarrclient.Client, lib tran
 	return tc.Upsert(ctx, "LibrarySettingsJSONDB", lib.ID, buildTdarrLibraryDoc(lib))
 }
 
-// scheduleHoursPerWeek is the number of hourly slots Tdarr indexes a library schedule by.
 const scheduleHoursPerWeek = 168
 
-// alwaysOnSchedule renders a schedule with every hour of the week enabled. Tdarr indexes
-// this array by the current hour without a nil check, so the field must always be present.
+// alwaysOnSchedule renders a schedule with every hour of the week enabled.
 func alwaysOnSchedule() []any {
 	schedule := make([]any, scheduleHoursPerWeek)
 	for i := range schedule {
@@ -130,9 +128,10 @@ func alwaysOnSchedule() []any {
 // buildTdarrLibraryDoc renders the library document Tdarr stores.
 func buildTdarrLibraryDoc(lib transcodev1alpha1.TdarrLibrary) map[string]any {
 	obj := map[string]any{
-		"_id":      lib.ID,
-		"name":     lib.Name,
-		"schedule": alwaysOnSchedule(),
+		"_id":             lib.ID,
+		"name":            lib.Name,
+		"schedule":        alwaysOnSchedule(),
+		"foldersToIgnore": lib.FoldersToIgnore,
 	}
 	if lib.Folder != "" {
 		obj["folder"] = lib.Folder

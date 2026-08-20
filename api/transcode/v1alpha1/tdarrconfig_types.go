@@ -71,6 +71,10 @@ type TdarrLibrary struct {
 	// +optional
 	ContainerFilter string `json:"containerFilter,omitempty"`
 
+	// foldersToIgnore is a comma-separated list of folder names to skip while scanning.
+	// +optional
+	FoldersToIgnore string `json:"foldersToIgnore,omitempty"`
+
 	// folderWatching enables watching the folder for new files.
 	// +optional
 	FolderWatching *bool `json:"folderWatching,omitempty"`
