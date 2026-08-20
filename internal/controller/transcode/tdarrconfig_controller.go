@@ -151,6 +151,15 @@ func buildTdarrLibraryDoc(lib transcodev1alpha1.TdarrLibrary) map[string]any {
 	if lib.ProcessLibrary != nil {
 		obj["processLibrary"] = *lib.ProcessLibrary
 	}
+	if lib.ProcessTranscodes != nil {
+		obj["processTranscodes"] = *lib.ProcessTranscodes
+	}
+	if lib.ProcessHealthChecks != nil {
+		obj["processHealthChecks"] = *lib.ProcessHealthChecks
+	}
+	if lib.HealthCheckType != "" {
+		obj["healthCheckType"] = lib.HealthCheckType
+	}
 	if lib.ScanOnStart != nil {
 		obj["scanOnStart"] = *lib.ScanOnStart
 	}

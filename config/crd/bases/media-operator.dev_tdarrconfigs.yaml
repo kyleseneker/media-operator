@@ -181,6 +181,12 @@ spec:
                       description: foldersToIgnore is a comma-separated list of folder
                         names to skip while scanning.
                       type: string
+                    healthCheckType:
+                      description: healthCheckType selects the health check to run.
+                      enum:
+                      - quickHealthCheck
+                      - thoroughHealthCheck
+                      type: string
                     id:
                       description: id is the Tdarr document ID for this library.
                       type: string
@@ -197,8 +203,16 @@ spec:
                       description: priority is the processing priority for this library.
                         Lower values are higher priority.
                       type: integer
+                    processHealthChecks:
+                      description: processHealthChecks enables health check jobs for
+                        this library.
+                      type: boolean
                     processLibrary:
                       description: processLibrary enables processing of files in this
+                        library.
+                      type: boolean
+                    processTranscodes:
+                      description: processTranscodes enables transcode jobs for this
                         library.
                       type: boolean
                     scanOnStart:

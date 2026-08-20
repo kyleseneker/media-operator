@@ -209,6 +209,16 @@ func (in *TdarrLibrary) DeepCopyInto(out *TdarrLibrary) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.ProcessTranscodes != nil {
+		in, out := &in.ProcessTranscodes, &out.ProcessTranscodes
+		*out = new(bool)
+		**out = **in
+	}
+	if in.ProcessHealthChecks != nil {
+		in, out := &in.ProcessHealthChecks, &out.ProcessHealthChecks
+		*out = new(bool)
+		**out = **in
+	}
 	if in.ScanOnStart != nil {
 		in, out := &in.ScanOnStart, &out.ScanOnStart
 		*out = new(bool)

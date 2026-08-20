@@ -83,6 +83,19 @@ type TdarrLibrary struct {
 	// +optional
 	ProcessLibrary *bool `json:"processLibrary,omitempty"`
 
+	// processTranscodes enables transcode jobs for this library.
+	// +optional
+	ProcessTranscodes *bool `json:"processTranscodes,omitempty"`
+
+	// processHealthChecks enables health check jobs for this library.
+	// +optional
+	ProcessHealthChecks *bool `json:"processHealthChecks,omitempty"`
+
+	// healthCheckType selects the health check to run.
+	// +kubebuilder:validation:Enum=quickHealthCheck;thoroughHealthCheck
+	// +optional
+	HealthCheckType string `json:"healthCheckType,omitempty"`
+
 	// scanOnStart enables scanning the library when Tdarr starts.
 	// +optional
 	ScanOnStart *bool `json:"scanOnStart,omitempty"`
