@@ -177,6 +177,10 @@ spec:
                       description: folderWatching enables watching the folder for
                         new files.
                       type: boolean
+                    foldersToIgnore:
+                      description: foldersToIgnore is a comma-separated list of folder
+                        names to skip while scanning.
+                      type: string
                     id:
                       description: id is the Tdarr document ID for this library.
                       type: string
