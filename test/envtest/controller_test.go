@@ -131,12 +131,13 @@ func TestReconcilePersistsStatusThroughSubresource(t *testing.T) {
 	}
 
 	r := &transcode.TdarrConfigReconciler{Client: c, Scheme: c.Scheme(), Recorder: events.NewFakeRecorder(50)}
-	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "tdarr", Namespace: "default"}}); err != nil {
+	key := types.NamespacedName{Name: "tdarr", Namespace: "default"}
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: key}); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
 
 	var got transcodev1alpha1.TdarrConfig
-	if err := c.Get(ctx, types.NamespacedName{Name: "tdarr", Namespace: "default"}, &got); err != nil {
+	if err := c.Get(ctx, key, &got); err != nil {
 		t.Fatalf("re-reading CR: %v", err)
 	}
 	if len(got.Status.Conditions) == 0 {
