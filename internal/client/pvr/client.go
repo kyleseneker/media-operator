@@ -625,6 +625,8 @@ func Reconcile(ctx context.Context, client *engine.HTTPClient, apiVersion string
 	// quality profiles by ID. Those IDs only exist once the referenced resources
 	// have been written, so each dependent stage resolves after the prior apply
 	// rather than all at once up front.
+	fieldProblems := ValidateOptionFields(ctx, client, apiVersion, opts)
+
 	base := opts
 	base.QualityProfiles = nil
 	base.ImportLists = nil
@@ -633,6 +635,7 @@ func Reconcile(ctx context.Context, client *engine.HTTPClient, apiVersion string
 		return engine.ReconcileResult{}, fmt.Errorf("building resources: %w", err)
 	}
 	result := engine.ReconcileApp(ctx, client, def, sections, resources, prune, managed)
+	result.Errors = append(result.Errors, fieldProblems...)
 
 	if len(opts.QualityProfiles) > 0 {
 		stage := Options{QualityProfiles: opts.QualityProfiles}
