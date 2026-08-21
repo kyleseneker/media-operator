@@ -265,3 +265,21 @@ func TestLibraryDocAlwaysCarriesFoldersToIgnoreAsString(t *testing.T) {
 		t.Errorf("foldersToIgnore not carried through: %#v", got["foldersToIgnore"])
 	}
 }
+
+func TestLibraryDocDecisionMode(t *testing.T) {
+	got := buildTdarrLibraryDoc(transcodev1alpha1.TdarrLibrary{
+		ID: "movies", Name: "Movies", DecisionMode: "flows",
+	})
+	dm, ok := got["decisionMaker"].(map[string]any)
+	if !ok {
+		t.Fatalf("decisionMaker missing: %v", got)
+	}
+	if dm["settingsFlows"] != true || dm["settingsPlugin"] != false {
+		t.Errorf("flows mode not selected: %#v", dm)
+	}
+
+	got = buildTdarrLibraryDoc(transcodev1alpha1.TdarrLibrary{ID: "movies", Name: "Movies"})
+	if _, present := got["decisionMaker"]; present {
+		t.Errorf("decisionMaker must be omitted when unset: %v", got["decisionMaker"])
+	}
+}

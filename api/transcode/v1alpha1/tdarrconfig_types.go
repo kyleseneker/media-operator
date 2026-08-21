@@ -96,6 +96,11 @@ type TdarrLibrary struct {
 	// +optional
 	HealthCheckType string `json:"healthCheckType,omitempty"`
 
+	// decisionMode selects how Tdarr decides what to do with a file.
+	// +kubebuilder:validation:Enum=flows;plugins
+	// +optional
+	DecisionMode string `json:"decisionMode,omitempty"`
+
 	// scanOnStart enables scanning the library when Tdarr starts.
 	// +optional
 	ScanOnStart *bool `json:"scanOnStart,omitempty"`

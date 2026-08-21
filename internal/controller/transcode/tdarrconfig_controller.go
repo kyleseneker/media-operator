@@ -160,6 +160,16 @@ func buildTdarrLibraryDoc(lib transcodev1alpha1.TdarrLibrary) map[string]any {
 	if lib.HealthCheckType != "" {
 		obj["healthCheckType"] = lib.HealthCheckType
 	}
+	if lib.DecisionMode != "" {
+		obj["decisionMaker"] = map[string]any{
+			"settingsFlows":      lib.DecisionMode == "flows",
+			"settingsPlugin":     lib.DecisionMode == "plugins",
+			"settingsVideo":      false,
+			"settingsAudio":      false,
+			"videoExcludeSwitch": false,
+			"audioExcludeSwitch": false,
+		}
+	}
 	if lib.ScanOnStart != nil {
 		obj["scanOnStart"] = *lib.ScanOnStart
 	}

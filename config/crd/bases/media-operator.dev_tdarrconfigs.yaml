@@ -161,6 +161,13 @@ spec:
                       description: containerFilter is the container filter for scanning
                         (e.g., "mkv,mp4,avi").
                       type: string
+                    decisionMode:
+                      description: decisionMode selects how Tdarr decides what to
+                        do with a file.
+                      enum:
+                      - flows
+                      - plugins
+                      type: string
                     ffmpeg:
                       description: ffmpeg enables using FFmpeg (true) vs HandBrake
                         (false) for transcoding.
