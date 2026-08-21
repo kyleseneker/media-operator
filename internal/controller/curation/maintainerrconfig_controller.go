@@ -168,6 +168,15 @@ func reconcileMaintainerrArr(ctx context.Context, c client.Reader, mc *maintaine
 }
 
 func reconcileMaintainerrSettings(ctx context.Context, mc *maintainerrclient.Client, settings *curationv1alpha1.MaintainerrSettings) error {
+	obj := buildMaintainerrSettings(settings)
+	if len(obj) == 0 {
+		return nil
+	}
+	return mc.UpdateSettings(ctx, obj)
+}
+
+// buildMaintainerrSettings renders the settings payload Maintainerr stores.
+func buildMaintainerrSettings(settings *curationv1alpha1.MaintainerrSettings) map[string]any {
 	obj := make(map[string]any)
 	if settings.CollectionHandling != "" {
 		obj["collectionHandling"] = settings.CollectionHandling
@@ -175,10 +184,7 @@ func reconcileMaintainerrSettings(ctx context.Context, mc *maintainerrclient.Cli
 	if settings.DryRun != nil {
 		obj["dryRun"] = *settings.DryRun
 	}
-	if len(obj) == 0 {
-		return nil
-	}
-	return mc.UpdateSettings(ctx, obj)
+	return obj
 }
 
 func reconcileMaintainerrRule(ctx context.Context, mc *maintainerrclient.Client, rule curationv1alpha1.MaintainerrRule) error {
