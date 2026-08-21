@@ -188,11 +188,13 @@ spec:
                       description: foldersToIgnore is a comma-separated list of folder
                         names to skip while scanning.
                       type: string
-                    healthCheckType:
-                      description: healthCheckType selects the health check to run.
+                    healthCheckMode:
+                      description: |-
+                        healthCheckMode selects the health check to run. quick uses HandBrake to
+                        read file headers; thorough decodes every frame with FFmpeg.
                       enum:
-                      - quickHealthCheck
-                      - thoroughHealthCheck
+                      - quick
+                      - thorough
                       type: string
                     id:
                       description: id is the Tdarr document ID for this library.

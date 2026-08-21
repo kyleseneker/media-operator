@@ -91,10 +91,11 @@ type TdarrLibrary struct {
 	// +optional
 	ProcessHealthChecks *bool `json:"processHealthChecks,omitempty"`
 
-	// healthCheckType selects the health check to run.
-	// +kubebuilder:validation:Enum=quickHealthCheck;thoroughHealthCheck
+	// healthCheckMode selects the health check to run. quick uses HandBrake to
+	// read file headers; thorough decodes every frame with FFmpeg.
+	// +kubebuilder:validation:Enum=quick;thorough
 	// +optional
-	HealthCheckType string `json:"healthCheckType,omitempty"`
+	HealthCheckMode string `json:"healthCheckMode,omitempty"`
 
 	// decisionMode selects how Tdarr decides what to do with a file.
 	// +kubebuilder:validation:Enum=flows;plugins

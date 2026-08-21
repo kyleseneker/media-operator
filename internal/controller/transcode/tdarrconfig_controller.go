@@ -157,8 +157,9 @@ func buildTdarrLibraryDoc(lib transcodev1alpha1.TdarrLibrary) map[string]any {
 	if lib.ProcessHealthChecks != nil {
 		obj["processHealthChecks"] = *lib.ProcessHealthChecks
 	}
-	if lib.HealthCheckType != "" {
-		obj["healthCheckType"] = lib.HealthCheckType
+	if lib.HealthCheckMode != "" {
+		obj["handbrakescan"] = lib.HealthCheckMode == "quick"
+		obj["ffmpegscan"] = lib.HealthCheckMode == "thorough"
 	}
 	if lib.DecisionMode != "" {
 		obj["decisionMaker"] = map[string]any{

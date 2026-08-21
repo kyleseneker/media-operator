@@ -283,3 +283,19 @@ func TestLibraryDocDecisionMode(t *testing.T) {
 		t.Errorf("decisionMaker must be omitted when unset: %v", got["decisionMaker"])
 	}
 }
+
+func TestLibraryDocHealthCheckMode(t *testing.T) {
+	got := buildTdarrLibraryDoc(transcodev1alpha1.TdarrLibrary{
+		ID: "movies", Name: "Movies", HealthCheckMode: "thorough",
+	})
+	if got["ffmpegscan"] != true || got["handbrakescan"] != false {
+		t.Errorf("thorough must select ffmpegscan: %#v %#v", got["ffmpegscan"], got["handbrakescan"])
+	}
+
+	got = buildTdarrLibraryDoc(transcodev1alpha1.TdarrLibrary{
+		ID: "movies", Name: "Movies", HealthCheckMode: "quick",
+	})
+	if got["handbrakescan"] != true || got["ffmpegscan"] != false {
+		t.Errorf("quick must select handbrakescan: %#v %#v", got["handbrakescan"], got["ffmpegscan"])
+	}
+}
