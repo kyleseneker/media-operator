@@ -1,39 +1,39 @@
 package mediaservers
 
 import (
-	"reflect"
 	"testing"
 
 	mediaserversv1alpha1 "github.com/kyleseneker/media-operator/api/mediaservers/v1alpha1"
+	"github.com/kyleseneker/media-operator/internal/controller/internal/contract"
 )
 
-// buildPlexPreferences takes the whole spec, so cover the server section directly.
-func TestPlexServerFieldsAllEmitted(t *testing.T) {
-	spec := mediaserversv1alpha1.PlexConfigSpec{Server: &mediaserversv1alpha1.PlexServer{}}
-	fill(spec.Server)
-	v := numFields(spec.Server)
-	prefs := buildPlexPreferences(spec)
-	if len(prefs) != v {
-		t.Errorf("PlexServer declares %d fields but only %d preferences were emitted; an unmapped field is silently inert in Plex", v, len(prefs))
-		for k := range prefs {
-			t.Logf("  emitted: %s", k)
-		}
-	}
+// Plex accepts a preferences PUT for keys it does not recognise and answers 200,
+// so a spec field the builder never maps is silently inert.
+func TestPlexServerFieldsAllMapToPreferences(t *testing.T) {
+	contract.AssertEveryFieldEmitted(t, &mediaserversv1alpha1.PlexServer{},
+		func(s *mediaserversv1alpha1.PlexServer) map[string]string {
+			return buildPlexPreferences(mediaserversv1alpha1.PlexConfigSpec{Server: s})
+		})
 }
 
-func fill(s *mediaserversv1alpha1.PlexServer) {
-	v := reflect.ValueOf(s).Elem()
-	for i := range v.NumField() {
-		f := v.Field(i)
-		switch f.Kind() {
-		case reflect.Pointer:
-			f.Set(reflect.New(f.Type().Elem()))
-		case reflect.String:
-			f.SetString("x")
-		}
-	}
+func TestPlexTranscoderFieldsAllMapToPreferences(t *testing.T) {
+	contract.AssertEveryFieldEmitted(t, &mediaserversv1alpha1.PlexTranscoder{},
+		func(s *mediaserversv1alpha1.PlexTranscoder) map[string]string {
+			return buildPlexPreferences(mediaserversv1alpha1.PlexConfigSpec{Transcoder: s})
+		})
 }
 
-func numFields(s *mediaserversv1alpha1.PlexServer) int {
-	return reflect.ValueOf(s).Elem().NumField()
+func TestPlexNetworkFieldsAllMapToPreferences(t *testing.T) {
+	contract.AssertEveryFieldEmitted(t, &mediaserversv1alpha1.PlexNetwork{},
+		func(s *mediaserversv1alpha1.PlexNetwork) map[string]string {
+			return buildPlexPreferences(mediaserversv1alpha1.PlexConfigSpec{Network: s})
+		})
+}
+
+// An empty spec must not send preferences at all, so an unset section never
+// overwrites settings the CR does not manage.
+func TestPlexEmptySpecSendsNoPreferences(t *testing.T) {
+	if got := buildPlexPreferences(mediaserversv1alpha1.PlexConfigSpec{}); len(got) != 0 {
+		t.Errorf("empty spec produced preferences: %v", got)
+	}
 }
