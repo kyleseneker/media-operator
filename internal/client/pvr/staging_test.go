@@ -63,7 +63,7 @@ func TestQualityProfileResolvesCustomFormatsCreatedInTheSameRun(t *testing.T) {
 		}},
 	}
 
-	res, err := Reconcile(context.Background(), hc, "v3", struct{}{}, opts, false, nil)
+	res, err := Reconcile(context.Background(), hc, "v3", struct{}{}, opts, engine.SyncPolicy{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

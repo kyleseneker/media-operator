@@ -580,6 +580,11 @@ func (in *ReconcileConfig) DeepCopyInto(out *ReconcileConfig) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.DriftPolicy != nil {
+		in, out := &in.DriftPolicy, &out.DriftPolicy
+		*out = new(string)
+		**out = **in
+	}
 	if in.DeletionPolicy != nil {
 		in, out := &in.DeletionPolicy, &out.DeletionPolicy
 		*out = new(string)

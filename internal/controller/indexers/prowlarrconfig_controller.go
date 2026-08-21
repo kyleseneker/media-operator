@@ -78,9 +78,9 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// Tags must exist before anything can reference their IDs, so they are
 	// applied first and the labels resolved against what Prowlarr assigned.
-	prune := ctrlcommon.PruneEnabled(config.Spec.Reconcile)
+	policy := ctrlcommon.Policy(config.Spec.Reconcile)
 	tagsOnly := prowlarrclient.ProwlarrResources(prowlarrclient.ProwlarrOptions{Tags: config.Spec.Tags}, nil)
-	result := engine.ReconcileApp(ctx, hc, def, nil, tagsOnly, prune, config.Status.ManagedResources)
+	result := engine.ReconcileApp(ctx, hc, def, nil, tagsOnly, policy, config.Status.ManagedResources)
 
 	tagIDs, terr := prowlarrclient.FetchTagIDs(ctx, hc)
 	if terr != nil {
@@ -102,7 +102,7 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		Notifications:   config.Spec.Notifications,
 	}, tagIDs)
 
-	rest := engine.ReconcileApp(ctx, hc, def, nil, resources, prune, config.Status.ManagedResources)
+	rest := engine.ReconcileApp(ctx, hc, def, nil, resources, policy, config.Status.ManagedResources)
 	result.Synced = append(result.Synced, rest.Synced...)
 	result.Errors = append(result.Errors, rest.Errors...)
 	result.Pruned = append(result.Pruned, rest.Pruned...)

@@ -64,3 +64,11 @@ type AppDefinition struct {
 	// HealthPath is the endpoint to check if the app is reachable.
 	HealthPath string
 }
+
+// SyncPolicy controls how a reconcile treats resources that differ from the CR.
+type SyncPolicy struct {
+	// Prune deletes resources present in the app but absent from the CR.
+	Prune bool
+	// Observe records drift without writing, leaving the app untouched.
+	Observe bool
+}

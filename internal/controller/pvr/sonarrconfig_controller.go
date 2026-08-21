@@ -97,7 +97,7 @@ func (r *SonarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		Indexers:        indexers,
 		Notifications:   notifications,
 		ImportLists:     importLists,
-	}, ctrlcommon.PruneEnabled(config.Spec.Reconcile), config.Status.ManagedResources)
+	}, ctrlcommon.Policy(config.Spec.Reconcile), config.Status.ManagedResources)
 	if err != nil {
 		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, err.Error())
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil

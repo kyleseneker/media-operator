@@ -556,6 +556,17 @@ spec:
                     - orphan
                     - delete
                     type: string
+                  driftPolicy:
+                    description: |-
+                      driftPolicy controls whether drift is corrected or only recorded.
+                      "enforce" rewrites a resource whose live state differs from this CR.
+                      "observe" leaves the app untouched and only counts the difference, which
+                      makes drift measurable before handing the operator write authority.
+                      Default: enforce.
+                    enum:
+                    - enforce
+                    - observe
+                    type: string
                   interval:
                     description: |-
                       interval overrides the default reconciliation interval (default: 5m).

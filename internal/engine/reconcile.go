@@ -63,8 +63,8 @@ func (r *ReconcileResult) Message() string {
 // ReconcileApp runs the full reconciliation loop for an app.
 // `sections` maps setting endpoint names to their desired state (Go structs).
 // `resources` maps resource endpoint names to slices of desired resource objects.
-// `prune` enables deletion of unmanaged resources for prunable resource types.
-func ReconcileApp(ctx context.Context, client *HTTPClient, def AppDefinition, sections map[string]any, resources map[string][]map[string]any, prune bool, previouslyManaged map[string][]string) ReconcileResult {
+// `policy` controls pruning and whether drift is written or only recorded.
+func ReconcileApp(ctx context.Context, client *HTTPClient, def AppDefinition, sections map[string]any, resources map[string][]map[string]any, policy SyncPolicy, previouslyManaged map[string][]string) ReconcileResult {
 	logger := log.FromContext(ctx)
 	result := ReconcileResult{Managed: map[string][]string{}}
 
@@ -74,7 +74,7 @@ func ReconcileApp(ctx context.Context, client *HTTPClient, def AppDefinition, se
 		if !ok || desired == nil || isNilInterface(desired) {
 			continue
 		}
-		if err := reconcileSetting(ctx, client, s.Path, desired); err != nil {
+		if err := reconcileSetting(ctx, client, s.Path, desired, policy.Observe); err != nil {
 			logger.Error(err, "failed to reconcile setting", "section", s.Name)
 			logAPIErrorDetail(ctx, err)
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", s.Name, err))
@@ -91,7 +91,7 @@ func ReconcileApp(ctx context.Context, client *HTTPClient, def AppDefinition, se
 		}
 		var applied []map[string]any
 		for _, item := range items {
-			if err := reconcileResource(ctx, client, r, item); err != nil {
+			if err := reconcileResource(ctx, client, r, item, policy.Observe); err != nil {
 				matchVal := item[r.MatchField]
 				logger.Error(err, "failed to reconcile resource", "type", r.Name, "match", matchVal)
 				logAPIErrorDetail(ctx, err)
@@ -109,7 +109,7 @@ func ReconcileApp(ctx context.Context, client *HTTPClient, def AppDefinition, se
 		// Prune unmanaged resources: delete any existing resources not in the desired list.
 		// Only runs when prune is enabled, the resource type is prunable, and at least one
 		// desired item was specified (so an omitted section doesn't wipe everything).
-		if prune && r.Prunable {
+		if policy.Prune && !policy.Observe && r.Prunable {
 			pruned, err := pruneResources(ctx, client, r, applied, previouslyManaged[r.Name])
 			result.Pruned = append(result.Pruned, pruned...)
 			if err != nil {
@@ -193,7 +193,7 @@ func pruneResources(ctx context.Context, client *HTTPClient, endpoint ResourceEn
 }
 
 // reconcileSetting handles a singleton config endpoint: GET, merge, PUT.
-func reconcileSetting(ctx context.Context, client *HTTPClient, path string, desired any) error {
+func reconcileSetting(ctx context.Context, client *HTTPClient, path string, desired any, observe bool) error {
 	current, err := client.GetJSON(ctx, path)
 	if err != nil {
 		return fmt.Errorf("getting current: %w", err)
@@ -213,11 +213,14 @@ func reconcileSetting(ctx context.Context, client *HTTPClient, path string, desi
 	}
 
 	metrics.DriftCorrectedTotal.WithLabelValues(client.AppLabel(), "setting", path).Inc()
+	if observe {
+		return nil
+	}
 	return client.PutJSON(ctx, fmt.Sprintf("%s/%d", path, int(id)), merged)
 }
 
 // reconcileResource handles a list-based resource endpoint.
-func reconcileResource(ctx context.Context, client *HTTPClient, endpoint ResourceEndpoint, desired map[string]any) error {
+func reconcileResource(ctx context.Context, client *HTTPClient, endpoint ResourceEndpoint, desired map[string]any, observe bool) error {
 	existing, err := client.GetJSONList(ctx, endpoint.Path)
 	if err != nil {
 		return fmt.Errorf("listing: %w", err)
@@ -245,12 +248,19 @@ func reconcileResource(ctx context.Context, client *HTTPClient, endpoint Resourc
 					return nil
 				}
 				metrics.DriftCorrectedTotal.WithLabelValues(client.AppLabel(), endpoint.Name, desiredMatch).Inc()
+				if observe {
+					return nil
+				}
 				return client.PutJSON(ctx, fmt.Sprintf("%s/%d", endpoint.Path, int(id)), merged)
 			}
 		}
 	}
 
 	// Not found — create
+	if observe {
+		metrics.DriftCorrectedTotal.WithLabelValues(client.AppLabel(), endpoint.Name, desiredMatch).Inc()
+		return nil
+	}
 	return client.PostJSON(ctx, endpoint.Path, desired)
 }
 

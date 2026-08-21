@@ -39,6 +39,16 @@ func PruneEnabled(rc *commonv1alpha1.ReconcileConfig) bool {
 	return rc != nil && rc.Prune != nil && *rc.Prune
 }
 
+// ObserveOnly reports whether drift should be recorded without writing.
+func ObserveOnly(rc *commonv1alpha1.ReconcileConfig) bool {
+	return rc != nil && rc.DriftPolicy != nil && *rc.DriftPolicy == "observe"
+}
+
+// Policy renders the reconcile policy for a CR.
+func Policy(rc *commonv1alpha1.ReconcileConfig) engine.SyncPolicy {
+	return engine.SyncPolicy{Prune: PruneEnabled(rc), Observe: ObserveOnly(rc)}
+}
+
 // ResultReason returns the appropriate status reason for a reconcile result.
 func ResultReason(r engine.ReconcileResult) string {
 	if r.Success() {

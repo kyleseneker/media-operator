@@ -615,7 +615,7 @@ func resolveCustomFormatIDs(ctx context.Context, client *engine.HTTPClient, apiV
 }
 
 // Reconcile runs the full reconciliation for any Servarr-family app.
-func Reconcile(ctx context.Context, client *engine.HTTPClient, apiVersion string, spec any, opts Options, prune bool, managed map[string][]string) (engine.ReconcileResult, error) {
+func Reconcile(ctx context.Context, client *engine.HTTPClient, apiVersion string, spec any, opts Options, policy engine.SyncPolicy, managed map[string][]string) (engine.ReconcileResult, error) {
 	def := Definition(apiVersion)
 	sections, err := Sections(spec)
 	if err != nil {
@@ -634,7 +634,7 @@ func Reconcile(ctx context.Context, client *engine.HTTPClient, apiVersion string
 	if err != nil {
 		return engine.ReconcileResult{}, fmt.Errorf("building resources: %w", err)
 	}
-	result := engine.ReconcileApp(ctx, client, def, sections, resources, prune, managed)
+	result := engine.ReconcileApp(ctx, client, def, sections, resources, policy, managed)
 	result.Errors = append(result.Errors, fieldProblems...)
 
 	if len(opts.QualityProfiles) > 0 {
@@ -643,7 +643,7 @@ func Reconcile(ctx context.Context, client *engine.HTTPClient, apiVersion string
 		if qerr != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("qualityProfiles: %v", qerr))
 		} else {
-			mergeResult(&result, engine.ReconcileApp(ctx, client, def, nil, qpRes, prune, managed))
+			mergeResult(&result, engine.ReconcileApp(ctx, client, def, nil, qpRes, policy, managed))
 		}
 	}
 
@@ -653,7 +653,7 @@ func Reconcile(ctx context.Context, client *engine.HTTPClient, apiVersion string
 		if ierr != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("importLists: %v", ierr))
 		} else {
-			mergeResult(&result, engine.ReconcileApp(ctx, client, def, nil, ilRes, prune, managed))
+			mergeResult(&result, engine.ReconcileApp(ctx, client, def, nil, ilRes, policy, managed))
 		}
 	}
 

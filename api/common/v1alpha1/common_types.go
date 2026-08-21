@@ -22,6 +22,15 @@ type ReconcileConfig struct {
 	// +optional
 	Prune *bool `json:"prune,omitempty"`
 
+	// driftPolicy controls whether drift is corrected or only recorded.
+	// "enforce" rewrites a resource whose live state differs from this CR.
+	// "observe" leaves the app untouched and only counts the difference, which
+	// makes drift measurable before handing the operator write authority.
+	// Default: enforce.
+	// +kubebuilder:validation:Enum=enforce;observe
+	// +optional
+	DriftPolicy *string `json:"driftPolicy,omitempty"`
+
 	// deletionPolicy controls what happens to resources in the app when this CR
 	// is deleted. "orphan" leaves them in place, "delete" removes the resources
 	// the operator created.

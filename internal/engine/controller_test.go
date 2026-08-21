@@ -30,7 +30,7 @@ func TestReconcileSetting_NoChange(t *testing.T) {
 	hc := newTestServer(t, handler)
 	err := reconcileSetting(context.Background(), hc, "/api/v3/config/naming", map[string]any{
 		"rename": true, "createEmpty": false,
-	})
+	}, false)
 	assert.NoError(t, err)
 }
 
@@ -55,7 +55,7 @@ func TestReconcileSetting_WithChange(t *testing.T) {
 	hc := newTestServer(t, handler)
 	err := reconcileSetting(context.Background(), hc, "/api/v3/config/naming", map[string]any{
 		"rename": true,
-	})
+	}, false)
 	require.NoError(t, err)
 	assert.True(t, putCalled)
 	assert.Equal(t, true, putBody["rename"])
@@ -66,7 +66,7 @@ func TestReconcileSetting_NoID(t *testing.T) {
 	hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"rename": true})
 	})
-	err := reconcileSetting(context.Background(), hc, "/api/v3/config/naming", map[string]any{"rename": true})
+	err := reconcileSetting(context.Background(), hc, "/api/v3/config/naming", map[string]any{"rename": true}, false)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no id")
 }
@@ -86,7 +86,7 @@ func TestReconcileResource_CreateNew(t *testing.T) {
 
 	hc := newTestServer(t, handler)
 	endpoint := ResourceEndpoint{Name: "tags", Path: "/api/v3/tag", MatchField: "label", Policy: CreateOrUpdate}
-	err := reconcileResource(context.Background(), hc, endpoint, map[string]any{"label": "test"})
+	err := reconcileResource(context.Background(), hc, endpoint, map[string]any{"label": "test"}, false)
 	require.NoError(t, err)
 	assert.True(t, postCalled)
 }
@@ -111,7 +111,7 @@ func TestReconcileResource_UpdateExisting(t *testing.T) {
 	endpoint := ResourceEndpoint{Name: "downloadClients", Path: "/api/v3/downloadclient", MatchField: "name", Policy: CreateOrUpdate}
 	err := reconcileResource(context.Background(), hc, endpoint, map[string]any{
 		"name": "test-dc", "host": "new-host",
-	})
+	}, false)
 	require.NoError(t, err)
 	assert.True(t, putCalled)
 }
@@ -132,7 +132,7 @@ func TestReconcileResource_CreateOnly(t *testing.T) {
 
 	hc := newTestServer(t, handler)
 	endpoint := ResourceEndpoint{Name: "rootFolders", Path: "/api/v3/rootfolder", MatchField: "path", Policy: CreateOnly}
-	err := reconcileResource(context.Background(), hc, endpoint, map[string]any{"path": "/tv"})
+	err := reconcileResource(context.Background(), hc, endpoint, map[string]any{"path": "/tv"}, false)
 	assert.NoError(t, err)
 }
 
@@ -244,7 +244,7 @@ func TestReconcileApp(t *testing.T) {
 		"tags": {{"label": "test"}},
 	}
 
-	result := ReconcileApp(context.Background(), hc, def, sections, resources, false, nil)
+	result := ReconcileApp(context.Background(), hc, def, sections, resources, SyncPolicy{}, nil)
 	assert.True(t, result.Success())
 	assert.Contains(t, result.Synced, "naming")
 	assert.Contains(t, result.Synced, "tags(test)")
@@ -258,7 +258,7 @@ func TestReconcileApp_SkipsNilSections(t *testing.T) {
 	def := AppDefinition{
 		Settings: []SettingEndpoint{{Name: "naming", Path: "/api/v3/config/naming"}},
 	}
-	result := ReconcileApp(context.Background(), hc, def, map[string]any{}, nil, false, nil)
+	result := ReconcileApp(context.Background(), hc, def, map[string]any{}, nil, SyncPolicy{}, nil)
 	assert.True(t, result.Success())
 	assert.Empty(t, result.Synced)
 }
