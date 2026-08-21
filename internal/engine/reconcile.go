@@ -212,6 +212,7 @@ func reconcileSetting(ctx context.Context, client *HTTPClient, path string, desi
 		return nil
 	}
 
+	metrics.DriftCorrectedTotal.WithLabelValues(client.AppLabel(), "setting", path).Inc()
 	return client.PutJSON(ctx, fmt.Sprintf("%s/%d", path, int(id)), merged)
 }
 
@@ -243,6 +244,7 @@ func reconcileResource(ctx context.Context, client *HTTPClient, endpoint Resourc
 				if !changed {
 					return nil
 				}
+				metrics.DriftCorrectedTotal.WithLabelValues(client.AppLabel(), endpoint.Name, desiredMatch).Inc()
 				return client.PutJSON(ctx, fmt.Sprintf("%s/%d", endpoint.Path, int(id)), merged)
 			}
 		}

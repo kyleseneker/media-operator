@@ -60,6 +60,21 @@ var (
 		[]string{"app", "resource_type"},
 	)
 
+	// DriftCorrectedTotal counts writes that changed a resource the operator had
+	// already reconciled. A steady rate for one resource means either something
+	// outside the operator keeps editing it, or the write is not taking effect --
+	// these apps answer 2xx for a payload they then ignore, so a correction that
+	// never sticks looks identical to a successful one.
+	// Labels: app, resource_type, name.
+	DriftCorrectedTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "drift_corrected_total",
+			Help:      "Total number of resources rewritten because their live state differed from the CR.",
+		},
+		[]string{"app", "resource_type", "name"},
+	)
+
 	// ConfigSynced reports whether each config resource last reconciled
 	// successfully. 1 = synced, 0 = failed or unreachable. Alert on 0 to catch
 	// silent failure, which no error counter can express while controllers
@@ -81,6 +96,7 @@ func init() {
 		AppAPIErrorsTotal,
 		ResourcesPrunedTotal,
 		ManagedResources,
+		DriftCorrectedTotal,
 		ConfigSynced,
 	)
 }
