@@ -153,6 +153,10 @@ func qbPreferencePayload(prefs *downloadsv1alpha1.QBittorrentPreferences) (map[s
 	set("max_seeding_time", prefs.MaxSeedingTime)
 	set("preallocate_all", prefs.PreallocateAll)
 	set("web_ui_port", prefs.WebUIPort)
+	set("bypass_auth_subnet_whitelist_enabled", prefs.BypassAuthSubnetWhitelistEnabled)
+	if prefs.BypassAuthSubnetWhitelist != "" {
+		out["bypass_auth_subnet_whitelist"] = prefs.BypassAuthSubnetWhitelist
+	}
 
 	if prefs.MaxRatio != nil {
 		ratio, err := strconv.ParseFloat(*prefs.MaxRatio, 64)

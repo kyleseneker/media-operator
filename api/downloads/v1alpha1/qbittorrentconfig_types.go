@@ -138,6 +138,16 @@ type QBittorrentPreferences struct {
 	// webUiPort is the Web UI listening port.
 	// +optional
 	WebUIPort *int `json:"webUiPort,omitempty"`
+
+	// bypassAuthSubnetWhitelistEnabled lets clients in the whitelisted subnets skip
+	// the WebUI login, so an authenticating proxy does not produce a second prompt.
+	// +optional
+	BypassAuthSubnetWhitelistEnabled *bool `json:"bypassAuthSubnetWhitelistEnabled,omitempty"`
+
+	// bypassAuthSubnetWhitelist is the comma-separated list of subnets allowed to
+	// skip the WebUI login.
+	// +optional
+	BypassAuthSubnetWhitelist string `json:"bypassAuthSubnetWhitelist,omitempty"`
 }
 
 // QBittorrentCategory defines a download category with its save path.

@@ -142,6 +142,16 @@ spec:
               preferences:
                 description: preferences configures qBittorrent application preferences.
                 properties:
+                  bypassAuthSubnetWhitelist:
+                    description: |-
+                      bypassAuthSubnetWhitelist is the comma-separated list of subnets allowed to
+                      skip the WebUI login.
+                    type: string
+                  bypassAuthSubnetWhitelistEnabled:
+                    description: |-
+                      bypassAuthSubnetWhitelistEnabled lets clients in the whitelisted subnets skip
+                      the WebUI login, so an authenticating proxy does not produce a second prompt.
+                    type: boolean
                   dht:
                     description: dht enables the DHT (Distributed Hash Table) network.
                     type: boolean
