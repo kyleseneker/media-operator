@@ -31,6 +31,40 @@ import (
 	"github.com/kyleseneker/media-operator/internal/controller/transcode"
 )
 
+// startAPIServerWith boots one control plane for a set of API groups, so a table
+// of kinds does not pay for a control plane each.
+func startAPIServerWith(t *testing.T, adders ...func(*runtime.Scheme) error) client.Client {
+	t.Helper()
+	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
+		t.Skip("KUBEBUILDER_ASSETS unset; run via `make test-envtest`")
+	}
+
+	env := &envtest.Environment{
+		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
+		ErrorIfCRDPathMissing: true,
+	}
+	cfg, err := env.Start()
+	if err != nil {
+		t.Fatalf("starting control plane: %v", err)
+	}
+	t.Cleanup(func() { _ = env.Stop() })
+
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("client-go scheme: %v", err)
+	}
+	for _, add := range adders {
+		if err := add(scheme); err != nil {
+			t.Fatalf("registering scheme: %v", err)
+		}
+	}
+	c, err := client.New(cfg, client.Options{Scheme: scheme})
+	if err != nil {
+		t.Fatalf("building client: %v", err)
+	}
+	return c
+}
+
 func startAPIServer(t *testing.T) client.Client {
 	t.Helper()
 	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
