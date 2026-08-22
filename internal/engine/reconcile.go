@@ -204,11 +204,12 @@ func reconcileSetting(ctx context.Context, client *HTTPClient, path string, desi
 		return fmt.Errorf("config at %s has no id", path)
 	}
 
-	merged, changed, err := reconciler.MergeDesiredOverCurrent(current, desired)
+	out, err := reconciler.MergeDesired(current, desired)
 	if err != nil {
 		return fmt.Errorf("merging: %w", err)
 	}
-	if !changed {
+	key := secretKey(client.AppLabel(), "setting", path)
+	if !out.Changed && !reconciler.SecretsChangedSince(key, out.SecretDigest) {
 		return nil
 	}
 
@@ -216,7 +217,11 @@ func reconcileSetting(ctx context.Context, client *HTTPClient, path string, desi
 	if observe {
 		return nil
 	}
-	return client.PutJSON(ctx, fmt.Sprintf("%s/%d", path, int(id)), merged)
+	if err := client.PutJSON(ctx, fmt.Sprintf("%s/%d", path, int(id)), out.Merged); err != nil {
+		return err
+	}
+	reconciler.RecordSecrets(key, out.SecretDigest)
+	return nil
 }
 
 // reconcileResource handles a list-based resource endpoint.
@@ -240,18 +245,23 @@ func reconcileResource(ctx context.Context, client *HTTPClient, endpoint Resourc
 				if !ok {
 					return fmt.Errorf("resource %q has no id", desiredMatch)
 				}
-				merged, changed, err := reconciler.MergeDesiredOverCurrent(e, desired)
+				out, err := reconciler.MergeDesired(e, desired)
 				if err != nil {
 					return err
 				}
-				if !changed {
+				key := secretKey(client.AppLabel(), endpoint.Name, desiredMatch)
+				if !out.Changed && !reconciler.SecretsChangedSince(key, out.SecretDigest) {
 					return nil
 				}
 				metrics.DriftCorrectedTotal.WithLabelValues(client.AppLabel(), endpoint.Name, desiredMatch).Inc()
 				if observe {
 					return nil
 				}
-				return client.PutJSON(ctx, fmt.Sprintf("%s/%d", endpoint.Path, int(id)), merged)
+				if err := client.PutJSON(ctx, fmt.Sprintf("%s/%d", endpoint.Path, int(id)), out.Merged); err != nil {
+					return err
+				}
+				reconciler.RecordSecrets(key, out.SecretDigest)
+				return nil
 			}
 		}
 	}
@@ -262,6 +272,12 @@ func reconcileResource(ctx context.Context, client *HTTPClient, endpoint Resourc
 		return nil
 	}
 	return client.PostJSON(ctx, endpoint.Path, desired)
+}
+
+// secretKey identifies a resource in the store of last-written secrets. It
+// mirrors the drift metric's labels so the two line up when reading both.
+func secretKey(app, resourceType, name string) string {
+	return app + "|" + resourceType + "|" + name
 }
 
 func isNilInterface(v any) bool {

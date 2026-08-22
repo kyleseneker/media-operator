@@ -6,19 +6,37 @@ import (
 	"reflect"
 )
 
+// MergeOutcome is the result of overlaying desired state onto current state.
+type MergeOutcome struct {
+	// Merged is the body to send, carrying the real secret values.
+	Merged map[string]any
+	// Changed reports whether anything the app can actually show back differs.
+	Changed bool
+	// SecretDigest hashes the desired values that landed on fields the app
+	// masks on read. Empty when the resource has no such fields.
+	SecretDigest string
+}
+
 // MergeDesiredOverCurrent takes the current state from the API and overlays
 // the desired state from the CR spec. Fields not set in desired are preserved
 // from current. Returns the merged result and whether any changes were detected.
 func MergeDesiredOverCurrent(current map[string]any, desired any) (map[string]any, bool, error) {
+	out, err := MergeDesired(current, desired)
+	return out.Merged, out.Changed, err
+}
+
+// MergeDesired is MergeDesiredOverCurrent with the masked-field digest the
+// caller needs to notice a rotated secret.
+func MergeDesired(current map[string]any, desired any) (MergeOutcome, error) {
 	// Marshal desired to JSON, then unmarshal to map to get only non-nil fields
 	desiredJSON, err := json.Marshal(desired)
 	if err != nil {
-		return nil, false, fmt.Errorf("marshaling desired state: %w", err)
+		return MergeOutcome{}, fmt.Errorf("marshaling desired state: %w", err)
 	}
 
 	var desiredMap map[string]any
 	if err := json.Unmarshal(desiredJSON, &desiredMap); err != nil {
-		return nil, false, fmt.Errorf("unmarshaling desired state: %w", err)
+		return MergeOutcome{}, fmt.Errorf("unmarshaling desired state: %w", err)
 	}
 
 	// Deep copy current
@@ -33,10 +51,61 @@ func MergeDesiredOverCurrent(current map[string]any, desired any) (map[string]an
 		merged[k] = v
 	}
 
-	// Check if anything changed
-	changed := !reflect.DeepEqual(current, merged)
+	// A field the app masks on read cannot be compared, so it is not drift.
+	// Collect what was overlaid onto those fields instead: a change there is
+	// only visible by remembering what was last written.
+	var secrets []string
+	changed := differs(current, merged, &secrets)
 
-	return merged, changed, nil
+	return MergeOutcome{Merged: merged, Changed: changed, SecretDigest: digestOf(secrets)}, nil
+}
+
+// differs walks current against merged and reports whether they differ,
+// treating a masked current value as equal to whatever replaced it. Desired
+// values landing on masked fields are appended to secrets.
+func differs(current, merged any, secrets *[]string) bool {
+	if IsMasked(current) {
+		if s, ok := merged.(string); ok && !IsMasked(merged) {
+			*secrets = append(*secrets, s)
+		}
+		return false
+	}
+
+	curMap, curIsMap := current.(map[string]any)
+	mergedMap, mergedIsMap := merged.(map[string]any)
+	if curIsMap && mergedIsMap {
+		if len(curMap) != len(mergedMap) {
+			return true
+		}
+		for k, mv := range mergedMap {
+			cv, ok := curMap[k]
+			if !ok {
+				return true
+			}
+			if differs(cv, mv, secrets) {
+				return true
+			}
+		}
+		return false
+	}
+
+	curSlice, curIsSlice := current.([]any)
+	mergedSlice, mergedIsSlice := merged.([]any)
+	if curIsSlice && mergedIsSlice {
+		// mergeNamedObjectSlice preserves the order of current and appends
+		// anything new, so equal lengths mean index-wise correspondence.
+		if len(curSlice) != len(mergedSlice) {
+			return true
+		}
+		for i := range curSlice {
+			if differs(curSlice[i], mergedSlice[i], secrets) {
+				return true
+			}
+		}
+		return false
+	}
+
+	return !reflect.DeepEqual(current, merged)
 }
 
 // mergeValue recurses into nested objects and into arrays of named objects,
