@@ -115,3 +115,65 @@ func TestObserveDoesNotRecordMaskedSecret(t *testing.T) {
 		t.Errorf("observe wrote to the app: %v", writes)
 	}
 }
+
+// Prowlarr was the worst offender at ten writes a minute. Its applications
+// carry the key inside fields[], and the live resource holds fields the CR
+// never declares, so the merge has to line up before the mask is even reached.
+func TestProwlarrApplicationSettles(t *testing.T) {
+	metrics.DriftCorrectedTotal.Reset()
+	var writes []string
+	live := map[string]any{
+		"id": float64(1), "name": "Sonarr", "syncLevel": "fullSync",
+		"implementation": "Sonarr", "configContract": "SonarrSettings",
+		"fields": []any{
+			map[string]any{"name": "prowlarrUrl", "value": "http://prowlarr:9696"},
+			map[string]any{"name": "baseUrl", "value": "http://sonarr:8989"},
+			map[string]any{"name": "apiKey", "value": "********"},
+			map[string]any{"name": "authUsername", "value": nil},
+			map[string]any{"name": "authPassword", "value": nil},
+			map[string]any{"name": "syncCategories", "value": []any{5000, 5010}},
+			map[string]any{"name": "animeSyncCategories", "value": []any{5070}},
+			map[string]any{"name": "syncRejectBlocklistedTorrentHashesWhileGrabbing", "value": false},
+		},
+		"tags": []any{},
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			_ = json.NewEncoder(w).Encode([]map[string]any{live})
+			return
+		}
+		writes = append(writes, r.Method+" "+r.URL.Path)
+		_ = json.NewEncoder(w).Encode(live)
+	}))
+	t.Cleanup(srv.Close)
+
+	hc, err := NewHTTPClient(srv.URL, AuthAPIKey, WithAPIKey("k"),
+		WithAPIKeyHeader("X-Api-Key"), WithAppLabel("prowlarr"),
+		WithTransport(&http.Transport{}))
+	if err != nil {
+		t.Fatalf("building client: %v", err)
+	}
+
+	ep := ResourceEndpoint{Name: "applications", Path: "/api/v1/applications", MatchField: "name", Policy: CreateOrUpdate}
+	desired := map[string]any{
+		"name": "Sonarr", "syncLevel": "fullSync",
+		"implementation": "Sonarr", "configContract": "SonarrSettings",
+		"fields": []any{
+			map[string]any{"name": "prowlarrUrl", "value": "http://prowlarr:9696"},
+			map[string]any{"name": "baseUrl", "value": "http://sonarr:8989"},
+			map[string]any{"name": "apiKey", "value": "real-key"},
+			map[string]any{"name": "syncCategories", "value": []any{5000, 5010}},
+		},
+		"tags": []any{},
+	}
+
+	for i := range 5 {
+		if err := reconcileResource(context.Background(), hc, ep, desired, false); err != nil {
+			t.Fatalf("reconcile %d: %v", i, err)
+		}
+	}
+	if len(writes) != 1 {
+		t.Errorf("wrote %d times, want 1: %v", len(writes), writes)
+	}
+}
