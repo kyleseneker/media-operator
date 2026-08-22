@@ -18,10 +18,18 @@ import (
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	curationv1alpha1 "github.com/kyleseneker/media-operator/api/curation/v1alpha1"
 	downloadsv1alpha1 "github.com/kyleseneker/media-operator/api/downloads/v1alpha1"
+	indexersv1alpha1 "github.com/kyleseneker/media-operator/api/indexers/v1alpha1"
+	mediaserversv1alpha1 "github.com/kyleseneker/media-operator/api/mediaservers/v1alpha1"
+	pvrv1alpha1 "github.com/kyleseneker/media-operator/api/pvr/v1alpha1"
+	requestsv1alpha1 "github.com/kyleseneker/media-operator/api/requests/v1alpha1"
 	subtitlesv1alpha1 "github.com/kyleseneker/media-operator/api/subtitles/v1alpha1"
 	"github.com/kyleseneker/media-operator/internal/controller/automation"
 	"github.com/kyleseneker/media-operator/internal/controller/curation"
 	"github.com/kyleseneker/media-operator/internal/controller/downloads"
+	"github.com/kyleseneker/media-operator/internal/controller/indexers"
+	"github.com/kyleseneker/media-operator/internal/controller/mediaservers"
+	"github.com/kyleseneker/media-operator/internal/controller/pvr"
+	"github.com/kyleseneker/media-operator/internal/controller/requests"
 	"github.com/kyleseneker/media-operator/internal/controller/subtitles"
 )
 
@@ -40,6 +48,10 @@ func appConn(url string) commonv1alpha1.AppConnection {
 		URL:             url,
 		APIKeySecretRef: commonv1alpha1.SecretKeyRef{Name: "app-credentials", Key: "api-key"},
 	}
+}
+
+func secretRef(key string) commonv1alpha1.SecretKeyRef {
+	return commonv1alpha1.SecretKeyRef{Name: "app-credentials", Key: key}
 }
 
 func orphan() *commonv1alpha1.ReconcileConfig {
@@ -109,6 +121,90 @@ func controllerCases() []controllerCase {
 				return &downloads.SabnzbdConfigReconciler{Client: c, Scheme: s, Recorder: events.NewFakeRecorder(50)}
 			},
 		},
+		{
+			name:        "SonarrConfig",
+			addToScheme: pvrv1alpha1.AddToScheme,
+			newObj:      func() client.Object { return &pvrv1alpha1.SonarrConfig{} },
+			newCR: func(url string) client.Object {
+				return &pvrv1alpha1.SonarrConfig{
+					ObjectMeta: meta("sonarr"),
+					Spec:       pvrv1alpha1.SonarrConfigSpec{Connection: appConn(url), Reconcile: orphan()},
+				}
+			},
+			newRec: func(c client.Client, s *runtime.Scheme) reconcile.Reconciler {
+				return &pvr.SonarrConfigReconciler{Client: c, Scheme: s, Recorder: events.NewFakeRecorder(50)}
+			},
+		},
+		{
+			name:        "ProwlarrConfig",
+			addToScheme: indexersv1alpha1.AddToScheme,
+			newObj:      func() client.Object { return &indexersv1alpha1.ProwlarrConfig{} },
+			newCR: func(url string) client.Object {
+				return &indexersv1alpha1.ProwlarrConfig{
+					ObjectMeta: meta("prowlarr"),
+					Spec:       indexersv1alpha1.ProwlarrConfigSpec{Connection: appConn(url), Reconcile: orphan()},
+				}
+			},
+			newRec: func(c client.Client, s *runtime.Scheme) reconcile.Reconciler {
+				return &indexers.ProwlarrConfigReconciler{Client: c, Scheme: s, Recorder: events.NewFakeRecorder(50)}
+			},
+		},
+		{
+			name:        "JellyfinConfig",
+			addToScheme: mediaserversv1alpha1.AddToScheme,
+			newObj:      func() client.Object { return &mediaserversv1alpha1.JellyfinConfig{} },
+			newCR: func(url string) client.Object {
+				return &mediaserversv1alpha1.JellyfinConfig{
+					ObjectMeta: meta("jellyfin"),
+					Spec: mediaserversv1alpha1.JellyfinConfigSpec{
+						Connection: mediaserversv1alpha1.JellyfinConnection{URL: url},
+						Reconcile:  orphan(),
+					},
+				}
+			},
+			newRec: func(c client.Client, s *runtime.Scheme) reconcile.Reconciler {
+				return &mediaservers.JellyfinConfigReconciler{Client: c, Scheme: s, Recorder: events.NewFakeRecorder(50)}
+			},
+		},
+		{
+			name:        "SeerrConfig",
+			addToScheme: requestsv1alpha1.AddToScheme,
+			newObj:      func() client.Object { return &requestsv1alpha1.SeerrConfig{} },
+			newCR: func(url string) client.Object {
+				ref := secretRef("api-key")
+				return &requestsv1alpha1.SeerrConfig{
+					ObjectMeta: meta("seerr"),
+					Spec: requestsv1alpha1.SeerrConfigSpec{
+						Connection: requestsv1alpha1.SeerrConnection{URL: url, APIKeySecretRef: &ref},
+						Reconcile:  orphan(),
+					},
+				}
+			},
+			newRec: func(c client.Client, s *runtime.Scheme) reconcile.Reconciler {
+				return &requests.SeerrConfigReconciler{Client: c, Scheme: s, Recorder: events.NewFakeRecorder(50)}
+			},
+		},
+		{
+			name:        "QBittorrentConfig",
+			addToScheme: downloadsv1alpha1.AddToScheme,
+			newObj:      func() client.Object { return &downloadsv1alpha1.QBittorrentConfig{} },
+			newCR: func(url string) client.Object {
+				return &downloadsv1alpha1.QBittorrentConfig{
+					ObjectMeta: meta("qbittorrent"),
+					Spec: downloadsv1alpha1.QBittorrentConfigSpec{
+						Connection: downloadsv1alpha1.QBittorrentConnection{
+							URL:               url,
+							UsernameSecretRef: secretRef("username"),
+							PasswordSecretRef: secretRef("password"),
+						},
+						Reconcile: orphan(),
+					},
+				}
+			},
+			newRec: func(c client.Client, s *runtime.Scheme) reconcile.Reconciler {
+				return &downloads.QBittorrentConfigReconciler{Client: c, Scheme: s, Recorder: events.NewFakeRecorder(50)}
+			},
+		},
 	}
 }
 
@@ -126,7 +222,12 @@ func TestControllersPersistStatusAndReleaseOnDelete(t *testing.T) {
 
 	if err := c.Create(ctx, &corev1.Secret{
 		ObjectMeta: meta("app-credentials"),
-		Data:       map[string][]byte{"api-key": []byte("k")},
+		Data: map[string][]byte{
+			"api-key":  []byte("k"),
+			"username": []byte("u"),
+			"password": []byte("p"),
+			"token":    []byte("t"),
+		},
 	}); err != nil {
 		t.Fatalf("creating secret: %v", err)
 	}
