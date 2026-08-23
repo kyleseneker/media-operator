@@ -20,8 +20,10 @@ func NewClient(hc *engine.HTTPClient) *Client {
 	return &Client{hc: hc}
 }
 
-// CrudDB performs a generic CRUD operation against /api/v2/cruddb.
-func (c *Client) CrudDB(ctx context.Context, collection, mode, docID string, obj map[string]any) (map[string]any, error) {
+// crudRaw performs a cruddb call and returns the undecoded body. getAll answers
+// with an array and every other mode with an object, so callers decode into the
+// shape their mode produces.
+func (c *Client) crudRaw(ctx context.Context, collection, mode, docID string, obj map[string]any) ([]byte, error) {
 	req := map[string]any{
 		"collection": collection,
 		"mode":       mode,
@@ -36,7 +38,12 @@ func (c *Client) CrudDB(ctx context.Context, collection, mode, docID string, obj
 		"timeout": 20000,
 	}
 
-	data, err := c.hc.Do(ctx, http.MethodPost, "/api/v2/cruddb", payload)
+	return c.hc.Do(ctx, http.MethodPost, "/api/v2/cruddb", payload)
+}
+
+// CrudDB performs a generic CRUD operation against /api/v2/cruddb.
+func (c *Client) CrudDB(ctx context.Context, collection, mode, docID string, obj map[string]any) (map[string]any, error) {
+	data, err := c.crudRaw(ctx, collection, mode, docID, obj)
 	if err != nil {
 		return nil, err
 	}
@@ -51,6 +58,29 @@ func (c *Client) CrudDB(ctx context.Context, collection, mode, docID string, obj
 		return nil, fmt.Errorf("unmarshaling cruddb response: %w", err)
 	}
 	return result, nil
+}
+
+// GetAll fetches every document in a collection.
+func (c *Client) GetAll(ctx context.Context, collection string) ([]map[string]any, error) {
+	data, err := c.crudRaw(ctx, collection, "getAll", "", nil)
+	if err != nil {
+		return nil, err
+	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		return nil, nil
+	}
+
+	var result []map[string]any
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("unmarshaling cruddb list response: %w", err)
+	}
+	return result, nil
+}
+
+// Remove deletes a document from the given collection.
+func (c *Client) Remove(ctx context.Context, collection, docID string) error {
+	_, err := c.CrudDB(ctx, collection, "removeOne", docID, map[string]any{})
+	return err
 }
 
 // GetByID fetches a single document by ID from the given collection.

@@ -24,7 +24,10 @@ import (
 	transcodev1alpha1 "github.com/kyleseneker/media-operator/api/transcode/v1alpha1"
 )
 
-const conditionTrue = "True"
+const (
+	conditionTrue = "True"
+	modeGetAll    = "getAll"
+)
 
 // fakeTdarr serves the cruddb endpoint Tdarr uses for every collection, plus
 // status and node listing. Requests are recorded with their cruddb operation so
@@ -33,12 +36,29 @@ type fakeTdarr struct {
 	mu       sync.Mutex
 	ops      []string
 	docFound bool
+
+	// vars is what VariablesJSONDB returns for getAll, and writes records every
+	// call made against that collection so the variable sync can be asserted.
+	vars   []map[string]any
+	writes []varWrite
+}
+
+type varWrite struct {
+	mode  string
+	docID string
+	obj   map[string]any
 }
 
 func (f *fakeTdarr) ranOp(op string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return slices.Contains(f.ops, op)
+}
+
+func (f *fakeTdarr) varWrites() []varWrite {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]varWrite(nil), f.writes...)
 }
 
 func (f *fakeTdarr) serve(t *testing.T) string {
@@ -58,15 +78,33 @@ func (f *fakeTdarr) serve(t *testing.T) string {
 		case "/api/v2/cruddb":
 			var body struct {
 				Data struct {
-					Collection string `json:"collection"`
-					Mode       string `json:"mode"`
+					Collection string         `json:"collection"`
+					Mode       string         `json:"mode"`
+					DocID      string         `json:"docID"`
+					Obj        map[string]any `json:"obj"`
 				} `json:"data"`
 			}
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			f.mu.Lock()
 			f.ops = append(f.ops, body.Data.Mode)
 			found := f.docFound
+			if body.Data.Collection == variablesCollection {
+				if body.Data.Mode != modeGetAll {
+					f.writes = append(f.writes, varWrite{mode: body.Data.Mode, docID: body.Data.DocID, obj: body.Data.Obj})
+				}
+				if body.Data.Mode == modeGetAll {
+					vars := append([]map[string]any(nil), f.vars...)
+					f.mu.Unlock()
+					_ = json.NewEncoder(w).Encode(vars)
+					return
+				}
+			}
 			f.mu.Unlock()
+
+			if body.Data.Mode == modeGetAll {
+				_ = json.NewEncoder(w).Encode([]map[string]any{})
+				return
+			}
 
 			if body.Data.Mode == "getById" {
 				if !found {
@@ -263,6 +301,89 @@ func TestLibraryDocAlwaysCarriesFoldersToIgnoreAsString(t *testing.T) {
 	})
 	if got["foldersToIgnore"] != "extras,featurettes" {
 		t.Errorf("foldersToIgnore not carried through: %#v", got["foldersToIgnore"])
+	}
+}
+
+// Flows read library variables as args.userVariables.library.<key>, which Tdarr
+// serves from VariablesJSONDB. A variable written only onto the library document
+// reaches the flow as undefined, which fails the flow at the first plugin to
+// parse it.
+func TestLibraryVariablesSyncToVariablesCollection(t *testing.T) {
+	app := &fakeTdarr{docFound: true}
+	url := app.serve(t)
+
+	cfg := tdarrConfig(url)
+	cfg.Spec.Libraries = []transcodev1alpha1.TdarrLibrary{{
+		ID: "movies", Name: "Movies", Folder: "/data/media/movies",
+		Variables: map[string]string{"bitrate_1080p": "2500"},
+	}}
+	runTdarr(t, cfg, true)
+
+	writes := app.varWrites()
+	if len(writes) != 1 {
+		t.Fatalf("expected one variable write, got %d: %+v", len(writes), writes)
+	}
+	w := writes[0]
+	if w.mode != "insert" {
+		t.Errorf("missing variable must be inserted, got mode %q", w.mode)
+	}
+	if w.obj["key"] != "bitrate_1080p" || w.obj["value"] != "2500" {
+		t.Errorf("unexpected variable document: %v", w.obj)
+	}
+	if w.obj["type"] != "library:movies" {
+		t.Errorf("variable must be scoped to the library, got type %v", w.obj["type"])
+	}
+}
+
+func TestLibraryVariablesUpdateChangedValueOnly(t *testing.T) {
+	app := &fakeTdarr{docFound: true, vars: []map[string]any{
+		{"_id": "v1", "key": "bitrate_1080p", "value": "2500", "type": "library:movies"},
+		{"_id": "v2", "key": "v_cq", "value": "20", "type": "library:movies"},
+	}}
+	url := app.serve(t)
+
+	cfg := tdarrConfig(url)
+	cfg.Spec.Libraries = []transcodev1alpha1.TdarrLibrary{{
+		ID: "movies", Name: "Movies", Folder: "/data/media/movies",
+		Variables: map[string]string{"bitrate_1080p": "2500", "v_cq": "22"},
+	}}
+	runTdarr(t, cfg, true)
+
+	writes := app.varWrites()
+	if len(writes) != 1 {
+		t.Fatalf("only the changed variable should be written, got %d: %+v", len(writes), writes)
+	}
+	if writes[0].mode != "update" || writes[0].docID != "v2" {
+		t.Errorf("expected update of v2, got %+v", writes[0])
+	}
+	if writes[0].obj["value"] != "22" {
+		t.Errorf("new value not written: %v", writes[0].obj)
+	}
+}
+
+// A variable dropped from the spec must disappear from Tdarr, otherwise a flow
+// keeps reading a value that no longer exists in git.
+func TestLibraryVariablesPruneUndeclared(t *testing.T) {
+	app := &fakeTdarr{docFound: true, vars: []map[string]any{
+		{"_id": "v1", "key": "bitrate_1080p", "value": "2500", "type": "library:movies"},
+		{"_id": "v9", "key": "stale_key", "value": "x", "type": "library:movies"},
+		{"_id": "v7", "key": "other_lib", "value": "x", "type": "library:tv"},
+	}}
+	url := app.serve(t)
+
+	cfg := tdarrConfig(url)
+	cfg.Spec.Libraries = []transcodev1alpha1.TdarrLibrary{{
+		ID: "movies", Name: "Movies", Folder: "/data/media/movies",
+		Variables: map[string]string{"bitrate_1080p": "2500"},
+	}}
+	runTdarr(t, cfg, true)
+
+	writes := app.varWrites()
+	if len(writes) != 1 {
+		t.Fatalf("expected a single removal, got %d: %+v", len(writes), writes)
+	}
+	if writes[0].mode != "removeOne" || writes[0].docID != "v9" {
+		t.Errorf("expected stale_key (v9) removed, got %+v", writes[0])
 	}
 }
 

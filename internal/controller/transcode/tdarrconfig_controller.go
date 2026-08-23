@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -111,7 +112,94 @@ func (r *TdarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 }
 
 func reconcileTdarrLibrary(ctx context.Context, tc *tdarrclient.Client, lib transcodev1alpha1.TdarrLibrary) error {
-	return tc.Upsert(ctx, "LibrarySettingsJSONDB", lib.ID, buildTdarrLibraryDoc(lib))
+	if err := tc.Upsert(ctx, "LibrarySettingsJSONDB", lib.ID, buildTdarrLibraryDoc(lib)); err != nil {
+		return err
+	}
+	return reconcileTdarrLibraryVariables(ctx, tc, lib)
+}
+
+// variablesCollection holds Tdarr's user variables. Library variables are
+// documents here rather than fields on the library itself.
+const variablesCollection = "VariablesJSONDB"
+
+// libraryVariableType is the type tag Tdarr stores on a library-scoped variable.
+// Flows read these as args.userVariables.library.<key>.
+func libraryVariableType(libraryID string) string {
+	return "library:" + libraryID
+}
+
+// reconcileTdarrLibraryVariables converges the VariablesJSONDB documents for a
+// library. Each variable is its own document rather than a field on the library,
+// so they are matched by key within the library's type tag.
+func reconcileTdarrLibraryVariables(ctx context.Context, tc *tdarrclient.Client, lib transcodev1alpha1.TdarrLibrary) error {
+	varType := libraryVariableType(lib.ID)
+
+	docs, err := tc.GetAll(ctx, variablesCollection)
+	if err != nil {
+		return fmt.Errorf("listing variables: %w", err)
+	}
+
+	existing := make(map[string]map[string]any, len(docs))
+	for _, doc := range docs {
+		if t, _ := doc["type"].(string); t != varType {
+			continue
+		}
+		if key, _ := doc["key"].(string); key != "" {
+			existing[key] = doc
+		}
+	}
+
+	keys := make([]string, 0, len(lib.Variables))
+	for k := range lib.Variables {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		value := lib.Variables[key]
+		doc, found := existing[key]
+		if !found {
+			obj := map[string]any{
+				"key":   key,
+				"value": value,
+				"type":  varType,
+				"date":  time.Now().UnixMilli(),
+			}
+			if err := tc.Insert(ctx, variablesCollection, "", obj); err != nil {
+				return fmt.Errorf("inserting variable %s: %w", key, err)
+			}
+			continue
+		}
+		if current, _ := doc["value"].(string); current == value {
+			continue
+		}
+		id, _ := doc["_id"].(string)
+		obj := map[string]any{
+			"_id":   id,
+			"key":   key,
+			"value": value,
+			"type":  varType,
+			"date":  time.Now().UnixMilli(),
+		}
+		if err := tc.Update(ctx, variablesCollection, id, obj); err != nil {
+			return fmt.Errorf("updating variable %s: %w", key, err)
+		}
+	}
+
+	for key, doc := range existing {
+		if _, declared := lib.Variables[key]; declared {
+			continue
+		}
+		id, _ := doc["_id"].(string)
+		if id == "" {
+			continue
+		}
+		if err := tc.Remove(ctx, variablesCollection, id); err != nil {
+			return fmt.Errorf("removing variable %s: %w", key, err)
+		}
+	}
+
+	return nil
 }
 
 const scheduleHoursPerWeek = 168
