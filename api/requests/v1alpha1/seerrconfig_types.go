@@ -209,11 +209,12 @@ type SeerrServiceConnection struct {
 	// +optional
 	BaseUrl string `json:"baseUrl,omitempty"`
 
-	// activeProfileId is the quality profile ID to use.
+	// activeProfileId is used when activeProfileName is omitted.
 	// +optional
 	ActiveProfileId *int `json:"activeProfileId,omitempty"`
 
-	// activeProfileName is the quality profile name to use.
+	// activeProfileName is resolved against the service on each reconciliation.
+	// When set, it takes precedence over activeProfileId; exactly one match is required.
 	// +optional
 	ActiveProfileName string `json:"activeProfileName,omitempty"`
 

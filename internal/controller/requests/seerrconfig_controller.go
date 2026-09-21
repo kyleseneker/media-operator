@@ -180,7 +180,10 @@ func (r *SeerrConfigReconciler) reconcileSonarrConnection(ctx context.Context, s
 		return fmt.Errorf("resolving sonarr API key: %w", err)
 	}
 
-	payload := buildServicePayload(config.Spec.Sonarr, sonarrAPIKey)
+	payload, err := resolvedServicePayload(ctx, config.Spec.Sonarr, sonarrAPIKey)
+	if err != nil {
+		return fmt.Errorf("resolving sonarr profile: %w", err)
+	}
 	if _, ok := payload["enableSeasonFolders"]; !ok {
 		payload["enableSeasonFolders"] = false
 	}
@@ -215,7 +218,10 @@ func (r *SeerrConfigReconciler) reconcileRadarrConnection(ctx context.Context, s
 		return fmt.Errorf("resolving radarr API key: %w", err)
 	}
 
-	payload := buildServicePayload(config.Spec.Radarr, radarrAPIKey)
+	payload, err := resolvedServicePayload(ctx, config.Spec.Radarr, radarrAPIKey)
+	if err != nil {
+		return fmt.Errorf("resolving radarr profile: %w", err)
+	}
 	if _, ok := payload["minimumAvailability"]; !ok {
 		payload["minimumAvailability"] = "released"
 	}
