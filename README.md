@@ -101,3 +101,7 @@ make sync-crds               # copy generated CRDs into the charts
 ```
 
 [CONTRIBUTING.md](CONTRIBUTING.md) has the rest. Apache 2.0, see [LICENSE](LICENSE).
+
+### Seerr quality profiles
+
+Set `activeProfileName` on Seerr's Sonarr/Radarr connections to resolve the current profile ID from that service during each reconciliation. Names take precedence over `activeProfileId`, allowing a restored or recreated profile to receive a new ID. Run Recyclarr (or the profile owner) first. If the name is missing, ambiguous or the service cannot be queried, the operator leaves that Seerr connection unchanged and reports reconciliation failure. ID-only configurations retain their existing behavior.

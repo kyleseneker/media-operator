@@ -30,7 +30,6 @@ spec:
     apiKeySecretRef:
       name: arr-config-secrets
       key: SONARR_API_KEY
-    activeProfileId: 1
     activeProfileName: WEB-1080p
     activeDirectory: /data/media/tv
     isDefault: true
@@ -43,7 +42,6 @@ spec:
     apiKeySecretRef:
       name: arr-config-secrets
       key: RADARR_API_KEY
-    activeProfileId: 1
     activeProfileName: HD Bluray + WEB
     activeDirectory: /data/media/movies
     isDefault: true

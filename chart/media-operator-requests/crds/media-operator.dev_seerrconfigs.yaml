@@ -267,11 +267,13 @@ spec:
                     description: activeDirectory is the root folder path for media.
                     type: string
                   activeProfileId:
-                    description: activeProfileId is the quality profile ID to use.
+                    description: activeProfileId is used when activeProfileName is
+                      omitted.
                     type: integer
                   activeProfileName:
-                    description: activeProfileName is the quality profile name to
-                      use.
+                    description: |-
+                      activeProfileName is resolved against the service on each reconciliation.
+                      When set, it takes precedence over activeProfileId; exactly one match is required.
                     type: string
                   apiKeySecretRef:
                     description: apiKeySecretRef references a Secret containing the
@@ -381,11 +383,13 @@ spec:
                     description: activeDirectory is the root folder path for media.
                     type: string
                   activeProfileId:
-                    description: activeProfileId is the quality profile ID to use.
+                    description: activeProfileId is used when activeProfileName is
+                      omitted.
                     type: integer
                   activeProfileName:
-                    description: activeProfileName is the quality profile name to
-                      use.
+                    description: |-
+                      activeProfileName is resolved against the service on each reconciliation.
+                      When set, it takes precedence over activeProfileId; exactly one match is required.
                     type: string
                   apiKeySecretRef:
                     description: apiKeySecretRef references a Secret containing the
