@@ -9,7 +9,6 @@ rules:
       - media-operator.dev
     resources:
       - seerrconfigs
-      - maintainerrconfigs
     verbs:
       - get
       - list
@@ -22,7 +21,6 @@ rules:
       - media-operator.dev
     resources:
       - seerrconfigs/status
-      - maintainerrconfigs/status
     verbs:
       - get
       - update
@@ -31,7 +29,6 @@ rules:
       - media-operator.dev
     resources:
       - seerrconfigs/finalizers
-      - maintainerrconfigs/finalizers
     verbs:
       - update
   - apiGroups:
@@ -53,3 +50,13 @@ rules:
     verbs:
       - create
       - patch
+{{- if not .Values.watchNamespace }}
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+{{- end }}

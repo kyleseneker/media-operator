@@ -39,6 +39,7 @@ func (e *APIError) DetailedMessage() string {
 // HTTPClient is a generic HTTP client that supports all auth strategies.
 type HTTPClient struct {
 	baseURL    string
+	owner      string
 	authType   AuthType
 	httpClient *http.Client
 
@@ -222,6 +223,11 @@ func WithTransport(rt http.RoundTripper) HTTPClientOption {
 // a label on custom Prometheus metrics.
 func WithAppLabel(app string) HTTPClientOption {
 	return func(c *HTTPClient) { c.appLabel = app }
+}
+
+// WithOwner scopes cached write state to a Kubernetes resource, including its UID.
+func WithOwner(owner string) HTTPClientOption {
+	return func(c *HTTPClient) { c.owner = owner }
 }
 
 // AppLabel returns the app identifier used for metrics labeling.

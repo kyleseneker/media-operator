@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -67,6 +68,11 @@ func (r *ReconcileResult) Message() string {
 func ReconcileApp(ctx context.Context, client *HTTPClient, def AppDefinition, sections map[string]any, resources map[string][]map[string]any, policy SyncPolicy, previouslyManaged map[string][]string) ReconcileResult {
 	logger := log.FromContext(ctx)
 	result := ReconcileResult{Managed: map[string][]string{}}
+	// Retain ownership until a remote deletion succeeds, including omitted
+	// sections and failed writes. Never lose the ability to retry cleanup.
+	for name, managed := range previouslyManaged {
+		result.Managed[name] = slices.Clone(managed)
+	}
 
 	// Reconcile settings (singleton config endpoints)
 	for _, s := range def.Settings {
@@ -89,9 +95,11 @@ func ReconcileApp(ctx context.Context, client *HTTPClient, def AppDefinition, se
 		if !ok || len(items) == 0 {
 			continue
 		}
-		var applied []map[string]any
+		failed := false
 		for _, item := range items {
-			if err := reconcileResource(ctx, client, r, item, policy.Observe); err != nil {
+			created, err := reconcileResourceTracked(ctx, client, r, item, policy.Observe)
+			if err != nil {
+				failed = true
 				matchVal := item[r.MatchField]
 				logger.Error(err, "failed to reconcile resource", "type", r.Name, "match", matchVal)
 				logAPIErrorDetail(ctx, err)
@@ -99,19 +107,22 @@ func ReconcileApp(ctx context.Context, client *HTTPClient, def AppDefinition, se
 			} else {
 				matchVal := item[r.MatchField]
 				result.Synced = append(result.Synced, fmt.Sprintf("%s(%v)", r.Name, matchVal))
-				applied = append(applied, item)
-				if s, ok := matchVal.(string); ok {
+				if s, ok := matchVal.(string); ok && created && !slices.Contains(result.Managed[r.Name], s) {
 					result.Managed[r.Name] = append(result.Managed[r.Name], s)
 				}
 			}
 		}
 
-		// Prune unmanaged resources: delete any existing resources not in the desired list.
+		// Prune previously owned resources that are absent from the desired list.
 		// Only runs when prune is enabled, the resource type is prunable, and at least one
 		// desired item was specified (so an omitted section doesn't wipe everything).
-		if policy.Prune && !policy.Observe && r.Prunable {
-			pruned, err := pruneResources(ctx, client, r, applied, previouslyManaged[r.Name])
+		// Any failed apply for this type blocks pruning until a later successful pass.
+		if policy.Prune && !policy.Observe && r.Prunable && !failed {
+			pruned, err := pruneResources(ctx, client, r, items, previouslyManaged[r.Name])
 			result.Pruned = append(result.Pruned, pruned...)
+			for _, resource := range pruned {
+				result.Managed[r.Name] = slices.DeleteFunc(result.Managed[r.Name], func(name string) bool { return name == resource.Name })
+			}
 			if err != nil {
 				logger.Error(err, "failed to prune resources", "type", r.Name)
 				logAPIErrorDetail(ctx, err)
@@ -208,7 +219,7 @@ func reconcileSetting(ctx context.Context, client *HTTPClient, path string, desi
 	if err != nil {
 		return fmt.Errorf("merging: %w", err)
 	}
-	key := secretKey(client.AppLabel(), "setting", path)
+	key := client.secretKey("setting", path)
 	if !out.Changed && !reconciler.SecretsChangedSince(key, out.SecretDigest) {
 		return nil
 	}
@@ -226,9 +237,15 @@ func reconcileSetting(ctx context.Context, client *HTTPClient, path string, desi
 
 // reconcileResource handles a list-based resource endpoint.
 func reconcileResource(ctx context.Context, client *HTTPClient, endpoint ResourceEndpoint, desired map[string]any, observe bool) error {
+	_, err := reconcileResourceTracked(ctx, client, endpoint, desired, observe)
+	return err
+}
+
+// reconcileResourceTracked reports creation separately from updates and adoption.
+func reconcileResourceTracked(ctx context.Context, client *HTTPClient, endpoint ResourceEndpoint, desired map[string]any, observe bool) (bool, error) {
 	existing, err := client.GetJSONList(ctx, endpoint.Path)
 	if err != nil {
-		return fmt.Errorf("listing: %w", err)
+		return false, fmt.Errorf("listing: %w", err)
 	}
 
 	desiredMatch, _ := desired[endpoint.MatchField].(string)
@@ -239,29 +256,29 @@ func reconcileResource(ctx context.Context, client *HTTPClient, endpoint Resourc
 			// Found existing resource
 			switch endpoint.Policy {
 			case CreateOnly:
-				return nil // exists, don't update
+				return false, nil // exists, don't update
 			case CreateOrUpdate, UpdateAlways:
 				id, ok := e["id"].(float64)
 				if !ok {
-					return fmt.Errorf("resource %q has no id", desiredMatch)
+					return false, fmt.Errorf("resource %q has no id", desiredMatch)
 				}
 				out, err := reconciler.MergeDesired(e, desired)
 				if err != nil {
-					return err
+					return false, err
 				}
-				key := secretKey(client.AppLabel(), endpoint.Name, desiredMatch)
+				key := client.secretKey(endpoint.Name, desiredMatch)
 				if !out.Changed && !reconciler.SecretsChangedSince(key, out.SecretDigest) {
-					return nil
+					return false, nil
 				}
 				metrics.DriftCorrectedTotal.WithLabelValues(client.AppLabel(), endpoint.Name, desiredMatch).Inc()
 				if observe {
-					return nil
+					return false, nil
 				}
 				if err := client.PutJSON(ctx, fmt.Sprintf("%s/%d", endpoint.Path, int(id)), out.Merged); err != nil {
-					return err
+					return false, err
 				}
 				reconciler.RecordSecrets(key, out.SecretDigest)
-				return nil
+				return false, nil
 			}
 		}
 	}
@@ -269,15 +286,16 @@ func reconcileResource(ctx context.Context, client *HTTPClient, endpoint Resourc
 	// Not found — create
 	if observe {
 		metrics.DriftCorrectedTotal.WithLabelValues(client.AppLabel(), endpoint.Name, desiredMatch).Inc()
-		return nil
+		return false, nil
 	}
-	return client.PostJSON(ctx, endpoint.Path, desired)
+	err = client.PostJSON(ctx, endpoint.Path, desired)
+	return err == nil, err
 }
 
-// secretKey identifies a resource in the store of last-written secrets. It
-// mirrors the drift metric's labels so the two line up when reading both.
-func secretKey(app, resourceType, name string) string {
-	return app + "|" + resourceType + "|" + name
+// secretKey isolates last-written secrets by target and Kubernetes owner. Quoted
+// components keep arbitrary resource names from colliding with separators.
+func (c *HTTPClient) secretKey(resourceType, name string) string {
+	return fmt.Sprintf("%q/%q/%q/%q/%q", c.baseURL, c.owner, c.AppLabel(), resourceType, name)
 }
 
 func isNilInterface(v any) bool {

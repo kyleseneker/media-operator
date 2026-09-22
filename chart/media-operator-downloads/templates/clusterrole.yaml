@@ -53,3 +53,13 @@ rules:
     verbs:
       - create
       - patch
+{{- if not .Values.watchNamespace }}
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+{{- end }}

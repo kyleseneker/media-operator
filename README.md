@@ -84,6 +84,13 @@ doesn't matter, the operator just reads them and re-reconciles when they change.
 - **Self-signed certs work.** `connection.tls.caSecretRef` for a private CA, or
   `insecureSkipVerify` if you don't care.
 
+When upgrading, existing `status.managedResources` records are retained. Older
+versions also recorded matching pre-existing resources as managed; the operator
+cannot determine their origin retroactively. Review these records before enabling
+prune on an existing installation. New Servarr ownership records are added only
+after successful creation, and failed updates or deletions retain ownership so
+cleanup can be retried.
+
 Metrics are on `:8443/metrics` over HTTPS behind TokenReview auth, enabled by
 default. `media_operator_config_synced` is the one to alert on — it goes to 0 when
 a resource stops reconciling, which no error counter will tell you.

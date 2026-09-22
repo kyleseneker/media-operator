@@ -53,7 +53,7 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
-	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthAPIKey, engine.WithAPIKey(apiKey), engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("prowlarr"))
+	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthAPIKey, engine.WithOwner(config.Namespace+"/"+config.Name+"/"+string(config.UID)), engine.WithAPIKey(apiKey), engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("prowlarr"))
 	if err != nil {
 		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonInvalidConfig, err.Error())
 		return ctrl.Result{}, nil
@@ -102,16 +102,11 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		Notifications:   config.Spec.Notifications,
 	}, tagIDs)
 
-	rest := engine.ReconcileApp(ctx, hc, def, nil, resources, policy, config.Status.ManagedResources)
+	rest := engine.ReconcileApp(ctx, hc, def, nil, resources, policy, result.Managed)
 	result.Synced = append(result.Synced, rest.Synced...)
 	result.Errors = append(result.Errors, rest.Errors...)
 	result.Pruned = append(result.Pruned, rest.Pruned...)
-	if result.Managed == nil {
-		result.Managed = map[string][]string{}
-	}
-	for k, v := range rest.Managed {
-		result.Managed[k] = append(result.Managed[k], v...)
-	}
+	result.Managed = rest.Managed
 	ctrlcommon.UpdateStatusManaged(&config, result.Managed)
 	ctrlcommon.EmitPruneEvents(r.Recorder, &config, result.Pruned)
 	ctrlcommon.UpdateStatus(ctx, r.Status(), &config, result.Success(), ctrlcommon.ResultReason(result), result.Message())

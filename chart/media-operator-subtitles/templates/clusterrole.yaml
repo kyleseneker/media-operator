@@ -8,11 +8,6 @@ rules:
   - apiGroups:
       - media-operator.dev
     resources:
-      - sonarrconfigs
-      - radarrconfigs
-      - lidarrconfigs
-      - readarrconfigs
-      - prowlarrconfigs
       - bazarrconfigs
     verbs:
       - get
@@ -25,11 +20,6 @@ rules:
   - apiGroups:
       - media-operator.dev
     resources:
-      - sonarrconfigs/status
-      - radarrconfigs/status
-      - lidarrconfigs/status
-      - readarrconfigs/status
-      - prowlarrconfigs/status
       - bazarrconfigs/status
     verbs:
       - get
@@ -38,11 +28,6 @@ rules:
   - apiGroups:
       - media-operator.dev
     resources:
-      - sonarrconfigs/finalizers
-      - radarrconfigs/finalizers
-      - lidarrconfigs/finalizers
-      - readarrconfigs/finalizers
-      - prowlarrconfigs/finalizers
       - bazarrconfigs/finalizers
     verbs:
       - update
@@ -65,3 +50,13 @@ rules:
     verbs:
       - create
       - patch
+{{- if not .Values.watchNamespace }}
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+{{- end }}
