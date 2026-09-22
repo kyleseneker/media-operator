@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -37,7 +38,8 @@ func (r *FlareSolverrConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, nil); done {
+	cleanup := func(ctx context.Context) error { return cleanupFlareSolverrSessions(ctx, r.Client, &config) }
+	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, cleanup); done {
 		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
@@ -105,7 +107,7 @@ func (r *FlareSolverrConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 func reconcileFlareSolverrSessions(ctx context.Context, fc *flaresolverrclient.Client, desired []indexersv1alpha1.FlareSolverrSession, prune bool, previouslyManaged []string) ([]string, error) {
 	existing, err := fc.ListSessions(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("listing sessions: %w", err)
+		return slices.Clone(previouslyManaged), fmt.Errorf("listing sessions: %w", err)
 	}
 
 	existingSet := make(map[string]bool, len(existing))
@@ -118,14 +120,16 @@ func reconcileFlareSolverrSessions(ctx context.Context, fc *flaresolverrclient.C
 		desiredSet[s.Name] = true
 	}
 
-	managed := make([]string, 0, len(desired))
+	managed := slices.Clone(previouslyManaged)
 	for _, s := range desired {
 		if !existingSet[s.Name] {
 			if err := fc.CreateSession(ctx, s.Name); err != nil {
 				return managed, fmt.Errorf("creating session %q: %w", s.Name, err)
 			}
+			if !slices.Contains(managed, s.Name) {
+				managed = append(managed, s.Name)
+			}
 		}
-		managed = append(managed, s.Name)
 	}
 
 	if !prune {
@@ -136,13 +140,20 @@ func reconcileFlareSolverrSessions(ctx context.Context, fc *flaresolverrclient.C
 	for _, s := range previouslyManaged {
 		managedSet[s] = true
 	}
+	var candidates []string
 	for _, s := range existing {
-		if desiredSet[s] || !managedSet[s] {
-			continue
+		if !desiredSet[s] && managedSet[s] {
+			candidates = append(candidates, s)
 		}
+	}
+	if len(candidates) > engine.DefaultMaxPruneCount {
+		return managed, fmt.Errorf("refusing to prune %d sessions (threshold is %d)", len(candidates), engine.DefaultMaxPruneCount)
+	}
+	for _, s := range candidates {
 		if err := fc.DestroySession(ctx, s); err != nil {
 			return managed, fmt.Errorf("destroying session %q: %w", s, err)
 		}
+		managed = slices.DeleteFunc(managed, func(name string) bool { return name == s })
 	}
 
 	return managed, nil
@@ -151,7 +162,7 @@ func reconcileFlareSolverrSessions(ctx context.Context, fc *flaresolverrclient.C
 // SetupWithManager sets up the controller with the Manager.
 func (r *FlareSolverrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&indexersv1alpha1.FlareSolverrConfig{}).
+		For(&indexersv1alpha1.FlareSolverrConfig{}, builder.WithPredicates(ctrlcommon.ConfigChangedPredicate())).
 		Named("flaresolverrconfig").
 		Complete(r)
 }
@@ -186,4 +197,21 @@ func observeFlareSolverrSessions(ctx context.Context, fc *flaresolverrclient.Cli
 		}
 	}
 	return drift, len(existing), nil
+}
+
+func cleanupFlareSolverrSessions(ctx context.Context, c client.Reader, config *indexersv1alpha1.FlareSolverrConfig) error {
+	managed := config.Status.ManagedResources["sessions"]
+	if len(managed) == 0 {
+		return nil
+	}
+	tlsConfig, err := engine.ResolveTLSConfig(ctx, c, config.Namespace, config.Spec.Connection.TLS)
+	if err != nil {
+		return err
+	}
+	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthNone, engine.WithTLSConfig(tlsConfig), engine.WithAppLabel("flaresolverr"))
+	if err != nil {
+		return err
+	}
+	_, err = reconcileFlareSolverrSessions(ctx, flaresolverrclient.NewClient(hc), nil, true, managed)
+	return err
 }

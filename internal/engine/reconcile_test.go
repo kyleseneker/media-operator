@@ -213,3 +213,37 @@ func TestObserveDifference(t *testing.T) {
 		})
 	}
 }
+
+func TestDeleteManagedResourcesRespectsOwnershipAndDependencyOrder(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(strconv.FormatBool(fail), func(t *testing.T) {
+			var deleted []string
+			hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodDelete {
+					deleted = append(deleted, r.URL.Path)
+					if fail {
+						w.WriteHeader(500)
+					}
+					return
+				}
+				_ = json.NewEncoder(w).Encode([]map[string]any{{"id": 1, "name": "owned"}, {"id": 2, "name": "manual"}})
+			})
+			def := AppDefinition{Resources: []ResourceEndpoint{
+				{Name: "tags", Path: "/tags", MatchField: "name"},
+				{Name: "formats", Path: "/formats", MatchField: "name", Prunable: true},
+				{Name: "profiles", Path: "/profiles", MatchField: "name", Prunable: true},
+			}}
+			managed := map[string][]string{"tags": {"owned"}, "formats": {"owned"}, "profiles": {"owned"}}
+			pruned, err := DeleteManagedResources(context.Background(), hc, def, managed)
+			if fail {
+				require.Error(t, err)
+				assert.Equal(t, []string{"/profiles/1"}, deleted)
+				assert.Empty(t, pruned)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, []string{"/profiles/1", "/formats/1"}, deleted)
+				assert.Len(t, pruned, 2)
+			}
+		})
+	}
+}

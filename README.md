@@ -74,7 +74,12 @@ doesn't matter, the operator just reads them and re-reconciles when they change.
   itself, tracked in `status.managedResources`. Root folders and tags are never
   pruned, and prune bails out entirely if more than 25 candidates turn up.
 - **Deleting a CR leaves the app's config alone.** `deletionPolicy` defaults to
-  `orphan`. Set it to `delete` if you want the operator to clean up after itself.
+  `orphan`. For Sonarr, Radarr, Lidarr, Readarr, Prowlarr, and FlareSolverr, set it to
+  `delete` to clean up tracked, prunable resources. Root folders, tags, and
+  singleton settings remain in place. Other integrations reject `delete` with
+  `InvalidConfig`. `delete` also conflicts with `driftPolicy: observe`. Cleanup
+  retries for up to 10 minutes; after that the finalizer is released with a warning
+  event, potentially leaving remote resources behind.
 - **Settings drift is corrected every cycle; root folders and Jellyfin libraries
   are create-only.** Once they exist the operator won't modify them.
 - **Prowlarr takes tag labels, the other Servarr apps take tag IDs.** Prowlarr
@@ -100,7 +105,7 @@ report `Synced=False` with reason `DriftDetected` when differences remain.
 When upgrading, existing `status.managedResources` records are retained. Older
 versions also recorded matching pre-existing resources as managed; the operator
 cannot determine their origin retroactively. Review these records before enabling
-prune on an existing installation. New Servarr ownership records are added only
+prune on an existing installation. New Servarr and FlareSolverr ownership records are added only
 after successful creation, and failed updates or deletions retain ownership so
 cleanup can be retried.
 

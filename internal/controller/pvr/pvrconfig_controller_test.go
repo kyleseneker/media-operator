@@ -11,7 +11,11 @@ import (
 	"sync"
 	"testing"
 
+	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
+	pvrv1alpha1 "github.com/kyleseneker/media-operator/api/pvr/v1alpha1"
+	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -21,10 +25,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
-	pvrv1alpha1 "github.com/kyleseneker/media-operator/api/pvr/v1alpha1"
-	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 )
 
 const conditionTrue = "True"
@@ -427,6 +427,34 @@ func TestPruneRemovesPreviouslyManagedResources(t *testing.T) {
 
 			if !fa.sawPrefix("DELETE", fa.path("downloadclient")) {
 				t.Error("prune did not remove a resource it had previously created")
+			}
+		})
+	}
+}
+
+func TestDeletePolicyCleansOwnedResourcesAcrossPVRControllers(t *testing.T) {
+	for _, app := range pvrApps {
+		t.Run(app.name, func(t *testing.T) {
+			fa, url := newFakeArr(t, app.apiVer, map[string][]map[string]any{"downloadclient": {{"id": float64(7), "name": "owned"}, {"id": float64(8), "name": "manual"}}})
+			cfg := app.build(url, buildOpts{prune: true, managed: map[string][]string{"downloadClients": {"owned"}, "tags": {"shared"}, "rootFolders": {"/media"}}})
+			policy := "delete"
+			cfg.GetReconcileConfig().DeletionPolicy = &policy
+			cfg.SetFinalizers([]string{ctrlcommon.Finalizer})
+			now := metav1.Now()
+			cfg.SetDeletionTimestamp(&now)
+			c := run(t, app, apiKeySecret(), cfg)
+			if !fa.saw("DELETE", fa.path("downloadclient/7")) {
+				t.Fatal("owned resource was not cleaned up")
+			}
+			if fa.saw("DELETE", fa.path("downloadclient/8")) {
+				t.Fatal("manual resource was deleted")
+			}
+			if fa.sawPrefix("DELETE", fa.path("tag")) || fa.sawPrefix("DELETE", fa.path("rootfolder")) {
+				t.Fatal("protected resources were deleted")
+			}
+			err := c.Get(context.Background(), client.ObjectKeyFromObject(cfg), app.empty())
+			if !apierrors.IsNotFound(err) {
+				t.Fatalf("finalizer not released: %v", err)
 			}
 		})
 	}

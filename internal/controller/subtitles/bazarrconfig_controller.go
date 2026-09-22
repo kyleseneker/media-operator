@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -192,7 +193,7 @@ func (r *BazarrConfigReconciler) reconcileBazarrProviders(ctx context.Context, b
 // SetupWithManager sets up the controller with the Manager.
 func (r *BazarrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&subtitlesv1alpha1.BazarrConfig{}).
+		For(&subtitlesv1alpha1.BazarrConfig{}, builder.WithPredicates(ctrlcommon.ConfigChangedPredicate())).
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
 			return ctrlcommon.FindConfigsBySecret(ctx, r.Client, obj, &subtitlesv1alpha1.BazarrConfigList{}, func(list *subtitlesv1alpha1.BazarrConfigList) []reconcile.Request {
 				var reqs []reconcile.Request

@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -497,7 +498,7 @@ func referencesSecret(config *automationv1alpha1.AutobrrConfig, secretName strin
 // SetupWithManager sets up the controller with the Manager.
 func (r *AutobrrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&automationv1alpha1.AutobrrConfig{}).
+		For(&automationv1alpha1.AutobrrConfig{}, builder.WithPredicates(ctrlcommon.ConfigChangedPredicate())).
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
 			return ctrlcommon.FindConfigsBySecret(ctx, r.Client, obj, &automationv1alpha1.AutobrrConfigList{}, func(list *automationv1alpha1.AutobrrConfigList) []reconcile.Request {
 				var reqs []reconcile.Request

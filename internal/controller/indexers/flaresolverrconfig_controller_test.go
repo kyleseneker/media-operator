@@ -3,6 +3,7 @@ package indexers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,10 @@ import (
 	"sync"
 	"testing"
 
+	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
+	indexersv1alpha1 "github.com/kyleseneker/media-operator/api/indexers/v1alpha1"
+	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -18,9 +23,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-
-	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
-	indexersv1alpha1 "github.com/kyleseneker/media-operator/api/indexers/v1alpha1"
 )
 
 // fakeFlareSolverr speaks the single-endpoint /v1 command protocol and records
@@ -199,4 +201,54 @@ func TestFlareSolverrObserveDoesNotCreatePruneOrClaimSessions(t *testing.T) {
 		}
 	}
 	t.Fatalf("drift was not reported: %+v", cfg.Status.Conditions)
+}
+
+func TestFlareSolverrDeletePolicyAndOwnership(t *testing.T) {
+	app := &fakeFlareSolverr{sessions: []string{"owned", "foreign"}}
+	cfg := flareConfig(app.serve(t), false, []string{"owned"})
+	policy := "delete"
+	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DeletionPolicy: &policy}
+	cfg.Finalizers = []string{ctrlcommon.Finalizer}
+	now := metav1.Now()
+	cfg.DeletionTimestamp = &now
+	c := runFlare(t, cfg)
+	if !app.ran("sessions.destroy", "owned") || app.ran("sessions.destroy", "foreign") {
+		t.Fatal("cleanup violated ownership")
+	}
+	if err := c.Get(context.Background(), client.ObjectKeyFromObject(cfg), &indexersv1alpha1.FlareSolverrConfig{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("finalizer not released: %v", err)
+	}
+}
+
+func TestFlareSolverrDoesNotAdoptExistingSessions(t *testing.T) {
+	app := &fakeFlareSolverr{sessions: []string{"manual"}}
+	cfg := flareConfig(app.serve(t), false, nil, "manual")
+	c := runFlare(t, cfg)
+	if err := c.Get(context.Background(), client.ObjectKeyFromObject(cfg), cfg); err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Status.ManagedResources["sessions"]) != 0 {
+		t.Fatalf("manual session adopted: %v", cfg.Status.ManagedResources)
+	}
+}
+
+func TestFlareSolverrPruneLimitPreservesOwnership(t *testing.T) {
+	names := make([]string, 0, 26)
+	for i := range 26 {
+		names = append(names, fmt.Sprintf("session-%d", i))
+	}
+	app := &fakeFlareSolverr{sessions: names}
+	cfg := flareConfig(app.serve(t), true, names)
+	c := runFlare(t, cfg)
+	if err := c.Get(context.Background(), client.ObjectKeyFromObject(cfg), cfg); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(names, cfg.Status.ManagedResources["sessions"]) {
+		t.Fatal("ownership lost when pruning was refused")
+	}
+	for _, name := range names {
+		if app.ran("sessions.destroy", name) {
+			t.Fatal("prune limit ignored")
+		}
+	}
 }

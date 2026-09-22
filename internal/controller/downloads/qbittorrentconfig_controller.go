@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -208,7 +209,7 @@ func reconcileQBCategory(ctx context.Context, qb *qbclient.Client, cat downloads
 // SetupWithManager sets up the controller with the Manager.
 func (r *QBittorrentConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&downloadsv1alpha1.QBittorrentConfig{}).
+		For(&downloadsv1alpha1.QBittorrentConfig{}, builder.WithPredicates(ctrlcommon.ConfigChangedPredicate())).
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
 			return ctrlcommon.FindConfigsBySecret(ctx, r.Client, obj, &downloadsv1alpha1.QBittorrentConfigList{}, func(list *downloadsv1alpha1.QBittorrentConfigList) []reconcile.Request {
 				var reqs []reconcile.Request

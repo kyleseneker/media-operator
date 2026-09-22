@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -259,7 +260,7 @@ func maintainerrReferencesSecret(config *curationv1alpha1.MaintainerrConfig, sec
 // SetupWithManager sets up the controller with the Manager.
 func (r *MaintainerrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&curationv1alpha1.MaintainerrConfig{}).
+		For(&curationv1alpha1.MaintainerrConfig{}, builder.WithPredicates(ctrlcommon.ConfigChangedPredicate())).
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
 			return ctrlcommon.FindConfigsBySecret(ctx, r.Client, obj, &curationv1alpha1.MaintainerrConfigList{}, func(list *curationv1alpha1.MaintainerrConfigList) []reconcile.Request {
 				var reqs []reconcile.Request

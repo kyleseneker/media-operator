@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -37,7 +38,10 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, nil); done {
+	cleanup := func(ctx context.Context) error {
+		return ctrlcommon.CleanupApp(ctx, r.Client, r.Recorder, &config, config.Spec.Connection, prowlarrclient.ProwlarrDefinition(), "prowlarr")
+	}
+	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, cleanup); done {
 		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
@@ -129,7 +133,7 @@ func (r *ProwlarrConfigReconciler) buildApplicationPayloads(ctx context.Context,
 
 func (r *ProwlarrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&indexersv1alpha1.ProwlarrConfig{}).
+		For(&indexersv1alpha1.ProwlarrConfig{}, builder.WithPredicates(ctrlcommon.ConfigChangedPredicate())).
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
 			return ctrlcommon.FindConfigsBySecret(ctx, r.Client, obj, &indexersv1alpha1.ProwlarrConfigList{}, func(list *indexersv1alpha1.ProwlarrConfigList) []reconcile.Request {
 				var reqs []reconcile.Request

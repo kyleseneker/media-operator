@@ -10,7 +10,11 @@ import (
 	"sync"
 	"testing"
 
+	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
+	indexersv1alpha1 "github.com/kyleseneker/media-operator/api/indexers/v1alpha1"
+	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -19,9 +23,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-
-	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
-	indexersv1alpha1 "github.com/kyleseneker/media-operator/api/indexers/v1alpha1"
 )
 
 // fakeProwlarr records request bodies so payload shaping — notably tag label to
@@ -233,5 +234,26 @@ func TestProwlarrMissingSecretDoesNotContactApp(t *testing.T) {
 
 	if app.sawPrefix("GET", "/api/v1/") {
 		t.Error("contacted the app despite failing to resolve its API key")
+	}
+}
+
+func TestProwlarrDeletePolicyCleansTrackedResources(t *testing.T) {
+	app := &fakeProwlarr{existing: map[string][]map[string]any{"indexer": {{"id": float64(7), "name": "owned"}, {"id": float64(8), "name": "manual"}}}}
+	cfg := prowlarrConfig(app.serve(t))
+	policy := "delete"
+	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DeletionPolicy: &policy}
+	cfg.Status.ManagedResources = map[string][]string{"indexers": {"owned"}}
+	cfg.Finalizers = []string{ctrlcommon.Finalizer}
+	now := metav1.Now()
+	cfg.DeletionTimestamp = &now
+	c := runProwlarr(t, cfg, prowlarrSecret())
+	if !app.sawPrefix("DELETE", "/api/v1/indexer/7") {
+		t.Fatal("owned indexer was not deleted")
+	}
+	if app.sawPrefix("DELETE", "/api/v1/indexer/8") {
+		t.Fatal("manual indexer was deleted")
+	}
+	if err := c.Get(context.Background(), client.ObjectKeyFromObject(cfg), &indexersv1alpha1.ProwlarrConfig{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("finalizer not released: %v", err)
 	}
 }

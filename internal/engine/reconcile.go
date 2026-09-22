@@ -322,3 +322,22 @@ func ObserveDifference(app, resourceType, name string, current map[string]any, d
 	}
 	return drift, nil
 }
+
+// DeleteManagedResources removes only tracked, prunable resources. Reverse
+// declaration order removes dependents (for example profiles) before resources
+// they reference (custom formats). Settings, root folders and tags are retained.
+func DeleteManagedResources(ctx context.Context, client *HTTPClient, def AppDefinition, managed map[string][]string) ([]PrunedResource, error) {
+	var deleted []PrunedResource
+	for i := len(def.Resources) - 1; i >= 0; i-- {
+		endpoint := def.Resources[i]
+		if !endpoint.Prunable || len(managed[endpoint.Name]) == 0 {
+			continue
+		}
+		pruned, err := pruneResources(ctx, client, endpoint, nil, managed[endpoint.Name])
+		deleted = append(deleted, pruned...)
+		if err != nil {
+			return deleted, fmt.Errorf("cleaning up %s: %w", endpoint.Name, err)
+		}
+	}
+	return deleted, nil
+}

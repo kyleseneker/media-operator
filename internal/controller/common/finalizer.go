@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -12,7 +13,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	"github.com/kyleseneker/media-operator/internal/engine"
+	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
 
 // Finalizer is added to every config resource so deletion can be handled.
@@ -50,8 +53,19 @@ func HandleDeletion(ctx context.Context, c client.Client, recorder events.EventR
 		policy = *rc.DeletionPolicy
 	}
 
-	if policy == DeletionPolicyDelete && remove != nil {
-		if err := remove(ctx); err != nil {
+	if policy == DeletionPolicyDelete {
+		// Observe forbids application changes, including cleanup during deletion.
+		// Unsupported cleanup must be reported instead of silently orphaning.
+		var cleanupErr error
+		switch {
+		case ObserveOnly(obj.GetReconcileConfig()):
+			cleanupErr = fmt.Errorf("deletionPolicy delete conflicts with driftPolicy observe")
+		case remove == nil:
+			cleanupErr = fmt.Errorf("deletionPolicy delete is not supported by this integration")
+		default:
+			cleanupErr = remove(ctx)
+		}
+		if err := cleanupErr; err != nil {
 			if expired(obj) {
 				logger.Error(err, "giving up removing remote resources; releasing finalizer")
 				if recorder != nil {
@@ -93,5 +107,46 @@ func HandleLifecycle(ctx context.Context, c client.Client, recorder events.Event
 	if err := EnsureFinalizer(ctx, c, obj); err != nil {
 		return true, 30 * time.Second
 	}
+	if rc := obj.GetReconcileConfig(); rc != nil && rc.DeletionPolicy != nil && *rc.DeletionPolicy == DeletionPolicyDelete {
+		if remove == nil || ObserveOnly(rc) {
+			message := "deletionPolicy delete is not supported by this integration; use orphan"
+			if ObserveOnly(rc) {
+				message = "deletionPolicy delete conflicts with driftPolicy observe; use orphan"
+			}
+			UpdateStatusUnreachable(ctx, c.Status(), obj, engine.ReasonInvalidConfig, message)
+			return true, ReconcileInterval(rc)
+		}
+	}
 	return false, 0
+}
+
+// CleanupApp resolves only the credentials needed for deletion. Unrelated spec
+// Secrets must not prevent cleanup, and empty ownership needs no app connection.
+func CleanupApp(ctx context.Context, c client.Reader, recorder events.EventRecorder, obj ConfigResource, connection commonv1alpha1.AppConnection, def engine.AppDefinition, app string) error {
+	managed := *obj.GetManagedResources()
+	hasResources := false
+	for _, endpoint := range def.Resources {
+		if endpoint.Prunable && len(managed[endpoint.Name]) > 0 {
+			hasResources = true
+			break
+		}
+	}
+	if !hasResources {
+		return nil
+	}
+	apiKey, err := reconciler.ResolveSecretKeyRef(ctx, c, obj.GetNamespace(), connection.APIKeySecretRef)
+	if err != nil {
+		return err
+	}
+	tlsConfig, err := engine.ResolveTLSConfig(ctx, c, obj.GetNamespace(), connection.TLS)
+	if err != nil {
+		return err
+	}
+	hc, err := engine.NewHTTPClient(connection.URL, engine.AuthAPIKey, engine.WithAPIKey(apiKey), engine.WithTLSConfig(tlsConfig), engine.WithAppLabel(app))
+	if err != nil {
+		return err
+	}
+	deleted, err := engine.DeleteManagedResources(ctx, hc, def, managed)
+	EmitPruneEvents(recorder, obj, deleted)
+	return err
 }

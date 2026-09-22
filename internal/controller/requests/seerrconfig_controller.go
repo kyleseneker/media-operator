@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -380,7 +381,7 @@ func seerrReferencesSecret(c *requestsv1alpha1.SeerrConfig, secretName string) b
 // SetupWithManager sets up the controller with the Manager.
 func (r *SeerrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&requestsv1alpha1.SeerrConfig{}).
+		For(&requestsv1alpha1.SeerrConfig{}, builder.WithPredicates(ctrlcommon.ConfigChangedPredicate())).
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
 			return ctrlcommon.FindConfigsBySecret(ctx, r.Client, obj, &requestsv1alpha1.SeerrConfigList{}, func(list *requestsv1alpha1.SeerrConfigList) []reconcile.Request {
 				var reqs []reconcile.Request

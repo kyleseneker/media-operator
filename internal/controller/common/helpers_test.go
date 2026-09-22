@@ -7,12 +7,14 @@ import (
 	"time"
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
+	pvrv1alpha1 "github.com/kyleseneker/media-operator/api/pvr/v1alpha1"
 	"github.com/kyleseneker/media-operator/internal/engine"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 )
 
 func TestReconcileInterval(t *testing.T) {
@@ -152,13 +154,13 @@ func TestObservationStatus(t *testing.T) {
 }
 
 func TestRejectUnsupportedObserve(t *testing.T) {
-	for _, policy := range []string{"enforce", "observe"} {
+	for _, policy := range []string{"enforce", DriftPolicyObserve} {
 		t.Run(policy, func(t *testing.T) {
 			obj := newConfig("", 0)
 			obj.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &policy}
 			c := testClient(obj).WithStatusSubresource(obj).Build()
 			rejected := RejectUnsupportedObserve(context.Background(), c.Status(), obj)
-			assert.Equal(t, policy == "observe", rejected)
+			assert.Equal(t, policy == DriftPolicyObserve, rejected)
 			require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(obj), obj))
 			condition := meta.FindStatusCondition(obj.Status.Conditions, "Synced")
 			if rejected {
@@ -169,4 +171,34 @@ func TestRejectUnsupportedObserve(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConfigChangedPredicate(t *testing.T) {
+	old := newConfig("", 0)
+	old.Generation = 1
+	cases := []struct {
+		name   string
+		change func(*pvrv1alpha1.SonarrConfig)
+		want   bool
+	}{
+		{"status", func(c *pvrv1alpha1.SonarrConfig) { now := metav1.Now(); c.Status.LastSyncTime = &now }, false},
+		{"resource version", func(c *pvrv1alpha1.SonarrConfig) { c.ResourceVersion = "2" }, false},
+		{"spec", func(c *pvrv1alpha1.SonarrConfig) { c.Generation++ }, true},
+		{"deletion", func(c *pvrv1alpha1.SonarrConfig) { now := metav1.Now(); c.DeletionTimestamp = &now }, true},
+		{"finalizers", func(c *pvrv1alpha1.SonarrConfig) { c.Finalizers = nil }, true},
+		{"annotation", func(c *pvrv1alpha1.SonarrConfig) { c.Annotations = map[string]string{"reconcile": "now"} }, true},
+	}
+	p := ConfigChangedPredicate()
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			next := old.DeepCopy()
+			tt.change(next)
+			assert.Equal(t, tt.want, p.Update(event.UpdateEvent{ObjectOld: old, ObjectNew: next}))
+		})
+	}
+	assert.False(t, p.Update(event.UpdateEvent{ObjectOld: old}))
+	assert.False(t, p.Update(event.UpdateEvent{ObjectNew: old}))
+	assert.True(t, p.Create(event.CreateEvent{Object: old}))
+	assert.True(t, p.Delete(event.DeleteEvent{Object: old}))
+	assert.True(t, p.Generic(event.GenericEvent{Object: old}))
 }
