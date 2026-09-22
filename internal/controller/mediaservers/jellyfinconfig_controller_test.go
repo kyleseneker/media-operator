@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -30,6 +31,8 @@ const conditionTrue = "True"
 // the public info probe, the four startup-wizard steps, authentication, and
 // the virtual-folder (library) list.
 type fakeJellyfin struct {
+	config        map[string]any
+	failure       string
 	mu            sync.Mutex
 	requests      []string
 	setupComplete bool
@@ -78,12 +81,18 @@ func (f *fakeJellyfin) serve(t *testing.T) string {
 		f.mu.Unlock()
 
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == f.failure {
+			w.WriteHeader(500)
+			return
+		}
 		switch r.URL.Path {
 		case "/System/Info/Public":
 			f.mu.Lock()
 			done := f.setupComplete
 			f.mu.Unlock()
 			_ = json.NewEncoder(w).Encode(map[string]any{"StartupWizardCompleted": done})
+		case "/System/Configuration":
+			_ = json.NewEncoder(w).Encode(f.config)
 		case "/Users/AuthenticateByName":
 			_ = json.NewEncoder(w).Encode(map[string]any{"AccessToken": "test-token"})
 		case "/Library/VirtualFolders":
@@ -243,5 +252,60 @@ func TestReconcileMissingSecretDoesNotContactApp(t *testing.T) {
 	}
 	if got := jellyfinCondition(t, c, "Synced"); got == conditionTrue {
 		t.Error("Synced = True despite missing credentials")
+	}
+}
+
+func TestJellyfinObserveNeverRunsSetupOrWritesConfiguration(t *testing.T) {
+	for _, tt := range []struct {
+		name                  string
+		initialized, matching bool
+		failure, reason       string
+	}{
+		{"fresh", false, false, "", "DriftDetected"},
+		{"drift", true, false, "", "DriftDetected"},
+		{"matching", true, true, "", "Observed"},
+		{"empty spec", true, true, "", "Observed"},
+		{"library failure", true, true, "/Library/VirtualFolders", "SyncFailed"},
+		{"encoding failure", true, true, "/System/Configuration/encoding", "SyncFailed"},
+		{"read failure", true, true, "/System/Configuration", "SyncFailed"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			app := &fakeJellyfin{setupComplete: tt.initialized, failure: tt.failure}
+			if tt.matching {
+				app.existingLibs = []map[string]any{{"Name": "Movies", "Paths": []string{"/old"}}}
+				app.config = map[string]any{"serverName": "Media", "unmanaged": true}
+			}
+			cfg := jellyfinConfig(app.serve(t), mediaserversv1alpha1.JellyfinLibrary{Name: "Movies", Paths: []string{"/new"}})
+			cfg.Spec.Server = &mediaserversv1alpha1.JellyfinServer{ServerName: "Media"}
+			if tt.name == "empty spec" {
+				cfg.Spec.Server = nil
+				cfg.Spec.Libraries = nil
+			}
+			if tt.name == "encoding failure" {
+				cfg.Spec.Encoding = &mediaserversv1alpha1.JellyfinEncoding{}
+			}
+			policy := "observe"
+			cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &policy}
+			c := runJellyfin(t, adminSecret(), cfg)
+			if err := c.Get(context.Background(), types.NamespacedName{Name: cfg.Name, Namespace: cfg.Namespace}, cfg); err != nil {
+				t.Fatal(err)
+			}
+			app.mu.Lock()
+			defer app.mu.Unlock()
+			for _, req := range app.requests {
+				if !strings.HasPrefix(req, "GET ") && req != "POST /Users/AuthenticateByName" {
+					t.Errorf("observe wrote: %s", req)
+				}
+			}
+			if cfg.Status.Initialized == nil || *cfg.Status.Initialized != tt.initialized {
+				t.Errorf("initialization status changed: %v", cfg.Status.Initialized)
+			}
+			for _, condition := range cfg.Status.Conditions {
+				if condition.Type == "Synced" && condition.Reason == tt.reason {
+					return
+				}
+			}
+			t.Fatalf("want %s, got %+v", tt.reason, cfg.Status.Conditions)
+		})
 	}
 }

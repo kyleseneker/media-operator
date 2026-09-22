@@ -3,6 +3,7 @@ package indexers
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -58,6 +59,16 @@ func (r *FlareSolverrConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 		logger.Error(err, "FlareSolverr unreachable")
 		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonAppUnreachable, err.Error())
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
+	}
+
+	if ctrlcommon.ObserveOnly(config.Spec.Reconcile) {
+		drift, count, err := observeFlareSolverrSessions(ctx, fc, config.Spec.Sessions,
+			ctrlcommon.PruneEnabled(config.Spec.Reconcile), config.Status.ManagedResources["sessions"])
+		if err == nil {
+			config.Status.ActiveSessions = count
+		}
+		ctrlcommon.UpdateObservationStatus(ctx, r.Status(), &config, drift, err)
+		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
 
 	var syncErrors []string
@@ -143,4 +154,36 @@ func (r *FlareSolverrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		For(&indexersv1alpha1.FlareSolverrConfig{}).
 		Named("flaresolverrconfig").
 		Complete(r)
+}
+
+func observeFlareSolverrSessions(ctx context.Context, fc *flaresolverrclient.Client, desired []indexersv1alpha1.FlareSolverrSession, prune bool, managed []string) (bool, int, error) {
+	existing, err := fc.ListSessions(ctx)
+	if err != nil {
+		return false, 0, fmt.Errorf("listing sessions: %w", err)
+	}
+	desiredNames := make(map[string]bool, len(desired))
+	drift := false
+	for _, session := range desired {
+		desiredNames[session.Name] = true
+		changed, err := engine.ObserveDifference("flaresolverr", "sessions", session.Name,
+			map[string]any{"exists": slices.Contains(existing, session.Name)}, map[string]any{"exists": true})
+		if err != nil {
+			return drift, len(existing), err
+		}
+		drift = drift || changed
+	}
+	if prune {
+		for _, name := range existing {
+			if desiredNames[name] || !slices.Contains(managed, name) {
+				continue
+			}
+			changed, err := engine.ObserveDifference("flaresolverr", "sessions", name,
+				map[string]any{"exists": true}, map[string]any{"exists": false})
+			if err != nil {
+				return drift, len(existing), err
+			}
+			drift = drift || changed
+		}
+	}
+	return drift, len(existing), nil
 }

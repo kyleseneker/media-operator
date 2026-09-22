@@ -1,14 +1,18 @@
 package common
 
 import (
+	"context"
+	"fmt"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	"github.com/kyleseneker/media-operator/internal/engine"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestReconcileInterval(t *testing.T) {
@@ -120,4 +124,49 @@ func TestEmitPruneEvents(t *testing.T) {
 	// EmitPruneEvents just calls recorder.Eventf — verifying it doesn't panic with nil pruned list
 	EmitPruneEvents(nil, nil, nil)
 	EmitPruneEvents(nil, nil, []engine.PrunedResource{})
+}
+
+func TestObservationStatus(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		drift  bool
+		err    error
+		reason string
+		synced metav1.ConditionStatus
+	}{
+		{"matching", false, nil, "Observed", metav1.ConditionTrue},
+		{"drift", true, nil, "DriftDetected", metav1.ConditionFalse},
+		{"error precedes drift", true, fmt.Errorf("read failed"), engine.ReasonSyncFailed, metav1.ConditionFalse},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			obj := newConfig("", 0)
+			c := testClient(obj).WithStatusSubresource(obj).Build()
+			UpdateObservationStatus(context.Background(), c.Status(), obj, tt.drift, tt.err)
+			require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(obj), obj))
+			condition := meta.FindStatusCondition(obj.Status.Conditions, "Synced")
+			require.NotNil(t, condition)
+			assert.Equal(t, tt.reason, condition.Reason)
+			assert.Equal(t, tt.synced, condition.Status)
+		})
+	}
+}
+
+func TestRejectUnsupportedObserve(t *testing.T) {
+	for _, policy := range []string{"enforce", "observe"} {
+		t.Run(policy, func(t *testing.T) {
+			obj := newConfig("", 0)
+			obj.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &policy}
+			c := testClient(obj).WithStatusSubresource(obj).Build()
+			rejected := RejectUnsupportedObserve(context.Background(), c.Status(), obj)
+			assert.Equal(t, policy == "observe", rejected)
+			require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(obj), obj))
+			condition := meta.FindStatusCondition(obj.Status.Conditions, "Synced")
+			if rejected {
+				require.NotNil(t, condition)
+				assert.Equal(t, engine.ReasonInvalidConfig, condition.Reason)
+			} else {
+				assert.Nil(t, condition)
+			}
+		})
+	}
 }

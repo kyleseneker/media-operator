@@ -75,6 +75,12 @@ var (
 		[]string{"app", "resource_type", "name"},
 	)
 
+	// DriftObservedTotal counts differences found without writing in observe mode.
+	DriftObservedTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{Namespace: namespace, Name: "drift_observed_total", Help: "Total configuration differences detected in observe mode without application writes."},
+		[]string{"app", "resource_type", "name"},
+	)
+
 	// ConfigSynced reports whether each config resource last reconciled
 	// successfully. 1 = synced, 0 = failed or unreachable. Alert on 0 to catch
 	// silent failure, which no error counter can express while controllers
@@ -97,6 +103,7 @@ func init() {
 		ResourcesPrunedTotal,
 		ManagedResources,
 		DriftCorrectedTotal,
+		DriftObservedTotal,
 		ConfigSynced,
 	)
 }

@@ -81,6 +81,13 @@ func (r *JellyfinConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
+	if !setupComplete && ctrlcommon.ObserveOnly(config.Spec.Reconcile) {
+		config.Status.Initialized = &setupComplete
+		drift, err := engine.ObserveDifference("jellyfin", "settings", "initialization", nil, map[string]any{"initialized": true})
+		ctrlcommon.UpdateObservationStatus(ctx, r.Status(), &config, drift, err)
+		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
+	}
+
 	// Run setup wizard if not complete
 	if !setupComplete {
 		serverName := ""
@@ -114,6 +121,12 @@ func (r *JellyfinConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		logger.Error(err, "Jellyfin authentication failed")
 		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonAppUnreachable, fmt.Sprintf("authentication: %v", err))
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
+	}
+
+	if ctrlcommon.ObserveOnly(config.Spec.Reconcile) {
+		drift, err := observeJellyfinConfig(ctx, jf, config.Spec)
+		ctrlcommon.UpdateObservationStatus(ctx, r.Status(), &config, drift, err)
+		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
 
 	var syncErrors []string
@@ -245,4 +258,49 @@ func (r *JellyfinConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		})).
 		Named("jellyfinconfig").
 		Complete(r)
+}
+
+func observeJellyfinConfig(ctx context.Context, jf *jellyfinclient.Client, spec mediaserversv1alpha1.JellyfinConfigSpec) (bool, error) {
+	sections := map[string]any{}
+	if spec.Encoding != nil {
+		sections["/System/Configuration/encoding"] = spec.Encoding
+	}
+	if spec.Server != nil {
+		sections["/System/Configuration"] = spec.Server
+	}
+	drift := false
+	for path, desired := range sections {
+		current, err := jf.GetConfig(ctx, path)
+		if err != nil {
+			return drift, fmt.Errorf("reading %s: %w", path, err)
+		}
+		changed, err := engine.ObserveDifference("jellyfin", "settings", path, current, desired)
+		if err != nil {
+			return drift, err
+		}
+		drift = drift || changed
+	}
+	if len(spec.Libraries) == 0 {
+		return drift, nil
+	}
+	libraries, err := jf.ListLibraries(ctx)
+	if err != nil {
+		return drift, fmt.Errorf("listing libraries: %w", err)
+	}
+	for _, library := range spec.Libraries {
+		var current map[string]any
+		for _, existing := range libraries {
+			if existing["Name"] == library.Name {
+				current = existing
+				break
+			}
+		}
+		// Libraries are create-only, so only existence matters.
+		changed, err := engine.ObserveDifference("jellyfin", "libraries", library.Name, current, map[string]any{"Name": library.Name})
+		if err != nil {
+			return drift, err
+		}
+		drift = drift || changed
+	}
+	return drift, nil
 }

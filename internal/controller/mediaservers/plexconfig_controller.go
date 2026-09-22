@@ -45,6 +45,10 @@ func (r *PlexConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
+	if ctrlcommon.RejectUnsupportedObserve(ctx, r.Status(), &config) {
+		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
+	}
+
 	token, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.TokenSecretRef)
 	if err != nil {
 		logger.Error(err, "failed to resolve Plex token")

@@ -45,6 +45,10 @@ func (r *SabnzbdConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
+	if ctrlcommon.RejectUnsupportedObserve(ctx, r.Status(), &config) {
+		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
+	}
+
 	apiKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.APIKeySecretRef)
 	if err != nil {
 		logger.Error(err, "failed to resolve API key")
@@ -95,26 +99,7 @@ func (r *SabnzbdConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Servers
 	for i, srv := range config.Spec.Servers {
-		vals := map[string]string{
-			"name": srv.Name,
-			"host": srv.Host,
-			"port": strconv.Itoa(srv.Port),
-		}
-		if srv.SSL != nil {
-			vals["ssl"] = ctrlcommon.BoolTo01(*srv.SSL)
-		}
-		if srv.Connections != nil {
-			vals["connections"] = strconv.Itoa(*srv.Connections)
-		}
-		if srv.Priority != nil {
-			vals["priority"] = strconv.Itoa(*srv.Priority)
-		}
-		if srv.Retention != nil {
-			vals["retention"] = strconv.Itoa(*srv.Retention)
-		}
-		if srv.Enable != nil {
-			vals["enable"] = ctrlcommon.BoolTo01(*srv.Enable)
-		}
+		vals := sabnzbdServerValues(srv)
 		if srv.UsernameSecretRef != nil {
 			username, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, *srv.UsernameSecretRef)
 			if err != nil {
@@ -220,5 +205,30 @@ func buildSabnzbdGeneralValues(g *downloadsv1alpha1.SabnzbdGeneral) map[string]s
 	if g.ScriptDir != "" {
 		vals["script_dir"] = g.ScriptDir
 	}
+	return vals
+}
+
+func sabnzbdServerValues(srv downloadsv1alpha1.SabnzbdServer) map[string]string {
+	vals := map[string]string{
+		"name": srv.Name,
+		"host": srv.Host,
+		"port": strconv.Itoa(srv.Port),
+	}
+	if srv.SSL != nil {
+		vals["ssl"] = ctrlcommon.BoolTo01(*srv.SSL)
+	}
+	if srv.Connections != nil {
+		vals["connections"] = strconv.Itoa(*srv.Connections)
+	}
+	if srv.Priority != nil {
+		vals["priority"] = strconv.Itoa(*srv.Priority)
+	}
+	if srv.Retention != nil {
+		vals["retention"] = strconv.Itoa(*srv.Retention)
+	}
+	if srv.Enable != nil {
+		vals["enable"] = ctrlcommon.BoolTo01(*srv.Enable)
+	}
+
 	return vals
 }

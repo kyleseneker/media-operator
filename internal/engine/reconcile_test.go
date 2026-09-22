@@ -191,3 +191,25 @@ func TestMaskedSecretCacheIncludesOwner(t *testing.T) {
 	}
 	assert.Len(t, writes, 2, "a recreated CR must seed its secret independently")
 }
+
+func TestObserveDifference(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		current map[string]any
+		desired any
+		drift   bool
+		fails   bool
+	}{
+		{"missing", nil, map[string]any{}, true, false},
+		{"matching", map[string]any{"enabled": false, "other": "preserved"}, map[string]any{"enabled": false}, false, false},
+		{"changed", map[string]any{"enabled": false}, map[string]any{"enabled": true}, true, false},
+		{"masked", map[string]any{"password": "********"}, map[string]any{"password": "secret"}, false, false},
+		{"invalid", map[string]any{}, make(chan int), false, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			drift, err := ObserveDifference("test-observe", "settings", tt.name, tt.current, tt.desired)
+			assert.Equal(t, tt.drift, drift)
+			assert.Equal(t, tt.fails, err != nil)
+		})
+	}
+}

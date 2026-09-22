@@ -170,3 +170,33 @@ func TestFlareSolverrPrunesItsOwnRetiredSession(t *testing.T) {
 		t.Error("prune did not remove a session it had previously created")
 	}
 }
+
+func TestFlareSolverrObserveDoesNotCreatePruneOrClaimSessions(t *testing.T) {
+	app := &fakeFlareSolverr{sessions: []string{"owned", "foreign"}}
+	cfg := flareConfig(app.serve(t), true, []string{"owned"}, "missing")
+	policy := "observe"
+	cfg.Spec.Reconcile.DriftPolicy = &policy
+	c := runFlare(t, cfg)
+	if err := c.Get(context.Background(), types.NamespacedName{Name: cfg.Name, Namespace: cfg.Namespace}, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Status.ActiveSessions != 2 {
+		t.Fatalf("active sessions = %d", cfg.Status.ActiveSessions)
+	}
+	if !slices.Equal(cfg.Status.ManagedResources["sessions"], []string{"owned"}) {
+		t.Fatalf("ownership changed: %v", cfg.Status.ManagedResources)
+	}
+	app.mu.Lock()
+	defer app.mu.Unlock()
+	for _, cmd := range app.commands {
+		if cmd != "sessions.list " {
+			t.Errorf("unexpected observe command: %s", cmd)
+		}
+	}
+	for _, condition := range cfg.Status.Conditions {
+		if condition.Type == "Synced" && condition.Reason == "DriftDetected" {
+			return
+		}
+	}
+	t.Fatalf("drift was not reported: %+v", cfg.Status.Conditions)
+}

@@ -149,3 +149,29 @@ func TestPlexMissingTokenDoesNotContactApp(t *testing.T) {
 		t.Error("contacted the app despite failing to resolve its token")
 	}
 }
+
+func TestPlexObserveRejectedBeforeApplicationAccess(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := mediaserversv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	policy := "observe"
+	cfg := &mediaserversv1alpha1.PlexConfig{ObjectMeta: metav1.ObjectMeta{Name: "observe", Namespace: "media"}}
+	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &policy}
+	// No URL or Secrets: rejection must happen before application access or authentication.
+	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(cfg).WithObjects(cfg).Build()
+	r := &PlexConfigReconciler{Client: c, Scheme: scheme}
+	key := types.NamespacedName{Namespace: cfg.Namespace, Name: cfg.Name}
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Get(context.Background(), key, cfg); err != nil {
+		t.Fatal(err)
+	}
+	for _, condition := range cfg.Status.Conditions {
+		if condition.Type == "Synced" && condition.Reason == "InvalidConfig" && condition.Status == metav1.ConditionFalse {
+			return
+		}
+	}
+	t.Fatalf("expected explicit unsupported-policy status, got %+v", cfg.Status.Conditions)
+}

@@ -90,6 +90,12 @@ func (r *QBittorrentConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
+	if ctrlcommon.ObserveOnly(config.Spec.Reconcile) {
+		drift, err := observeQBConfig(ctx, qb, config.Spec)
+		ctrlcommon.UpdateObservationStatus(ctx, r.Status(), &config, drift, err)
+		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
+	}
+
 	var syncErrors []string
 
 	// Reconcile preferences
@@ -217,4 +223,40 @@ func (r *QBittorrentConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		})).
 		Named("qbittorrentconfig").
 		Complete(r)
+}
+
+func observeQBConfig(ctx context.Context, qb *qbclient.Client, spec downloadsv1alpha1.QBittorrentConfigSpec) (bool, error) {
+	drift := false
+	if spec.Preferences != nil {
+		desired, err := qbPreferencePayload(spec.Preferences)
+		if err != nil {
+			return false, err
+		}
+		if len(desired) > 0 {
+			current, err := qb.GetPreferences(ctx)
+			if err != nil {
+				return false, fmt.Errorf("reading preferences: %w", err)
+			}
+			drift, err = engine.ObserveDifference("qbittorrent", "settings", "preferences", current, desired)
+			if err != nil {
+				return false, err
+			}
+		}
+	}
+	if len(spec.Categories) == 0 {
+		return drift, nil
+	}
+	categories, err := qb.ListCategories(ctx)
+	if err != nil {
+		return drift, fmt.Errorf("listing categories: %w", err)
+	}
+	for _, category := range spec.Categories {
+		current, _ := categories[category.Name].(map[string]any)
+		changed, err := engine.ObserveDifference("qbittorrent", "categories", category.Name, current, map[string]any{"savePath": category.SavePath})
+		if err != nil {
+			return drift, err
+		}
+		drift = drift || changed
+	}
+	return drift, nil
 }

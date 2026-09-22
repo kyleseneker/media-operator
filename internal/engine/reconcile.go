@@ -224,10 +224,11 @@ func reconcileSetting(ctx context.Context, client *HTTPClient, path string, desi
 		return nil
 	}
 
-	metrics.DriftCorrectedTotal.WithLabelValues(client.AppLabel(), "setting", path).Inc()
 	if observe {
+		metrics.DriftObservedTotal.WithLabelValues(client.AppLabel(), "setting", path).Inc()
 		return nil
 	}
+	metrics.DriftCorrectedTotal.WithLabelValues(client.AppLabel(), "setting", path).Inc()
 	if err := client.PutJSON(ctx, fmt.Sprintf("%s/%d", path, int(id)), out.Merged); err != nil {
 		return err
 	}
@@ -270,10 +271,11 @@ func reconcileResourceTracked(ctx context.Context, client *HTTPClient, endpoint 
 				if !out.Changed && !reconciler.SecretsChangedSince(key, out.SecretDigest) {
 					return false, nil
 				}
-				metrics.DriftCorrectedTotal.WithLabelValues(client.AppLabel(), endpoint.Name, desiredMatch).Inc()
 				if observe {
+					metrics.DriftObservedTotal.WithLabelValues(client.AppLabel(), endpoint.Name, desiredMatch).Inc()
 					return false, nil
 				}
+				metrics.DriftCorrectedTotal.WithLabelValues(client.AppLabel(), endpoint.Name, desiredMatch).Inc()
 				if err := client.PutJSON(ctx, fmt.Sprintf("%s/%d", endpoint.Path, int(id)), out.Merged); err != nil {
 					return false, err
 				}
@@ -285,7 +287,7 @@ func reconcileResourceTracked(ctx context.Context, client *HTTPClient, endpoint 
 
 	// Not found — create
 	if observe {
-		metrics.DriftCorrectedTotal.WithLabelValues(client.AppLabel(), endpoint.Name, desiredMatch).Inc()
+		metrics.DriftObservedTotal.WithLabelValues(client.AppLabel(), endpoint.Name, desiredMatch).Inc()
 		return false, nil
 	}
 	err = client.PostJSON(ctx, endpoint.Path, desired)
@@ -304,4 +306,19 @@ func isNilInterface(v any) bool {
 	}
 	rv := reflect.ValueOf(v)
 	return rv.Kind() == reflect.Ptr && rv.IsNil()
+}
+
+// ObserveDifference compares only desired fields, preserving the same partial
+// ownership and masked-value semantics as enforcement. A nil current object
+// means the resource does not exist and therefore requires creation.
+func ObserveDifference(app, resourceType, name string, current map[string]any, desired any) (bool, error) {
+	out, err := reconciler.MergeDesired(current, desired)
+	if err != nil {
+		return false, err
+	}
+	drift := current == nil || out.Changed
+	if drift {
+		metrics.DriftObservedTotal.WithLabelValues(app, resourceType, name).Inc()
+	}
+	return drift, nil
 }
