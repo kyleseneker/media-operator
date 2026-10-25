@@ -8,9 +8,10 @@
 4. `make test lint verify-crds`
 5. Push and open a PR
 
-You'll need Go 1.25+, kubebuilder, a cluster (kind is fine), and access to
-whichever app you're working on. Most of the interesting behavior only shows up
-against a real Sonarr or Jellyfin, so it helps to have one running.
+You'll need the Go version in `go.mod`, kubebuilder, a cluster (kind is fine),
+and access to whichever app you're working on. Most of the interesting behavior
+only shows up against a real Sonarr or Jellyfin, so it helps to have one
+running.
 
 ```bash
 BINARY=pvr make run          # run one operator against your current kube context
@@ -41,3 +42,10 @@ all named the same way.
 | `media-operator-curation` | Maintainerr | `api/curation/v1alpha1/` |
 | `media-operator-transcode` | Tdarr | `api/transcode/v1alpha1/` |
 | `media-operator-automation` | Autobrr | `api/automation/v1alpha1/` |
+
+## Dependency updates
+
+Renovate (`renovate.json`) opens PRs on Saturday mornings; none automerge. The
+Kubernetes libraries and controller-runtime arrive as one PR. A controller-tools
+PR needs `make manifests generate sync-crds` run and committed on its branch
+before `verify-crds` passes.

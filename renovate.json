@@ -1,0 +1,65 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "schedule": [
+    "before 9am on saturday"
+  ],
+  "labels": [
+    "renovate"
+  ],
+  "pinDigests": true,
+  "postUpdateOptions": [
+    "gomodTidy",
+    "gomodUpdateImportPaths"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Makefile tool versions annotated with a # renovate: comment",
+      "managerFilePatterns": [
+        "/^Makefile$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\S+ \\?= (?<currentValue>\\S+)"
+      ]
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Action version inputs take a release tag, not a commit SHA",
+      "matchDepTypes": [
+        "uses-with"
+      ],
+      "pinDigests": false
+    },
+    {
+      "description": "Bump the go directive; CI and releases build with the version it names",
+      "matchDatasources": [
+        "golang-version"
+      ],
+      "rangeStrategy": "bump"
+    },
+    {
+      "description": "Keep the Kubernetes libraries and controller-runtime on matching minors",
+      "matchDatasources": [
+        "go"
+      ],
+      "matchPackageNames": [
+        "/^k8s\\.io\\//",
+        "sigs.k8s.io/controller-runtime"
+      ],
+      "groupName": "kubernetes"
+    },
+    {
+      "description": "controller-gen output is committed; CI fails until it is regenerated",
+      "matchPackageNames": [
+        "sigs.k8s.io/controller-tools"
+      ],
+      "prBodyNotes": [
+        "Run `make manifests generate sync-crds` on this branch and commit the result before merging; `make verify-crds` fails otherwise."
+      ]
+    }
+  ]
+}
