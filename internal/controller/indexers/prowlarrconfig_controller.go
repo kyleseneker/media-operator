@@ -80,13 +80,19 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		indexers[i].Fields = f
 	}
 
-	// Tags must exist before anything can reference their IDs, so they are
-	// applied first and the labels resolved against what Prowlarr assigned.
+	// Tags and sync profiles must exist before their IDs can be referenced.
 	policy := ctrlcommon.Policy(config.Spec.Reconcile)
-	tagsOnly := prowlarrclient.ProwlarrResources(prowlarrclient.ProwlarrOptions{Tags: config.Spec.Tags}, nil)
-	result := engine.ReconcileApp(ctx, hc, def, nil, tagsOnly, policy, config.Status.ManagedResources)
+	prerequisites := prowlarrclient.ProwlarrResources(prowlarrclient.ProwlarrOptions{Tags: config.Spec.Tags, AppProfiles: config.Spec.AppProfiles}, nil)
+	result := engine.ReconcileApp(ctx, hc, def, nil, prerequisites, policy, config.Status.ManagedResources)
 
-	tagIDs, terr := prowlarrclient.FetchTagIDs(ctx, hc)
+	// Persist prerequisite ownership even if a subsequent lookup or secret fails.
+	ctrlcommon.UpdateStatusManaged(&config, result.Managed)
+	resolved, tagIDs, terr := prowlarrclient.ResolveReferences(ctx, hc, config.Spec)
+	indexersWithSecrets := indexers
+	indexers = resolved.Indexers
+	for i := range indexers {
+		indexers[i].Fields = indexersWithSecrets[i].Fields
+	}
 	if terr != nil {
 		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, terr.Error())
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
@@ -103,7 +109,7 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		Indexers:        indexers,
 		Proxies:         config.Spec.Proxies,
 		DownloadClients: config.Spec.DownloadClients,
-		Notifications:   config.Spec.Notifications,
+		Notifications:   resolved.Notifications,
 	}, tagIDs)
 
 	rest := engine.ReconcileApp(ctx, hc, def, nil, resources, policy, result.Managed)

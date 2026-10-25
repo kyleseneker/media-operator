@@ -48,6 +48,9 @@ type ResourceEndpoint struct {
 	Path string
 	// MatchField is the field used to match existing resources (e.g., "path", "name").
 	MatchField string
+	// MatchKey optionally supplies a composite identity, used consistently for
+	// matching, ownership, pruning and deletion. It must return empty for invalid objects.
+	MatchKey func(map[string]any) string
 	// Policy controls create/update behavior.
 	Policy ReconcilePolicy
 	// Prunable indicates this resource type supports deletion of unmanaged items.
@@ -71,4 +74,12 @@ type SyncPolicy struct {
 	Prune bool
 	// Observe records drift without writing, leaving the app untouched.
 	Observe bool
+}
+
+func (r ResourceEndpoint) resourceKey(item map[string]any) string {
+	if r.MatchKey != nil {
+		return r.MatchKey(item)
+	}
+	key, _ := item[r.MatchField].(string)
+	return key
 }

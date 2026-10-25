@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	"github.com/kyleseneker/media-operator/internal/engine"
@@ -28,6 +29,7 @@ func Definition(apiVersion string) engine.AppDefinition {
 			{Name: "tags", Path: prefix + "/tag", MatchField: "label", Policy: engine.CreateOrUpdate},
 			// Root folders not prunable (CreateOnly, destructive to remove).
 			{Name: "rootFolders", Path: prefix + "/rootfolder", MatchField: "path", Policy: engine.CreateOnly},
+			{Name: "remotePathMappings", Path: prefix + "/remotepathmapping", MatchKey: remotePathMappingKey, Policy: engine.CreateOrUpdate, Prunable: true},
 			{Name: "downloadClients", Path: prefix + "/downloadclient", MatchField: "name", Policy: engine.CreateOrUpdate, Prunable: true},
 			{Name: "indexers", Path: prefix + "/indexer", MatchField: "name", Policy: engine.CreateOrUpdate, Prunable: true},
 			// customFormats before qualityProfiles so IDs can be resolved for formatItems.
@@ -77,21 +79,30 @@ type DownloadClientResolvedSecrets struct {
 
 // Options holds all the inputs needed to reconcile a Servarr-family app.
 type Options struct {
-	RootFolders     []commonv1alpha1.RootFolder
-	DownloadClients []commonv1alpha1.DownloadClient
-	DCSecrets       map[string]DownloadClientResolvedSecrets
-	CategoryField   string
-	QualityProfiles []commonv1alpha1.QualityProfile
-	CustomFormats   []commonv1alpha1.CustomFormat
-	Tags            []commonv1alpha1.Tag
-	Indexers        []commonv1alpha1.Indexer
-	Notifications   []commonv1alpha1.Notification
-	ImportLists     []commonv1alpha1.ImportList
+	RemotePathMappings []commonv1alpha1.RemotePathMapping
+	RootFolders        []commonv1alpha1.RootFolder
+	DownloadClients    []commonv1alpha1.DownloadClient
+	DCSecrets          map[string]DownloadClientResolvedSecrets
+	CategoryField      string
+	QualityProfiles    []commonv1alpha1.QualityProfile
+	CustomFormats      []commonv1alpha1.CustomFormat
+	Tags               []commonv1alpha1.Tag
+	Indexers           []commonv1alpha1.Indexer
+	Notifications      []commonv1alpha1.Notification
+	ImportLists        []commonv1alpha1.ImportList
 }
 
 // Resources builds the resources map from the options.
 func Resources(ctx context.Context, client *engine.HTTPClient, apiVersion string, opts Options) (map[string][]map[string]any, error) {
 	resources := make(map[string][]map[string]any)
+	var tagIDs engine.NamedIDs
+	if hasTagLabels(opts) {
+		var err error
+		tagIDs, err = engine.FetchNamedIDs(ctx, client, fmt.Sprintf("/api/%s/tag", apiVersion), "label")
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	if len(opts.Tags) > 0 {
 		tags := make([]map[string]any, 0, len(opts.Tags))
@@ -99,6 +110,14 @@ func Resources(ctx context.Context, client *engine.HTTPClient, apiVersion string
 			tags = append(tags, map[string]any{"label": t.Label})
 		}
 		resources["tags"] = tags
+	}
+
+	if len(opts.RemotePathMappings) > 0 {
+		mappings, err := remotePathMappingResources(opts.RemotePathMappings)
+		if err != nil {
+			return nil, err
+		}
+		resources["remotePathMappings"] = mappings
 	}
 
 	if len(opts.RootFolders) > 0 {
@@ -112,6 +131,11 @@ func Resources(ctx context.Context, client *engine.HTTPClient, apiVersion string
 	if len(opts.DownloadClients) > 0 {
 		dcs := make([]map[string]any, 0, len(opts.DownloadClients))
 		for _, dc := range opts.DownloadClients {
+			resolvedTags, err := tagIDs.ResolveTags(dc.TagLabels, dc.Tags)
+			if err != nil {
+				return nil, fmt.Errorf("downloadClients(%s): %w", dc.Name, err)
+			}
+			dc.Tags = resolvedTags
 			secrets := opts.DCSecrets[dc.Name]
 			dcs = append(dcs, BuildDownloadClientPayload(dc, secrets, opts.CategoryField))
 		}
@@ -121,6 +145,11 @@ func Resources(ctx context.Context, client *engine.HTTPClient, apiVersion string
 	if len(opts.Indexers) > 0 {
 		idxs := make([]map[string]any, 0, len(opts.Indexers))
 		for _, idx := range opts.Indexers {
+			resolvedTags, err := tagIDs.ResolveTags(idx.TagLabels, idx.Tags)
+			if err != nil {
+				return nil, fmt.Errorf("indexers(%s): %w", idx.Name, err)
+			}
+			idx.Tags = resolvedTags
 			idxs = append(idxs, BuildIndexerPayload(idx))
 		}
 		resources["indexers"] = idxs
@@ -135,21 +164,21 @@ func Resources(ctx context.Context, client *engine.HTTPClient, apiVersion string
 	}
 
 	if len(opts.QualityProfiles) > 0 {
-		// Resolve custom format name → ID mapping for formatItems references.
-		cfIDs, err := resolveCustomFormatIDs(ctx, client, apiVersion)
+		profiles, err := qualityProfileResources(ctx, client, apiVersion, opts.QualityProfiles)
 		if err != nil {
 			return nil, err
 		}
-		var qps []map[string]any
-		for _, qp := range opts.QualityProfiles {
-			qps = append(qps, BuildQualityProfilePayload(qp, cfIDs))
-		}
-		resources["qualityProfiles"] = qps
+		resources["qualityProfiles"] = profiles
 	}
 
 	if len(opts.Notifications) > 0 {
 		var notifs []map[string]any
 		for _, n := range opts.Notifications {
+			resolvedTags, err := tagIDs.ResolveTags(n.TagLabels, n.Tags)
+			if err != nil {
+				return nil, fmt.Errorf("notifications(%s): %w", n.Name, err)
+			}
+			n.Tags = resolvedTags
 			notifs = append(notifs, BuildNotificationPayload(n))
 		}
 		resources["notifications"] = notifs
@@ -157,12 +186,25 @@ func Resources(ctx context.Context, client *engine.HTTPClient, apiVersion string
 
 	if len(opts.ImportLists) > 0 {
 		// Resolve quality profile name → ID mapping for qualityProfileName references.
-		qpIDs, err := resolveQualityProfileIDs(ctx, client, apiVersion)
+		profiles, err := engine.FetchNamedIDs(ctx, client, fmt.Sprintf("/api/%s/qualityprofile", apiVersion), "name")
 		if err != nil {
 			return nil, err
 		}
 		var ils []map[string]any
 		for _, il := range opts.ImportLists {
+			resolvedTags, err := tagIDs.ResolveTags(il.TagLabels, il.Tags)
+			if err != nil {
+				return nil, fmt.Errorf("importLists(%s): %w", il.Name, err)
+			}
+			il.Tags = resolvedTags
+			qpIDs := map[string]int{}
+			if il.QualityProfileName != "" {
+				id, err := profiles.Resolve(il.QualityProfileName)
+				if err != nil {
+					return nil, fmt.Errorf("importLists(%s): %w", il.Name, err)
+				}
+				qpIDs[il.QualityProfileName] = id
+			}
 			ils = append(ils, BuildImportListPayload(il, qpIDs))
 		}
 		resources["importLists"] = ils
@@ -422,25 +464,6 @@ func SetOptionalBool(payload map[string]any, key string, val *bool) {
 	}
 }
 
-// resolveQualityProfileIDs fetches all quality profiles from the API and returns a name → ID map.
-func resolveQualityProfileIDs(ctx context.Context, client *engine.HTTPClient, apiVersion string) (map[string]int, error) {
-	path := fmt.Sprintf("/api/%s/qualityprofile", apiVersion)
-	existing, err := client.GetJSONList(ctx, path)
-	if err != nil {
-		return nil, fmt.Errorf("fetching quality profiles: %w", err)
-	}
-
-	ids := make(map[string]int, len(existing))
-	for _, qp := range existing {
-		name, _ := qp["name"].(string)
-		id, _ := qp["id"].(float64)
-		if name != "" {
-			ids[name] = int(id)
-		}
-	}
-	return ids, nil
-}
-
 // BuildCustomFormatPayload builds the API payload for a custom format.
 func BuildCustomFormatPayload(cf commonv1alpha1.CustomFormat) map[string]any {
 	includeWhenRenaming := false
@@ -595,25 +618,6 @@ func FindCutoffID(items []commonv1alpha1.QualityProfileItem, cutoffName string) 
 	return 0, false
 }
 
-// resolveCustomFormatIDs fetches all custom formats from the API and returns a name → ID map.
-func resolveCustomFormatIDs(ctx context.Context, client *engine.HTTPClient, apiVersion string) (map[string]int, error) {
-	path := fmt.Sprintf("/api/%s/customformat", apiVersion)
-	existing, err := client.GetJSONList(ctx, path)
-	if err != nil {
-		return nil, fmt.Errorf("fetching custom formats: %w", err)
-	}
-
-	ids := make(map[string]int, len(existing))
-	for _, cf := range existing {
-		name, _ := cf["name"].(string)
-		id, _ := cf["id"].(float64)
-		if name != "" {
-			ids[name] = int(id)
-		}
-	}
-	return ids, nil
-}
-
 // Reconcile runs the full reconciliation for any Servarr-family app.
 func Reconcile(ctx context.Context, client *engine.HTTPClient, apiVersion string, spec any, opts Options, policy engine.SyncPolicy, managed map[string][]string) (engine.ReconcileResult, error) {
 	def := Definition(apiVersion)
@@ -627,14 +631,22 @@ func Reconcile(ctx context.Context, client *engine.HTTPClient, apiVersion string
 	// rather than all at once up front.
 	fieldProblems := ValidateOptionFields(ctx, client, apiVersion, opts)
 
+	result := engine.ReconcileResult{Managed: managed}
+	if len(opts.Tags) > 0 {
+		tags, _ := Resources(ctx, client, apiVersion, Options{Tags: opts.Tags})
+		result = engine.ReconcileApp(ctx, client, def, nil, tags, policy, result.Managed)
+	}
+
 	base := opts
+	base.Tags = nil
 	base.QualityProfiles = nil
 	base.ImportLists = nil
 	resources, err := Resources(ctx, client, apiVersion, base)
 	if err != nil {
-		return engine.ReconcileResult{}, fmt.Errorf("building resources: %w", err)
+		result.Errors = append(result.Errors, fmt.Sprintf("building resources: %v", err))
+		return result, nil
 	}
-	result := engine.ReconcileApp(ctx, client, def, sections, resources, policy, managed)
+	mergeResult(&result, engine.ReconcileApp(ctx, client, def, sections, resources, policy, result.Managed))
 	result.Errors = append(result.Errors, fieldProblems...)
 
 	if len(opts.QualityProfiles) > 0 {
@@ -643,7 +655,7 @@ func Reconcile(ctx context.Context, client *engine.HTTPClient, apiVersion string
 		if qerr != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("qualityProfiles: %v", qerr))
 		} else {
-			mergeResult(&result, engine.ReconcileApp(ctx, client, def, nil, qpRes, policy, managed))
+			mergeResult(&result, engine.ReconcileApp(ctx, client, def, nil, qpRes, policy, result.Managed))
 		}
 	}
 
@@ -653,7 +665,7 @@ func Reconcile(ctx context.Context, client *engine.HTTPClient, apiVersion string
 		if ierr != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("importLists: %v", ierr))
 		} else {
-			mergeResult(&result, engine.ReconcileApp(ctx, client, def, nil, ilRes, policy, managed))
+			mergeResult(&result, engine.ReconcileApp(ctx, client, def, nil, ilRes, policy, result.Managed))
 		}
 	}
 
@@ -664,10 +676,70 @@ func mergeResult(dst *engine.ReconcileResult, src engine.ReconcileResult) {
 	dst.Synced = append(dst.Synced, src.Synced...)
 	dst.Errors = append(dst.Errors, src.Errors...)
 	dst.Pruned = append(dst.Pruned, src.Pruned...)
-	if dst.Managed == nil {
-		dst.Managed = map[string][]string{}
+	// Each stage receives the preceding snapshot, including successful deletions.
+	// Appending snapshots duplicates ownership and resurrects pruned entries.
+	dst.Managed = src.Managed
+}
+
+// Servarr stores directory paths with a trailing separator. Use the same form
+// before matching so a fresh mapping is not recreated on every reconciliation.
+func directoryPath(path string) string {
+	if path == "" || strings.HasSuffix(path, "/") || strings.HasSuffix(path, `\`) {
+		return path
 	}
-	for k, v := range src.Managed {
-		dst.Managed[k] = append(dst.Managed[k], v...)
+	if strings.Contains(path, `\`) || (len(path) >= 2 && path[1] == ':') {
+		return path + `\`
 	}
+	return path + "/"
+}
+
+func remotePathMappingKey(item map[string]any) string {
+	host, _ := item["host"].(string)
+	path, _ := item["remotePath"].(string)
+	if host == "" || path == "" {
+		return ""
+	}
+	key, _ := json.Marshal([]string{host, directoryPath(path)})
+	return string(key)
+}
+
+func qualityProfileResources(ctx context.Context, client *engine.HTTPClient, apiVersion string, profiles []commonv1alpha1.QualityProfile) ([]map[string]any, error) {
+	// Resolve custom format name → ID mapping for formatItems references.
+	formats, err := engine.FetchNamedIDs(ctx, client, fmt.Sprintf("/api/%s/customformat", apiVersion), "name")
+	if err != nil {
+		return nil, err
+	}
+	var qps []map[string]any
+	for _, qp := range profiles {
+		cfIDs := map[string]int{}
+		for _, format := range qp.FormatItems {
+			id, err := formats.Resolve(format.Name)
+			if err != nil {
+				return nil, fmt.Errorf("qualityProfiles(%s): %w", qp.Name, err)
+			}
+			cfIDs[format.Name] = id
+		}
+		qps = append(qps, BuildQualityProfilePayload(qp, cfIDs))
+	}
+	return qps, nil
+}
+
+func remotePathMappingResources(mappings []commonv1alpha1.RemotePathMapping) ([]map[string]any, error) {
+	seen := map[string]bool{}
+	resources := make([]map[string]any, 0, len(mappings))
+	for _, mapping := range mappings {
+		item := map[string]any{
+			"host": mapping.Host, "remotePath": directoryPath(mapping.RemotePath), "localPath": directoryPath(mapping.LocalPath),
+		}
+		key := remotePathMappingKey(item)
+		if key == "" || mapping.LocalPath == "" {
+			return nil, fmt.Errorf("remotePathMappings requires host, remotePath and localPath")
+		}
+		if seen[key] {
+			return nil, fmt.Errorf("remotePathMappings has duplicate identity %s", key)
+		}
+		seen[key] = true
+		resources = append(resources, item)
+	}
+	return resources, nil
 }

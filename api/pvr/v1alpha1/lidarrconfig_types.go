@@ -43,6 +43,14 @@ type LidarrConfigSpec struct {
 	// +optional
 	DownloadClients []commonv1alpha1.DownloadClient `json:"downloadClients,omitempty"`
 
+	// remotePathMappings translates paths reported by remote download clients.
+	// Entries are matched by host and remotePath. Only operator-created entries can be pruned.
+	// +optional
+	// +listType=map
+	// +listMapKey=host
+	// +listMapKey=remotePath
+	RemotePathMappings []commonv1alpha1.RemotePathMapping `json:"remotePathMappings,omitempty"`
+
 	// qualityProfiles defines quality profiles for controlling download quality preferences.
 	// +optional
 	QualityProfiles []commonv1alpha1.QualityProfile `json:"qualityProfiles,omitempty"`

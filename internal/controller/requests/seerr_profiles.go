@@ -3,7 +3,6 @@ package requests
 import (
 	"context"
 	"fmt"
-	"math"
 	"net"
 	"net/url"
 	"strconv"
@@ -32,25 +31,13 @@ func resolvedServicePayload(ctx context.Context, svc *requestsv1alpha1.SeerrServ
 	if err != nil {
 		return nil, err
 	}
-	profiles, err := hc.GetJSONList(ctx, "/api/v3/qualityprofile")
+	profiles, err := engine.FetchNamedIDs(ctx, hc, "/api/v3/qualityprofile", "name")
 	if err != nil {
-		return nil, fmt.Errorf("listing quality profiles: %w", err)
+		return nil, err
 	}
-	matches := 0
-	var id int
-	for _, profile := range profiles {
-		if profile["name"] != svc.ActiveProfileName {
-			continue
-		}
-		matches++
-		value, ok := profile["id"].(float64)
-		if !ok || value < 1 || value > math.MaxInt32 || value != math.Trunc(value) {
-			return nil, fmt.Errorf("quality profile %q has an invalid ID", svc.ActiveProfileName)
-		}
-		id = int(value)
-	}
-	if matches != 1 {
-		return nil, fmt.Errorf("quality profile %q matched %d profiles; expected exactly one", svc.ActiveProfileName, matches)
+	id, err := profiles.Resolve(svc.ActiveProfileName)
+	if err != nil {
+		return nil, fmt.Errorf("activeProfileName: %w", err)
 	}
 	payload["activeProfileId"] = id
 	return payload, nil

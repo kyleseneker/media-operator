@@ -41,7 +41,7 @@ spec:
       implementation: Cardigann
       configContract: CardigannSettings
       enable: true
-      appProfileId: 1
+      appProfileName: Standard
       priority: 25
       fields:
         - name: definitionFile
@@ -52,7 +52,7 @@ spec:
       implementation: Cardigann
       configContract: CardigannSettings
       enable: true
-      appProfileId: 1
+      appProfileName: Standard
       priority: 25
       fields:
         - name: definitionFile

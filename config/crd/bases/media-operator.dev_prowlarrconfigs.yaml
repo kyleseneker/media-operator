@@ -52,6 +52,36 @@ spec:
           spec:
             description: ProwlarrConfigSpec defines the desired state of ProwlarrConfig.
             properties:
+              appProfiles:
+                description: |-
+                  appProfiles defines indexer sync profiles, applied before indexers.
+                  Profiles are not pruned because indexers outside this CR may reference them.
+                items:
+                  description: ProwlarrAppProfile configures which searches an indexer
+                    supports.
+                  properties:
+                    enableAutomaticSearch:
+                      description: enableAutomaticSearch enables automatic searches.
+                      type: boolean
+                    enableInteractiveSearch:
+                      description: enableInteractiveSearch enables interactive searches.
+                      type: boolean
+                    enableRss:
+                      description: enableRss enables RSS sync.
+                      type: boolean
+                    minimumSeeders:
+                      description: minimumSeeders is the minimum number of seeders
+                        for torrent results.
+                      minimum: 0
+                      type: integer
+                    name:
+                      description: name uniquely identifies the sync profile.
+                      minLength: 1
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
               applications:
                 description: applications defines application connections managed
                   by Prowlarr.
@@ -282,6 +312,11 @@ spec:
                       description: appProfileId is the application profile ID for
                         this indexer.
                       type: integer
+                    appProfileName:
+                      description: |-
+                        appProfileName resolves the current sync profile ID by name on each reconciliation.
+                        Takes precedence over appProfileId. Missing or ambiguous names block indexer writes.
+                      type: string
                     configContract:
                       description: configContract is the configuration contract name
                         for the implementation.
@@ -453,6 +488,13 @@ spec:
                     onUpgrade:
                       description: onUpgrade fires when an existing file is upgraded.
                       type: boolean
+                    tagLabels:
+                      description: |-
+                        tagLabels references tags by label, resolved against the app on each reconciliation.
+                        When nonempty, takes precedence over tags. Missing or ambiguous labels block writes.
+                      items:
+                        type: string
+                      type: array
                     tags:
                       description: tags is the list of tag IDs to associate with this
                         notification.

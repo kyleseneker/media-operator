@@ -221,6 +221,11 @@ type DownloadClient struct {
 	// +optional
 	Tags []int `json:"tags,omitempty"`
 
+	// tagLabels references tags by label, resolved against the app on each reconciliation.
+	// When nonempty, takes precedence over tags. Missing or ambiguous labels block writes.
+	// +optional
+	TagLabels []string `json:"tagLabels,omitempty"`
+
 	// fields defines additional implementation-specific configuration fields.
 	// Use these for settings not covered by first-class fields (e.g., initialState, sequentialOrder).
 	// +optional
@@ -428,6 +433,11 @@ type Indexer struct {
 	// +optional
 	Tags []int `json:"tags,omitempty"`
 
+	// tagLabels references tags by label, resolved against the app on each reconciliation.
+	// When nonempty, takes precedence over tags. Missing or ambiguous labels block writes.
+	// +optional
+	TagLabels []string `json:"tagLabels,omitempty"`
+
 	// fields defines the indexer's configuration fields (e.g., baseUrl, apiKey, categories).
 	// +optional
 	Fields []ConfigField `json:"fields,omitempty"`
@@ -451,6 +461,11 @@ type Notification struct {
 	// tags is the list of tag IDs to associate with this notification.
 	// +optional
 	Tags []int `json:"tags,omitempty"`
+
+	// tagLabels references tags by label, resolved against the app on each reconciliation.
+	// When nonempty, takes precedence over tags. Missing or ambiguous labels block writes.
+	// +optional
+	TagLabels []string `json:"tagLabels,omitempty"`
 
 	// fields defines the notification's configuration fields (e.g., webhook URL, API token).
 	// +optional
@@ -599,7 +614,28 @@ type ImportList struct {
 	// +optional
 	Tags []int `json:"tags,omitempty"`
 
+	// tagLabels references tags by label, resolved against the app on each reconciliation.
+	// When nonempty, takes precedence over tags. Missing or ambiguous labels block writes.
+	// +optional
+	TagLabels []string `json:"tagLabels,omitempty"`
+
 	// fields defines the import list's configuration fields (e.g., API URL, access token, list ID).
 	// +optional
 	Fields []ConfigField `json:"fields,omitempty"`
+}
+
+// RemotePathMapping translates a download client's path into a path visible to the app.
+// Identity is the pair (host, remotePath); localPath can be updated in place.
+type RemotePathMapping struct {
+	// host must match the download client's configured hostname.
+	// +kubebuilder:validation:MinLength=1
+	Host string `json:"host"`
+
+	// remotePath is the directory reported by the download client.
+	// +kubebuilder:validation:MinLength=1
+	RemotePath string `json:"remotePath"`
+
+	// localPath is the existing directory as seen by the app.
+	// +kubebuilder:validation:MinLength=1
+	LocalPath string `json:"localPath"`
 }

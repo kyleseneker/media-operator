@@ -459,3 +459,30 @@ func TestDeletePolicyCleansOwnedResourcesAcrossPVRControllers(t *testing.T) {
 		})
 	}
 }
+
+func TestRemoteMappingsReachEveryPVRController(t *testing.T) {
+	for _, app := range pvrApps {
+		t.Run(app.name, func(t *testing.T) {
+			fa, url := newFakeArr(t, app.apiVer, nil)
+			cfg := app.build(url, buildOpts{})
+			mappings := []commonv1alpha1.RemotePathMapping{{Host: "seedbox", RemotePath: "/downloads", LocalPath: "/data"}}
+			switch obj := cfg.(type) {
+			case *pvrv1alpha1.SonarrConfig:
+				obj.Spec.RemotePathMappings = mappings
+			case *pvrv1alpha1.RadarrConfig:
+				obj.Spec.RemotePathMappings = mappings
+			case *pvrv1alpha1.LidarrConfig:
+				obj.Spec.RemotePathMappings = mappings
+			case *pvrv1alpha1.ReadarrConfig:
+				obj.Spec.RemotePathMappings = mappings
+			}
+			c := run(t, app, apiKeySecret(), cfg)
+			if !fa.saw("POST", "/api/"+app.apiVer+"/remotepathmapping") {
+				t.Fatal("mapping was not created")
+			}
+			if got := conditionStatus(t, c, app, "Synced"); got != conditionTrue {
+				t.Fatalf("Synced = %s", got)
+			}
+		})
+	}
+}

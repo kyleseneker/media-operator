@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	indexersv1alpha1 "github.com/kyleseneker/media-operator/api/indexers/v1alpha1"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
@@ -91,10 +93,14 @@ func (f *fakeProwlarr) serve(t *testing.T) string {
 			f.requests = append(f.requests, key)
 			f.bodies[key] = append(f.bodies[key], body)
 			// A created tag becomes visible to the follow-up ID lookup.
-			if r.URL.Path == "/api/v1/tag" {
+			switch r.URL.Path {
+			case "/api/v1/tag":
 				body["id"] = float64(5)
 				f.existing["tag"] = append(f.existing["tag"], body)
-			} else {
+			case "/api/v1/appprofile":
+				body["id"] = float64(42)
+				f.existing["appprofile"] = append(f.existing["appprofile"], body)
+			default:
 				body["id"] = float64(99)
 			}
 			f.mu.Unlock()
@@ -256,4 +262,78 @@ func TestProwlarrDeletePolicyCleansTrackedResources(t *testing.T) {
 	if err := c.Get(context.Background(), client.ObjectKeyFromObject(cfg), &indexersv1alpha1.ProwlarrConfig{}); !apierrors.IsNotFound(err) {
 		t.Fatalf("finalizer not released: %v", err)
 	}
+}
+
+func TestProwlarrProfileCreatedBeforeIndexer(t *testing.T) {
+	app := &fakeProwlarr{}
+	cfg := prowlarrConfig(app.serve(t))
+	enabled := true
+	legacy := 7
+	cfg.Spec.AppProfiles = []indexersv1alpha1.ProwlarrAppProfile{{Name: "Search", EnableRss: &enabled}}
+	cfg.Spec.Indexers = []indexersv1alpha1.ProwlarrIndexer{{Name: "indexer", AppProfileName: "Search", AppProfileId: &legacy}}
+	c := runProwlarr(t, cfg, prowlarrSecret())
+	posts := app.postsTo("/api/v1/indexer")
+	require.Len(t, app.postsTo("/api/v1/appprofile"), 1)
+	require.Len(t, posts, 1)
+	require.Equal(t, float64(42), posts[0]["appProfileId"])
+	var got indexersv1alpha1.ProwlarrConfig
+	require.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "prowlarr", Namespace: "media"}, &got))
+	require.Equal(t, []string{"Search"}, got.Status.ManagedResources["appProfiles"])
+	require.Equal(t, 7, *got.Spec.Indexers[0].AppProfileId)
+}
+
+func TestProwlarrProfileReferenceFailuresPreserveOwnership(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		profiles []map[string]any
+	}{
+		{name: "missing"},
+		{name: "ambiguous", profiles: []map[string]any{{"name": "Search", "id": 10}, {"name": "Search", "id": 11}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app := &fakeProwlarr{existing: map[string][]map[string]any{"appprofile": tc.profiles}}
+			cfg := prowlarrConfig(app.serve(t))
+			cfg.Spec.Tags = []commonv1alpha1.Tag{{Label: "new"}}
+			cfg.Spec.Indexers = []indexersv1alpha1.ProwlarrIndexer{{Name: "indexer", AppProfileName: "Search"}}
+			c := runProwlarr(t, cfg, prowlarrSecret())
+			require.Empty(t, app.postsTo("/api/v1/indexer"))
+			var got indexersv1alpha1.ProwlarrConfig
+			require.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "prowlarr", Namespace: "media"}, &got))
+			require.Equal(t, []string{"new"}, got.Status.ManagedResources["tags"])
+			for _, condition := range got.Status.Conditions {
+				if condition.Type == "Synced" {
+					require.Equal(t, metav1.ConditionFalse, condition.Status)
+				}
+			}
+		})
+	}
+}
+
+func TestProwlarrRestoredProfileIDAndLegacyFallback(t *testing.T) {
+	for _, named := range []bool{false, true} {
+		app := &fakeProwlarr{existing: map[string][]map[string]any{"appprofile": {{"name": "Search", "id": 84}}}}
+		cfg := prowlarrConfig(app.serve(t))
+		legacy := 7
+		idx := indexersv1alpha1.ProwlarrIndexer{Name: "indexer", AppProfileId: &legacy}
+		if named {
+			idx.AppProfileName = "Search"
+		}
+		cfg.Spec.Indexers = []indexersv1alpha1.ProwlarrIndexer{idx}
+		runProwlarr(t, cfg, prowlarrSecret())
+		posts := app.postsTo("/api/v1/indexer")
+		require.Len(t, posts, 1)
+		want := float64(7)
+		if named {
+			want = 84
+		}
+		require.Equal(t, want, posts[0]["appProfileId"])
+	}
+}
+
+func TestProwlarrMissingTagNeverBecomesEmptyAssociation(t *testing.T) {
+	app := &fakeProwlarr{}
+	cfg := prowlarrConfig(app.serve(t))
+	cfg.Spec.Indexers = []indexersv1alpha1.ProwlarrIndexer{{Name: "indexer", Tags: []string{"missing"}}}
+	runProwlarr(t, cfg, prowlarrSecret())
+	require.Empty(t, app.postsTo("/api/v1/indexer"))
 }

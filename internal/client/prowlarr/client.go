@@ -1,9 +1,6 @@
 package prowlarr
 
 import (
-	"context"
-	"fmt"
-
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	indexersv1alpha1 "github.com/kyleseneker/media-operator/api/indexers/v1alpha1"
 	pvrclient "github.com/kyleseneker/media-operator/internal/client/pvr"
@@ -21,6 +18,7 @@ func ProwlarrDefinition() engine.AppDefinition {
 		Resources: []engine.ResourceEndpoint{
 			// Tags first — other resources reference tag IDs.
 			{Name: "tags", Path: "/api/v1/tag", MatchField: "label", Policy: engine.CreateOrUpdate},
+			{Name: "appProfiles", Path: "/api/v1/appprofile", MatchField: "name", Policy: engine.CreateOrUpdate},
 			{Name: "applications", Path: "/api/v1/applications", MatchField: "name", Policy: engine.CreateOrUpdate, Prunable: true},
 			{Name: "indexers", Path: "/api/v1/indexer", MatchField: "name", Policy: engine.CreateOrUpdate, Prunable: true},
 			{Name: "proxies", Path: "/api/v1/indexerproxy", MatchField: "name", Policy: engine.CreateOrUpdate, Prunable: true},
@@ -32,6 +30,7 @@ func ProwlarrDefinition() engine.AppDefinition {
 
 // ProwlarrOptions holds all the inputs needed to reconcile Prowlarr.
 type ProwlarrOptions struct {
+	AppProfiles     []indexersv1alpha1.ProwlarrAppProfile
 	Tags            []commonv1alpha1.Tag
 	Applications    []map[string]any
 	Indexers        []indexersv1alpha1.ProwlarrIndexer
@@ -43,6 +42,22 @@ type ProwlarrOptions struct {
 // ProwlarrResources builds the resources map from the options.
 func ProwlarrResources(opts ProwlarrOptions, tagIDs map[string]int) map[string][]map[string]any {
 	resources := make(map[string][]map[string]any)
+	for _, profile := range opts.AppProfiles {
+		payload := map[string]any{"name": profile.Name}
+		if profile.EnableRss != nil {
+			payload["enableRss"] = *profile.EnableRss
+		}
+		if profile.EnableAutomaticSearch != nil {
+			payload["enableAutomaticSearch"] = *profile.EnableAutomaticSearch
+		}
+		if profile.EnableInteractiveSearch != nil {
+			payload["enableInteractiveSearch"] = *profile.EnableInteractiveSearch
+		}
+		if profile.MinimumSeeders != nil {
+			payload["minimumSeeders"] = *profile.MinimumSeeders
+		}
+		resources["appProfiles"] = append(resources["appProfiles"], payload)
+	}
 
 	if len(opts.Tags) > 0 {
 		tags := make([]map[string]any, 0, len(opts.Tags))
@@ -213,8 +228,9 @@ func intSliceToInterface(s []int) []any {
 	return r
 }
 
-// resolveTags maps tag labels to the IDs Prowlarr assigned them. Labels with no
-// known ID are dropped rather than sent as-is, since Prowlarr expects integers.
+// resolveTags maps tag labels to the IDs Prowlarr assigned them. ResolveReferences
+// rejects unknown labels before payloads are built; any that remain are dropped
+// rather than sent as-is, since Prowlarr expects integers.
 func resolveTags(labels []string, tagIDs map[string]int) []any {
 	out := make([]any, 0, len(labels))
 	for _, l := range labels {
@@ -223,21 +239,4 @@ func resolveTags(labels []string, tagIDs map[string]int) []any {
 		}
 	}
 	return out
-}
-
-// FetchTagIDs returns a label -> id map of the tags currently defined in Prowlarr.
-func FetchTagIDs(ctx context.Context, client *engine.HTTPClient) (map[string]int, error) {
-	existing, err := client.GetJSONList(ctx, "/api/v1/tag")
-	if err != nil {
-		return nil, fmt.Errorf("fetching tags: %w", err)
-	}
-	ids := make(map[string]int, len(existing))
-	for _, e := range existing {
-		label, _ := e["label"].(string)
-		id, ok := e["id"].(float64)
-		if label != "" && ok {
-			ids[label] = int(id)
-		}
-	}
-	return ids, nil
 }

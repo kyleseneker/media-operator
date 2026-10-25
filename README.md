@@ -82,8 +82,15 @@ doesn't matter, the operator just reads them and re-reconciles when they change.
   event, potentially leaving remote resources behind.
 - **Settings drift is corrected every cycle; root folders and Jellyfin libraries
   are create-only.** Once they exist the operator won't modify them.
-- **Prowlarr takes tag labels, the other Servarr apps take tag IDs.** Prowlarr
-  resolves labels to IDs at apply time. Everywhere else `tags` is a list of ints.
+- **Portable tag references.** Servarr resources accept `tagLabels`, resolved after
+  declared tags are created. Nonempty labels take precedence over numeric `tags`.
+  Prowlarr's existing `tags` fields remain labels; its notifications use `tagLabels`.
+  Missing or ambiguous references fail instead of silently dropping associations.
+- **Prowlarr sync profiles.** Declare `appProfiles` and reference them with
+  `indexers[].appProfileName`; names take precedence over `appProfileId`. Profiles
+  are created/updated but retained during prune and deletion.
+- **Remote downloaders.** Servarr `remotePathMappings` translate download
+  paths by host and remote directory; local paths can be updated in place.
 - **Any `fields` entry can read from a Secret.** Use `valueFrom` instead of
   `value` to keep indexer API keys and webhook URLs out of git.
 - **Self-signed certs work.** `connection.tls.caSecretRef` for a private CA, or
@@ -130,3 +137,10 @@ make sync-crds               # copy generated CRDs into the charts
 ### Seerr quality profiles
 
 Set `activeProfileName` on Seerr's Sonarr/Radarr connections to resolve the current profile ID from that service during each reconciliation. Names take precedence over `activeProfileId`, allowing a restored or recreated profile to receive a new ID. Run Recyclarr (or the profile owner) first. If the name is missing, ambiguous or the service cannot be queried, the operator leaves that Seerr connection unchanged and reports reconciliation failure. ID-only configurations retain their existing behavior.
+
+### Rebuilds and portability
+
+See [the rebuild guide](docs/rebuilding.md) for credential prerequisites, ownership,
+remaining limitations and acceptance checks, and
+[portable-references.yaml](examples/portable-references.yaml) for a complete example.
+Readarr support is legacy: the [upstream project is retired](https://readarr.com/).

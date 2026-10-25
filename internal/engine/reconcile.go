@@ -100,15 +100,15 @@ func ReconcileApp(ctx context.Context, client *HTTPClient, def AppDefinition, se
 			created, err := reconcileResourceTracked(ctx, client, r, item, policy.Observe)
 			if err != nil {
 				failed = true
-				matchVal := item[r.MatchField]
+				matchVal := r.resourceKey(item)
 				logger.Error(err, "failed to reconcile resource", "type", r.Name, "match", matchVal)
 				logAPIErrorDetail(ctx, err)
 				result.Errors = append(result.Errors, fmt.Sprintf("%s(%v): %v", r.Name, matchVal, err))
 			} else {
-				matchVal := item[r.MatchField]
+				matchVal := r.resourceKey(item)
 				result.Synced = append(result.Synced, fmt.Sprintf("%s(%v)", r.Name, matchVal))
-				if s, ok := matchVal.(string); ok && created && !slices.Contains(result.Managed[r.Name], s) {
-					result.Managed[r.Name] = append(result.Managed[r.Name], s)
+				if created && matchVal != "" && !slices.Contains(result.Managed[r.Name], matchVal) {
+					result.Managed[r.Name] = append(result.Managed[r.Name], matchVal)
 				}
 			}
 		}
@@ -153,7 +153,7 @@ func pruneResources(ctx context.Context, client *HTTPClient, endpoint ResourceEn
 	// Build set of desired match values
 	desiredSet := make(map[string]bool, len(desired))
 	for _, d := range desired {
-		if v, ok := d[endpoint.MatchField].(string); ok {
+		if v := endpoint.resourceKey(d); v != "" {
 			desiredSet[v] = true
 		}
 	}
@@ -165,7 +165,7 @@ func pruneResources(ctx context.Context, client *HTTPClient, endpoint ResourceEn
 	}
 	var candidates []pruneCandidate
 	for _, e := range existing {
-		matchVal, _ := e[endpoint.MatchField].(string)
+		matchVal := endpoint.resourceKey(e)
 		if matchVal == "" {
 			continue
 		}
@@ -249,10 +249,13 @@ func reconcileResourceTracked(ctx context.Context, client *HTTPClient, endpoint 
 		return false, fmt.Errorf("listing: %w", err)
 	}
 
-	desiredMatch, _ := desired[endpoint.MatchField].(string)
+	desiredMatch := endpoint.resourceKey(desired)
+	if desiredMatch == "" {
+		return false, fmt.Errorf("resource has no identity")
+	}
 
 	for _, e := range existing {
-		existingMatch, _ := e[endpoint.MatchField].(string)
+		existingMatch := endpoint.resourceKey(e)
 		if existingMatch == desiredMatch {
 			// Found existing resource
 			switch endpoint.Policy {

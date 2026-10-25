@@ -1,0 +1,64 @@
+# Supply the referenced Secrets and deploy the apps separately.
+# The hostname and local directories below must exist in your installation.
+apiVersion: media-operator.dev/v1alpha1
+kind: SonarrConfig
+metadata:
+  name: portable-sonarr
+  namespace: media
+spec:
+  connection:
+    url: http://sonarr:8989
+    apiKeySecretRef:
+      name: sonarr-credentials
+      key: api-key
+  tags:
+    - label: television
+  downloadClients:
+    - name: seedbox
+      implementation: QBittorrent
+      protocol: torrent
+      host: seedbox.example.net
+      port: 8080
+      category: tv
+      tagLabels: [television]
+      usernameSecretRef:
+        name: seedbox-credentials
+        key: username
+      passwordSecretRef:
+        name: seedbox-credentials
+        key: password
+  remotePathMappings:
+    - host: seedbox.example.net
+      remotePath: /downloads/tv
+      localPath: /data/seedbox/tv
+---
+apiVersion: media-operator.dev/v1alpha1
+kind: ProwlarrConfig
+metadata:
+  name: portable-prowlarr
+  namespace: media
+spec:
+  connection:
+    url: http://prowlarr:9696
+    apiKeySecretRef:
+      name: prowlarr-credentials
+      key: api-key
+  appProfiles:
+    - name: Automatic and interactive
+      enableRss: true
+      enableAutomaticSearch: true
+      enableInteractiveSearch: true
+      minimumSeeders: 1
+  indexers:
+    - name: my-newznab
+      implementation: Newznab
+      configContract: NewznabSettings
+      enable: true
+      appProfileName: Automatic and interactive
+      fields:
+        - name: baseUrl
+          value: https://indexer.example.net
+        - name: apiKey
+          valueFrom:
+            name: indexer-credentials
+            key: api-key

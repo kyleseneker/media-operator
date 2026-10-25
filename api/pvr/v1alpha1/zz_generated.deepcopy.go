@@ -131,6 +131,11 @@ func (in *LidarrConfigSpec) DeepCopyInto(out *LidarrConfigSpec) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.RemotePathMappings != nil {
+		in, out := &in.RemotePathMappings, &out.RemotePathMappings
+		*out = make([]commonv1alpha1.RemotePathMapping, len(*in))
+		copy(*out, *in)
+	}
 	if in.QualityProfiles != nil {
 		in, out := &in.QualityProfiles, &out.QualityProfiles
 		*out = make([]commonv1alpha1.QualityProfile, len(*in))
@@ -489,6 +494,11 @@ func (in *RadarrConfigSpec) DeepCopyInto(out *RadarrConfigSpec) {
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
+	}
+	if in.RemotePathMappings != nil {
+		in, out := &in.RemotePathMappings, &out.RemotePathMappings
+		*out = make([]commonv1alpha1.RemotePathMapping, len(*in))
+		copy(*out, *in)
 	}
 	if in.QualityProfiles != nil {
 		in, out := &in.QualityProfiles, &out.QualityProfiles
@@ -914,6 +924,11 @@ func (in *ReadarrConfigSpec) DeepCopyInto(out *ReadarrConfigSpec) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.RemotePathMappings != nil {
+		in, out := &in.RemotePathMappings, &out.RemotePathMappings
+		*out = make([]commonv1alpha1.RemotePathMapping, len(*in))
+		copy(*out, *in)
+	}
 	if in.QualityProfiles != nil {
 		in, out := &in.QualityProfiles, &out.QualityProfiles
 		*out = make([]commonv1alpha1.QualityProfile, len(*in))
@@ -1272,6 +1287,11 @@ func (in *SonarrConfigSpec) DeepCopyInto(out *SonarrConfigSpec) {
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
+	}
+	if in.RemotePathMappings != nil {
+		in, out := &in.RemotePathMappings, &out.RemotePathMappings
+		*out = make([]commonv1alpha1.RemotePathMapping, len(*in))
+		copy(*out, *in)
 	}
 	if in.QualityProfiles != nil {
 		in, out := &in.QualityProfiles, &out.QualityProfiles

@@ -35,6 +35,11 @@ type ProwlarrConfigSpec struct {
 	// +optional
 	Applications []ProwlarrApplication `json:"applications,omitempty"`
 
+	// appProfiles defines indexer sync profiles, applied before indexers.
+	// Profiles are not pruned because indexers outside this CR may reference them.
+	// +optional
+	AppProfiles []ProwlarrAppProfile `json:"appProfiles,omitempty"`
+
 	// indexers defines indexer configurations managed by Prowlarr.
 	// +optional
 	Indexers []ProwlarrIndexer `json:"indexers,omitempty"`
@@ -54,6 +59,30 @@ type ProwlarrConfigSpec struct {
 	// notifications defines notification/connection configurations.
 	// +optional
 	Notifications []commonv1alpha1.Notification `json:"notifications,omitempty"`
+}
+
+// ProwlarrAppProfile configures which searches an indexer supports.
+type ProwlarrAppProfile struct {
+	// name uniquely identifies the sync profile.
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// enableRss enables RSS sync.
+	// +optional
+	EnableRss *bool `json:"enableRss,omitempty"`
+
+	// enableAutomaticSearch enables automatic searches.
+	// +optional
+	EnableAutomaticSearch *bool `json:"enableAutomaticSearch,omitempty"`
+
+	// enableInteractiveSearch enables interactive searches.
+	// +optional
+	EnableInteractiveSearch *bool `json:"enableInteractiveSearch,omitempty"`
+
+	// minimumSeeders is the minimum number of seeders for torrent results.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	MinimumSeeders *int `json:"minimumSeeders,omitempty"`
 }
 
 // ProwlarrApplication defines an application connection managed by Prowlarr.
@@ -119,6 +148,11 @@ type ProwlarrIndexer struct {
 	// appProfileId is the application profile ID for this indexer.
 	// +optional
 	AppProfileId *int `json:"appProfileId,omitempty"`
+
+	// appProfileName resolves the current sync profile ID by name on each reconciliation.
+	// Takes precedence over appProfileId. Missing or ambiguous names block indexer writes.
+	// +optional
+	AppProfileName string `json:"appProfileName,omitempty"`
 
 	// priority is the indexer priority. Lower values are higher priority.
 	// +optional

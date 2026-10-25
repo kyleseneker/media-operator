@@ -282,3 +282,7 @@ endef
 define gomodver
 $(shell go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' $(1) 2>/dev/null)
 endef
+
+.PHONY: test-integration
+test-integration: ## Check disposable real Sonarr/Radarr/Prowlarr APIs (see test/integration/README.md).
+	go test -tags=integration ./test/integration/... -count=1 -v

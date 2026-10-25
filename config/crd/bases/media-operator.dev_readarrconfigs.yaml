@@ -321,6 +321,13 @@ spec:
                       description: removeFailedDownloads controls whether failed downloads
                         are removed.
                       type: boolean
+                    tagLabels:
+                      description: |-
+                        tagLabels references tags by label, resolved against the app on each reconciliation.
+                        When nonempty, takes precedence over tags. Missing or ambiguous labels block writes.
+                      items:
+                        type: string
+                      type: array
                     tags:
                       description: tags is the list of tag IDs to associate with this
                         download client.
@@ -454,6 +461,13 @@ spec:
                       description: shouldMonitor controls whether imported items are
                         monitored (Sonarr).
                       type: boolean
+                    tagLabels:
+                      description: |-
+                        tagLabels references tags by label, resolved against the app on each reconciliation.
+                        When nonempty, takes precedence over tags. Missing or ambiguous labels block writes.
+                      items:
+                        type: string
+                      type: array
                     tags:
                       description: tags is the list of tag IDs to associate with this
                         import list.
@@ -560,6 +574,13 @@ spec:
                       - torrent
                       - usenet
                       type: string
+                    tagLabels:
+                      description: |-
+                        tagLabels references tags by label, resolved against the app on each reconciliation.
+                        When nonempty, takes precedence over tags. Missing or ambiguous labels block writes.
+                      items:
+                        type: string
+                      type: array
                     tags:
                       description: tags is the list of tag IDs to associate with this
                         indexer.
@@ -755,6 +776,13 @@ spec:
                     onUpgrade:
                       description: onUpgrade fires when an existing file is upgraded.
                       type: boolean
+                    tagLabels:
+                      description: |-
+                        tagLabels references tags by label, resolved against the app on each reconciliation.
+                        When nonempty, takes precedence over tags. Missing or ambiguous labels block writes.
+                      items:
+                        type: string
+                      type: array
                     tags:
                       description: tags is the list of tag IDs to associate with this
                         notification.
@@ -928,6 +956,40 @@ spec:
                       Default: false (only create/update, never delete).
                     type: boolean
                 type: object
+              remotePathMappings:
+                description: |-
+                  remotePathMappings translates paths reported by remote download clients.
+                  Entries are matched by host and remotePath. Only operator-created entries can be pruned.
+                items:
+                  description: |-
+                    RemotePathMapping translates a download client's path into a path visible to the app.
+                    Identity is the pair (host, remotePath); localPath can be updated in place.
+                  properties:
+                    host:
+                      description: host must match the download client's configured
+                        hostname.
+                      minLength: 1
+                      type: string
+                    localPath:
+                      description: localPath is the existing directory as seen by
+                        the app.
+                      minLength: 1
+                      type: string
+                    remotePath:
+                      description: remotePath is the directory reported by the download
+                        client.
+                      minLength: 1
+                      type: string
+                  required:
+                  - host
+                  - localPath
+                  - remotePath
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - host
+                - remotePath
+                x-kubernetes-list-type: map
               rootFolders:
                 description: rootFolders defines book library root folder paths.
                 items:

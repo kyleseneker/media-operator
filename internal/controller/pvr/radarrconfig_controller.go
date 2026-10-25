@@ -91,16 +91,17 @@ func (r *RadarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	result, err := pvrclient.Reconcile(ctx, hc, "v3", config.Spec, pvrclient.Options{
-		RootFolders:     config.Spec.RootFolders,
-		DownloadClients: config.Spec.DownloadClients,
-		DCSecrets:       dcSecrets,
-		CategoryField:   "movieCategory",
-		QualityProfiles: config.Spec.QualityProfiles,
-		CustomFormats:   config.Spec.CustomFormats,
-		Tags:            config.Spec.Tags,
-		Indexers:        indexers,
-		Notifications:   notifications,
-		ImportLists:     importLists,
+		RootFolders:        config.Spec.RootFolders,
+		RemotePathMappings: config.Spec.RemotePathMappings,
+		DownloadClients:    config.Spec.DownloadClients,
+		DCSecrets:          dcSecrets,
+		CategoryField:      "movieCategory",
+		QualityProfiles:    config.Spec.QualityProfiles,
+		CustomFormats:      config.Spec.CustomFormats,
+		Tags:               config.Spec.Tags,
+		Indexers:           indexers,
+		Notifications:      notifications,
+		ImportLists:        importLists,
 	}, ctrlcommon.Policy(config.Spec.Reconcile), config.Status.ManagedResources)
 	if err != nil {
 		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, err.Error())
