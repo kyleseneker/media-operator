@@ -3,7 +3,6 @@ package requests
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -411,28 +410,27 @@ func syncJellyfinLibraries(ctx context.Context, sc *seerrclient.Client, auth *re
 	if _, err := sc.Post(ctx, "/api/v1/settings/jellyfin", settings); err != nil {
 		return fmt.Errorf("jellyfin settings: %w", err)
 	}
-	if _, err := sc.Post(ctx, "/api/v1/settings/jellyfin/sync", map[string]any{}); err != nil {
-		return fmt.Errorf("jellyfin library sync: %w", err)
-	}
 	return enableJellyfinLibraries(ctx, sc)
 }
 
+// enableJellyfinLibraries refreshes Seerr's library list from Jellyfin and
+// enables each library. Seerr 3.5.0 replaced the old sync/enable query
+// parameters on GET .../library with these endpoints, and its request validator
+// rejects the old form. The sync answers 404 while Jellyfin has no libraries;
+// setup then retries rather than finishing with none enabled.
 func enableJellyfinLibraries(ctx context.Context, sc *seerrclient.Client) error {
-	libraries, err := sc.GetList(ctx, "/api/v1/settings/jellyfin/library?sync=true")
+	libraries, err := sc.PostList(ctx, "/api/v1/settings/jellyfin/library/sync", map[string]any{})
 	if err != nil {
-		return fmt.Errorf("listing jellyfin libraries: %w", err)
+		return fmt.Errorf("jellyfin library sync: %w", err)
 	}
-	ids := make([]string, 0, len(libraries))
 	for _, lib := range libraries {
-		if id, ok := lib["id"].(string); ok && id != "" {
-			ids = append(ids, id)
+		id, ok := lib["id"].(string)
+		if !ok || id == "" {
+			continue
 		}
-	}
-	if len(ids) == 0 {
-		return nil
-	}
-	if _, err := sc.GetList(ctx, "/api/v1/settings/jellyfin/library?enable="+strings.Join(ids, ",")); err != nil {
-		return fmt.Errorf("enabling jellyfin libraries: %w", err)
+		if err := sc.Put(ctx, fmt.Sprintf("/api/v1/settings/jellyfin/library/%s", id), map[string]any{"enabled": true}); err != nil {
+			return fmt.Errorf("enabling jellyfin library %s: %w", id, err)
+		}
 	}
 	return nil
 }

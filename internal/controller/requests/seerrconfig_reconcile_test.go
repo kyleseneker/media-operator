@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -24,18 +25,42 @@ import (
 )
 
 // fakeSeerr records requests and the bodies posted to the auth endpoints, so
-// the login payload can be asserted rather than just the fact of a call.
+// the login payload can be asserted rather than just the fact of a call. Like
+// Seerr's request validator, it rejects query parameters the API does not
+// declare; the operator sends none.
 type fakeSeerr struct {
 	mu          sync.Mutex
 	requests    []string
+	rejected    []string
 	authBodies  map[string]map[string]any
 	initialized bool
+	// libraries is what a Jellyfin library sync finds, keyed by "id" with an
+	// "enabled" flag the library PUT updates.
+	libraries []map[string]any
 }
 
 func (f *fakeSeerr) saw(method, path string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return slices.Contains(f.requests, method+" "+path)
+}
+
+// order returns the position of the first matching request, or -1.
+func (f *fakeSeerr) order(method, path string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Index(f.requests, method+" "+path)
+}
+
+func (f *fakeSeerr) libraryEnabled(id string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, lib := range f.libraries {
+		if lib["id"] == id {
+			return lib["enabled"] == true
+		}
+	}
+	return false
 }
 
 func (f *fakeSeerr) authBody(path string) map[string]any {
@@ -83,19 +108,46 @@ func (f *fakeSeerr) serve(t *testing.T) string {
 			_ = json.NewDecoder(r.Body).Decode(&body)
 		}
 		f.mu.Lock()
+		defer f.mu.Unlock()
 		f.requests = append(f.requests, r.Method+" "+r.URL.Path)
 		if body != nil {
 			f.authBodies[r.URL.Path] = body
 		}
-		init := f.initialized
-		f.mu.Unlock()
 
 		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/api/v1/settings/public":
-			_ = json.NewEncoder(w).Encode(map[string]any{"initialized": init})
-		case "/api/v1/settings/main":
+		if r.URL.RawQuery != "" {
+			f.rejected = append(f.rejected, r.Method+" "+r.URL.RequestURI())
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{"message": "Unknown query parameter"})
+			return
+		}
+		const libraryPrefix = "/api/v1/settings/jellyfin/library/"
+		switch {
+		case r.URL.Path == "/api/v1/settings/public":
+			_ = json.NewEncoder(w).Encode(map[string]any{"initialized": f.initialized})
+		case r.URL.Path == "/api/v1/settings/main":
 			_ = json.NewEncoder(w).Encode(map[string]any{"apiKey": "seerr-generated-key"})
+		case r.URL.Path == "/api/v1/settings/initialize" && r.Method == http.MethodPost:
+			f.initialized = true
+			_ = json.NewEncoder(w).Encode(map[string]any{"initialized": true})
+		case r.URL.Path == libraryPrefix+"sync" && r.Method == http.MethodPost:
+			if len(f.libraries) == 0 {
+				w.WriteHeader(http.StatusNotFound)
+				_ = json.NewEncoder(w).Encode(map[string]any{"message": "SYNC_ERROR_NO_LIBRARIES"})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(f.libraries)
+		case strings.HasPrefix(r.URL.Path, libraryPrefix) && r.Method == http.MethodPut:
+			id := strings.TrimPrefix(r.URL.Path, libraryPrefix)
+			for _, lib := range f.libraries {
+				if lib["id"] == id {
+					lib["enabled"] = body["enabled"]
+					_ = json.NewEncoder(w).Encode(lib)
+					return
+				}
+			}
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]any{"message": "Library does not exist."})
 		default:
 			_ = json.NewEncoder(w).Encode(map[string]any{})
 		}
@@ -241,5 +293,65 @@ func TestSeerrPlexLoginSendsToken(t *testing.T) {
 	}
 	if body["authToken"] != "plex-token" {
 		t.Errorf("authToken = %v, want the resolved secret value", body["authToken"])
+	}
+}
+
+func firstRunJellyfinConfig(addr string) *requestsv1alpha1.SeerrConfig {
+	port := 8096
+	cfg := seerrConfig(addr)
+	cfg.Spec.Connection.APIKeySecretRef = &commonv1alpha1.SecretKeyRef{Name: "seerr-secrets", Key: "api-key"}
+	cfg.Spec.JellyfinAuth = &requestsv1alpha1.SeerrJellyfinAuth{
+		Hostname:          "jellyfin",
+		Port:              &port,
+		UsernameSecretRef: commonv1alpha1.SecretKeyRef{Name: "seerr-secrets", Key: "username"},
+		PasswordSecretRef: commonv1alpha1.SecretKeyRef{Name: "seerr-secrets", Key: "password"},
+	}
+	return cfg
+}
+
+// First-time setup refreshes the library list from Jellyfin, enables every
+// library, and only then completes initialization. Seerr 3.5.0 removed the
+// GET .../library?sync&enable form; a request using it is rejected, setup
+// never completes, and a rebuilt Seerr is left uninitialized.
+func TestSeerrFirstRunEnablesJellyfinLibraries(t *testing.T) {
+	app := &fakeSeerr{libraries: []map[string]any{
+		{"id": "movies", "name": "Movies", "enabled": false},
+		{"id": "shows", "name": "Shows", "enabled": false},
+	}}
+	addr := app.serve(t)
+
+	runSeerr(t, firstRunJellyfinConfig(addr))
+
+	if len(app.rejected) > 0 {
+		t.Fatalf("sent query parameters Seerr does not declare: %v", app.rejected)
+	}
+	for _, id := range []string{"movies", "shows"} {
+		if !app.libraryEnabled(id) {
+			t.Errorf("library %s was not enabled", id)
+		}
+	}
+	initialize := app.order("POST", "/api/v1/settings/initialize")
+	if initialize < 0 {
+		t.Fatal("setup never completed initialization")
+	}
+	if last := app.order("PUT", "/api/v1/settings/jellyfin/library/shows"); last > initialize {
+		t.Error("initialized before every library was enabled")
+	}
+}
+
+// Seerr's library sync answers 404 while Jellyfin has no libraries yet, as on a
+// rebuild where the Jellyfin operator has not created them. Finishing setup then
+// would leave Seerr with nothing enabled, and setup never runs again.
+func TestSeerrFirstRunWaitsForJellyfinLibraries(t *testing.T) {
+	app := &fakeSeerr{}
+	addr := app.serve(t)
+
+	runSeerr(t, firstRunJellyfinConfig(addr))
+
+	if !app.saw("POST", "/api/v1/settings/jellyfin/library/sync") {
+		t.Fatal("never asked Seerr to sync the Jellyfin libraries")
+	}
+	if app.saw("POST", "/api/v1/settings/initialize") {
+		t.Error("completed initialization with no libraries to enable")
 	}
 }

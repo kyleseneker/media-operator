@@ -30,7 +30,8 @@ spec:
 ```
 
 Jellyfin and Seerr get their first-time setup wizard run automatically on a fresh
-install.
+install. Seerr's setup needs Seerr 3.5.0 or later; with Jellyfin it waits until
+Jellyfin has at least one library, then enables every library.
 
 ## Install
 

@@ -81,6 +81,8 @@ compatibility with a particular application release. See
 Bazarr profiles currently require explicit `profileId` values; those are declared
 profile identities, not a name-to-generated-ID lookup. Validate defaults and any
 existing media assignments after a rebuild. Jellyfin libraries remain create-only.
+Seerr's first-time setup enables Jellyfin libraries only; with Plex it neither
+configures the Plex server nor enables its libraries, so finish that in Seerr.
 Database-backed users, histories, media assignments and settings outside the CRDs
 still require backups or separate provisioning. This milestone does not establish
 fully unattended recovery of an entire media stack.

@@ -110,6 +110,19 @@ func (c *Client) Post(ctx context.Context, path string, payload map[string]any) 
 	return result, nil
 }
 
+// PostList performs a POST request and returns the response as a slice of maps.
+func (c *Client) PostList(ctx context.Context, path string, payload map[string]any) ([]map[string]any, error) {
+	data, err := c.hc.Do(ctx, http.MethodPost, path, payload)
+	if err != nil {
+		return nil, err
+	}
+	var result []map[string]any
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("unmarshaling response: %w", err)
+	}
+	return result, nil
+}
+
 // Put performs a PUT request.
 func (c *Client) Put(ctx context.Context, path string, payload map[string]any) error {
 	return c.hc.PutJSON(ctx, path, payload)

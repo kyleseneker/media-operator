@@ -99,6 +99,17 @@ func TestPost(t *testing.T) {
 	assert.Equal(t, float64(1), result["id"])
 }
 
+func TestPostList(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		_ = json.NewEncoder(w).Encode([]map[string]any{{"id": "a"}, {"id": "b"}})
+	})
+	result, err := c.PostList(context.Background(), "/api/v1/resource/sync", map[string]any{})
+	require.NoError(t, err)
+	require.Len(t, result, 2)
+	assert.Equal(t, "b", result[1]["id"])
+}
+
 func TestPing(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v1/settings/public", r.URL.Path)
