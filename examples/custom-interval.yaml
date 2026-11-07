@@ -6,7 +6,7 @@
 # For example, remove a download client the operator added and it is deleted from the app.
 # Anything created by hand is never deleted, root folders and tags are never pruned, and
 # omitting a section entirely means "don't manage this." Operators that cannot prune
-# reject prune: true with InvalidConfig; see the README for which ones can.
+# reject prune: true with InvalidConfig; see docs/guide.md for which ones can.
 ---
 apiVersion: media-operator.dev/v1alpha1
 kind: SonarrConfig

@@ -253,6 +253,6 @@ release:
     - Charts: `oci://ghcr.io/kyleseneker/media-operator/media-operator-<operator>`, version `{{ .Version }}`
     - Images: `ghcr.io/kyleseneker/media-operator-<operator>:{{ .Version }}`
     - CLI: the `media-operator-cli` archives below, or `ghcr.io/kyleseneker/media-operator-cli:{{ .Version }}`
-    - Tested app versions: [compatibility table](https://github.com/kyleseneker/media-operator/blob/{{ .Tag }}/README.md#compatibility)
+    - Tested app versions: [supported apps](https://github.com/kyleseneker/media-operator/blob/{{ .Tag }}/README.md#supported-apps)
   extra_files:
     - glob: config/crd/bases/*.yaml

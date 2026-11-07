@@ -2,7 +2,7 @@
 
 package compat
 
-// Application versions the suite runs against; README's compatibility table
+// Application versions the suite runs against; README's supported apps table
 // lists the same versions. Renovate updates each pin, and the compat workflow
 // then proves the new version before it merges.
 const (

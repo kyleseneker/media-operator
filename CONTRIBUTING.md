@@ -16,6 +16,7 @@ running.
 ```bash
 BINARY=pvr make run          # run one operator against your current kube context
 make build                   # every operator and the CLI
+BINARY=pvr make docker-build # that operator's image for this machine; IMG= to tag, ARCH= to cross-build
 make test
 make manifests generate      # after editing anything in api/
 make sync-crds               # copy generated CRDs into the charts

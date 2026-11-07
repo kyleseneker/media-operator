@@ -78,7 +78,7 @@
       ],
       "pinDigests": false,
       "prBodyNotes": [
-        "Update the tested versions in the README compatibility table to match."
+        "Update the tested versions in the README's supported apps table to match."
       ]
     },
     {
