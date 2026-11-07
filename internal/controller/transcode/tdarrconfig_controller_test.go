@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -27,6 +29,7 @@ import (
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	transcodev1alpha1 "github.com/kyleseneker/media-operator/api/transcode/v1alpha1"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
+	"github.com/kyleseneker/media-operator/internal/metrics"
 )
 
 const (
@@ -626,4 +629,26 @@ func TestWorkerNodeNeverGuessesAmongSeveral(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+func TestLibraryVariablesObserveReportsWhatPruneWouldDelete(t *testing.T) {
+	app := &fakeTdarr{docFound: true, vars: []map[string]any{
+		{"_id": "v1", "key": "bitrate_1080p", "value": "2500", "type": "library:movies"},
+		{"_id": "v9", "key": "observe_stale", "value": "x", "type": "library:movies"},
+	}}
+	cfg := tdarrConfig(app.serve(t))
+	observe := "observe"
+	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{Prune: new(true), DriftPolicy: &observe}
+	cfg.Spec.Libraries = []transcodev1alpha1.TdarrLibrary{{
+		ID: "movies", Name: "Movies", Folder: "/data/media/movies",
+		Variables: map[string]string{"bitrate_1080p": "2500"},
+	}}
+	cfg.Status.ManagedResources = map[string][]string{variablesResource: {"movies/observe_stale"}}
+	observed := metrics.DriftObservedTotal.WithLabelValues("tdarr", variablesResource, "movies/observe_stale")
+	before := testutil.ToFloat64(observed)
+
+	runTdarr(t, cfg, true)
+
+	assert.Empty(t, app.varWrites(), "observe mode wrote to Tdarr")
+	assert.Equal(t, before+1, testutil.ToFloat64(observed))
 }

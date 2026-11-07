@@ -159,6 +159,25 @@ func TestPruneRetainsFailedDeletesForRetry(t *testing.T) {
 	assert.Equal(t, "deleted", result.Pruned[0].Name)
 }
 
+func TestObserveReportsWhatPruneWouldDelete(t *testing.T) {
+	var writes []string
+	hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writes = append(writes, r.Method+" "+r.URL.Path)
+			return
+		}
+		_ = json.NewEncoder(w).Encode([]map[string]any{{"id": 1, "name": "desired"}, {"id": 2, "name": "old"}, {"id": 3, "name": "hand-made"}})
+	})
+	previous := map[string][]string{"indexers": {"desired", "old"}}
+	result := ReconcileApp(context.Background(), hc, ownershipDefinition(), nil,
+		map[string][]map[string]any{"indexers": {{"name": "desired"}}}, SyncPolicy{Prune: true, Observe: true}, previous)
+
+	require.True(t, result.Success(), result.Message())
+	assert.Empty(t, writes)
+	assert.Equal(t, []string{"indexers(old)"}, result.Drift)
+	assert.Equal(t, previous, result.Managed)
+}
+
 func ownershipDefinition() AppDefinition {
 	return AppDefinition{Resources: []ResourceEndpoint{{Name: "indexers", Path: "/indexers", MatchField: "name", Policy: CreateOrUpdate, Prunable: true}}}
 }

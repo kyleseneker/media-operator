@@ -162,7 +162,7 @@ func (s *autobrrSync) run(ctx context.Context, spec *automationv1alpha1.AutobrrC
 			fail("filter", filter.Name, err)
 		}
 	}
-	if s.prune && !s.Observe {
+	if s.prune {
 		syncErrors = append(syncErrors, s.pruneUndeclared(ctx, spec, failed)...)
 	}
 	return syncErrors

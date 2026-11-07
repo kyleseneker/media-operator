@@ -68,7 +68,7 @@ func (s *autobrrSync) pruneUndeclared(ctx context.Context, spec *automationv1alp
 		}
 		names, ids, err := listed(ctx, l.list)
 		if err == nil {
-			err = s.owned.Prune(l.kind, declared[l.kind], names, func(name string) error { return l.remove(ctx, ids[name]) })
+			err = s.Prune(s.owned, l.kind, declared[l.kind], names, func(name string) error { return l.remove(ctx, ids[name]) })
 		}
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("%s(prune): %v", l.kind, err))
@@ -90,7 +90,7 @@ func (s *autobrrSync) pruneActions(ctx context.Context, filter automationv1alpha
 	for _, a := range filter.Actions {
 		declared = append(declared, filter.Name+"/"+a.Name)
 	}
-	return s.owned.Prune(actionsKind, declared, existing, func(name string) error {
+	return s.Prune(s.owned, actionsKind, declared, existing, func(name string) error {
 		return s.ac.DeleteAction(ctx, actionIDs[name])
 	})
 }

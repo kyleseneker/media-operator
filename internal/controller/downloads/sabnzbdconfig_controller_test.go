@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -27,6 +29,7 @@ import (
 	downloadsv1alpha1 "github.com/kyleseneker/media-operator/api/downloads/v1alpha1"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/controller/internal/contract"
+	"github.com/kyleseneker/media-operator/internal/metrics"
 	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
 
@@ -345,4 +348,21 @@ func TestSabnzbdDeletionPolicyRemovesWhatItCreated(t *testing.T) {
 	assert.True(t, app.deleted("tv"))
 	assert.False(t, app.deleted("hand-made"), "deleted a server the operator did not create")
 	assert.False(t, app.deleted("movies"), "deleted a category the operator did not create")
+}
+
+func TestSabnzbdObserveReportsWhatPruneWouldDelete(t *testing.T) {
+	app := &fakeSabnzbd{config: map[string]any{"servers": sabnzbdEntries("observe-old")}}
+	cfg := sabnzbdConfig(app.serve(t))
+	cfg.Spec.Servers = []downloadsv1alpha1.SabnzbdServer{{Name: "kept", Host: "news", Port: 563}}
+	observe := "observe"
+	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{Prune: new(true), DriftPolicy: &observe}
+	cfg.Status.ManagedResources = map[string][]string{"servers": {"observe-old"}}
+	observed := metrics.DriftObservedTotal.WithLabelValues("sabnzbd", "servers", "observe-old")
+	before := testutil.ToFloat64(observed)
+
+	managed := runSabnzbdConfig(t, cfg)
+
+	assert.False(t, app.deleted("observe-old"), "observe mode deleted a server")
+	assert.Equal(t, before+1, testutil.ToFloat64(observed))
+	assert.Equal(t, []string{"observe-old"}, managed["servers"])
 }

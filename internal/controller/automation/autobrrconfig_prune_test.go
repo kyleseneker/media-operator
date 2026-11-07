@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,6 +16,7 @@ import (
 	automationv1alpha1 "github.com/kyleseneker/media-operator/api/automation/v1alpha1"
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
+	"github.com/kyleseneker/media-operator/internal/metrics"
 )
 
 func autobrrManaged(t *testing.T, cfg *automationv1alpha1.AutobrrConfig, withSecret bool) map[string][]string {
@@ -77,4 +80,23 @@ func TestAutobrrDeletionPolicyRemovesWhatItCreated(t *testing.T) {
 		assert.True(t, app.saw(http.MethodDelete, path), "cleanup did not delete %s", path)
 	}
 	assert.False(t, app.saw(http.MethodDelete, "/api/downloaders/9"), "cleanup deleted a download client the operator did not create")
+}
+
+func TestAutobrrObserveReportsWhatPruneWouldDelete(t *testing.T) {
+	app := &fakeAutobrr{existing: map[string][]map[string]any{"feeds": {
+		{"id": float64(5), "name": "observe-old"}, {"id": float64(7), "name": "kept"},
+	}}}
+	cfg := autobrrConfig(app.serve(t))
+	observe := "observe"
+	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{Prune: new(true), DriftPolicy: &observe}
+	cfg.Spec.Feeds = []automationv1alpha1.AutobrrFeed{{Name: "kept", Type: "RSS", URL: "http://feed"}}
+	cfg.Status.ManagedResources = map[string][]string{"feeds": {"observe-old", "kept"}}
+	observed := metrics.DriftObservedTotal.WithLabelValues("autobrr", "feeds", "observe-old")
+	before := testutil.ToFloat64(observed)
+
+	managed := autobrrManaged(t, cfg, true)
+
+	assert.False(t, app.saw(http.MethodDelete, "/api/feeds/5"), "observe mode deleted a feed")
+	assert.Equal(t, before+1, testutil.ToFloat64(observed))
+	assert.Equal(t, []string{"observe-old", "kept"}, managed["feeds"])
 }

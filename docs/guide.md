@@ -87,7 +87,8 @@ Jellyfin and Plex reject `prune: true` with `InvalidConfig`.
 - Settings, root folders, tags, libraries and Prowlarr sync profiles are never
   pruned.
 - A pass that would delete more than 25 items of one kind deletes none of them.
-- Observe mode never prunes.
+- Observe mode never prunes. It reports each item prune would delete as a
+  difference.
 - Deleting a Maintainerr rule group also deletes its collection.
 - Deleting a qBittorrent category leaves its torrents uncategorized.
 

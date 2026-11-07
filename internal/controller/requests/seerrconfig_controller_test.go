@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -29,6 +31,7 @@ import (
 	requestsv1alpha1 "github.com/kyleseneker/media-operator/api/requests/v1alpha1"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/controller/internal/contract"
+	"github.com/kyleseneker/media-operator/internal/metrics"
 )
 
 func TestBuildServicePayloadAlwaysSendsRequiredFields(t *testing.T) {
@@ -605,4 +608,26 @@ func TestSeerrDeletionPolicyRemovesTheConnectionsItCreated(t *testing.T) {
 	runSeerr(t, cfg)
 
 	assert.Equal(t, []string{"Hand-made"}, seerrServiceNames(app, "sonarr"))
+}
+
+func TestSeerrObserveReportsAConnectionPruneWouldDelete(t *testing.T) {
+	app := &fakeSeerr{initialized: true, services: map[string][]map[string]any{
+		"sonarr": {{"id": float64(0), "name": "ObserveOld"}, {"id": float64(1), "name": "Hand-made"}},
+	}}
+	cfg := seerrWithAPIKey(app.serve(t))
+	port := 8989
+	cfg.Spec.Sonarr = &requestsv1alpha1.SeerrServiceConnection{
+		Name: "New", Hostname: "sonarr", Port: &port,
+		APIKeySecretRef: commonv1alpha1.SecretKeyRef{Name: "seerr-secrets", Key: "api-key"},
+	}
+	observe := "observe"
+	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{Prune: new(true), DriftPolicy: &observe}
+	cfg.Status.ManagedResources = map[string][]string{"sonarr": {"ObserveOld"}}
+	observed := metrics.DriftObservedTotal.WithLabelValues("seerr", "sonarr", "ObserveOld")
+	before := testutil.ToFloat64(observed)
+
+	runSeerr(t, cfg)
+
+	assert.ElementsMatch(t, []string{"ObserveOld", "Hand-made"}, seerrServiceNames(app, "sonarr"))
+	assert.Equal(t, before+1, testutil.ToFloat64(observed))
 }

@@ -64,7 +64,7 @@ func (s *maintainerrSync) pruneUndeclared(
 		}
 		names, ids, err := l.listed(ctx)
 		if err == nil {
-			err = s.owned.Prune(l.kind, declared[l.kind], names, func(name string) error { return l.remove(ctx, ids[name]) })
+			err = s.Prune(s.owned, l.kind, declared[l.kind], names, func(name string) error { return l.remove(ctx, ids[name]) })
 		}
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("%s(prune): %v", l.kind, err))

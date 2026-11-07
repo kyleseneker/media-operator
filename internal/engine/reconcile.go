@@ -128,6 +128,16 @@ func ReconcileApp(ctx context.Context, client *HTTPClient, def AppDefinition, se
 		// Only runs when prune is enabled, the resource type is prunable, and at least one
 		// desired item was specified (so an omitted section doesn't wipe everything).
 		// Any failed apply for this type blocks pruning until a later successful pass.
+		if policy.Prune && policy.Observe && r.Prunable {
+			candidates, err := pruneCandidates(ctx, client, r, items, previouslyManaged[r.Name])
+			if err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("%s(prune): %v", r.Name, err))
+			}
+			for _, c := range candidates {
+				metrics.DriftObservedTotal.WithLabelValues(client.AppLabel(), r.Name, c.Name).Inc()
+				result.Drift = append(result.Drift, fmt.Sprintf("%s(%s)", r.Name, c.Name))
+			}
+		}
 		if policy.Prune && !policy.Observe && r.Prunable && !failed {
 			pruned, err := pruneResources(ctx, client, r, items, previouslyManaged[r.Name])
 			result.Pruned = append(result.Pruned, pruned...)
@@ -145,73 +155,60 @@ func ReconcileApp(ctx context.Context, client *HTTPClient, def AppDefinition, se
 	return result
 }
 
-// pruneResources deletes any existing resources not present in the desired list.
-// Returns the list of successfully pruned resources for event emission.
-// Refuses to prune if the number of candidates exceeds DefaultMaxPruneCount.
+// pruneResources deletes the resources pruneCandidates finds.
 func pruneResources(ctx context.Context, client *HTTPClient, endpoint ResourceEndpoint, desired []map[string]any, previouslyManaged []string) ([]PrunedResource, error) {
+	candidates, err := pruneCandidates(ctx, client, endpoint, desired, previouslyManaged)
+	if err != nil {
+		return nil, err
+	}
+	logger := log.FromContext(ctx)
+	var pruned []PrunedResource
+	for _, c := range candidates {
+		logger.Info("pruning unmanaged resource", "type", endpoint.Name, "match", c.Name, "id", c.ID)
+		if err := client.DeleteJSON(ctx, fmt.Sprintf("%s/%d", endpoint.Path, c.ID)); err != nil {
+			return pruned, fmt.Errorf("deleting %s %q (id=%d): %w", endpoint.Name, c.Name, c.ID, err)
+		}
+		metrics.ResourcesPrunedTotal.WithLabelValues(client.AppLabel(), endpoint.Name).Inc()
+		pruned = append(pruned, c)
+	}
+	return pruned, nil
+}
+
+// pruneCandidates lists the existing resources the operator created that the
+// desired list no longer has. It refuses past DefaultMaxPruneCount.
+func pruneCandidates(ctx context.Context, client *HTTPClient, endpoint ResourceEndpoint, desired []map[string]any, previouslyManaged []string) ([]PrunedResource, error) {
 	if len(previouslyManaged) == 0 {
 		return nil, nil
-	}
-	managedSet := make(map[string]bool, len(previouslyManaged))
-	for _, m := range previouslyManaged {
-		managedSet[m] = true
 	}
 	existing, err := client.GetJSONList(ctx, endpoint.Path)
 	if err != nil {
 		return nil, fmt.Errorf("listing for prune: %w", err)
 	}
-
-	// Build set of desired match values
 	desiredSet := make(map[string]bool, len(desired))
 	for _, d := range desired {
 		if v := endpoint.resourceKey(d); v != "" {
 			desiredSet[v] = true
 		}
 	}
-
-	// Collect candidates before deleting anything
-	type pruneCandidate struct {
-		name string
-		id   int
-	}
-	var candidates []pruneCandidate
+	var candidates []PrunedResource
 	for _, e := range existing {
 		matchVal := endpoint.resourceKey(e)
-		if matchVal == "" {
-			continue
-		}
-		if desiredSet[matchVal] {
-			continue
-		}
-		if !managedSet[matchVal] {
+		if matchVal == "" || desiredSet[matchVal] || !slices.Contains(previouslyManaged, matchVal) {
 			continue
 		}
 		id, ok := e["id"].(float64)
 		if !ok {
 			continue
 		}
-		candidates = append(candidates, pruneCandidate{name: matchVal, id: int(id)})
+		candidates = append(candidates, PrunedResource{Type: endpoint.Name, Name: matchVal, ID: int(id)})
 	}
-
-	// Safety threshold: refuse to prune if too many resources would be deleted
 	if len(candidates) > DefaultMaxPruneCount {
 		return nil, fmt.Errorf(
 			"refusing to prune %d %s resources (threshold is %d) — verify your desired state is complete",
 			len(candidates), endpoint.Name, DefaultMaxPruneCount,
 		)
 	}
-
-	logger := log.FromContext(ctx)
-	var pruned []PrunedResource
-	for _, c := range candidates {
-		logger.Info("pruning unmanaged resource", "type", endpoint.Name, "match", c.name, "id", c.id)
-		if err := client.DeleteJSON(ctx, fmt.Sprintf("%s/%d", endpoint.Path, c.id)); err != nil {
-			return pruned, fmt.Errorf("deleting %s %q (id=%d): %w", endpoint.Name, c.name, c.id, err)
-		}
-		metrics.ResourcesPrunedTotal.WithLabelValues(client.AppLabel(), endpoint.Name).Inc()
-		pruned = append(pruned, PrunedResource{Type: endpoint.Name, Name: c.name, ID: c.id})
-	}
-	return pruned, nil
+	return candidates, nil
 }
 
 // reconcileSetting handles a singleton config endpoint: GET, merge, PUT. In

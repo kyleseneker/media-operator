@@ -231,7 +231,7 @@ func (s *tdarrSync) libraryVariables(ctx context.Context, lib transcodev1alpha1.
 // pruneLibraryVariables deletes the variables the operator created that the
 // library no longer declares.
 func (s *tdarrSync) pruneLibraryVariables(ctx context.Context, lib transcodev1alpha1.TdarrLibrary, existing map[string]map[string]any) error {
-	if !s.prune || s.Observe {
+	if !s.prune {
 		return nil
 	}
 	ids := map[string]string{}
@@ -245,7 +245,7 @@ func (s *tdarrSync) pruneLibraryVariables(ctx context.Context, lib transcodev1al
 	for key := range lib.Variables {
 		declared = append(declared, lib.ID+"/"+key)
 	}
-	return s.owned.Prune(variablesResource, declared, present, func(name string) error {
+	return s.Prune(s.owned, variablesResource, declared, present, func(name string) error {
 		return s.tc.Remove(ctx, variablesCollection, ids[name])
 	})
 }

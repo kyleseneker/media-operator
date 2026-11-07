@@ -4,11 +4,14 @@ import (
 	"context"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
+	"github.com/kyleseneker/media-operator/internal/metrics"
 )
 
 func groupNames(groups []map[string]any) []any {
@@ -61,4 +64,27 @@ func TestMaintainerrDeletionPolicyRemovesRuleGroupsBeforeServers(t *testing.T) {
 	assert.Empty(t, app.groups)
 	require.Len(t, app.servers["radarr"], 1)
 	assert.Equal(t, "hand-made", app.servers["radarr"][0]["serverName"])
+}
+
+func TestMaintainerrObserveReportsWhatPruneWouldDelete(t *testing.T) {
+	app := newFakeMaintainerr()
+	spec := jellyfinSpec(app.serve(t))
+	run := newMaintainerrRun(t, spec)
+	run.reconcile(t)
+	app.groups = append(app.groups, map[string]any{"id": 51, "name": "Observed old", "collection": map[string]any{}})
+
+	cfg := run.get(t)
+	cfg.Status.ManagedResources[ruleGroupsKind] = append(cfg.Status.ManagedResources[ruleGroupsKind], "Observed old")
+	require.NoError(t, run.c.Status().Update(context.Background(), cfg))
+	observe := "observe"
+	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{Prune: new(true), DriftPolicy: &observe}
+	require.NoError(t, run.c.Update(context.Background(), cfg))
+	observed := metrics.DriftObservedTotal.WithLabelValues(maintainerrApp, ruleGroupsKind, "Observed old")
+	before := testutil.ToFloat64(observed)
+
+	run.reconcile(t)
+
+	assert.Contains(t, groupNames(app.groups), "Observed old", "observe mode deleted a rule group")
+	assert.Equal(t, before+1, testutil.ToFloat64(observed))
+	assert.Equal(t, "DriftDetected", run.condition(t, "Synced").Reason)
 }

@@ -183,7 +183,7 @@ func (s *maintainerrSync) run(ctx context.Context, spec *curationv1alpha1.Mainta
 		syncErrors = append(syncErrors, errs...)
 		failed[ruleGroupsKind] = len(errs) > 0
 	}
-	if s.prune && !s.Observe {
+	if s.prune {
 		syncErrors = append(syncErrors, s.pruneUndeclared(ctx, spec, failed)...)
 	}
 	return syncErrors

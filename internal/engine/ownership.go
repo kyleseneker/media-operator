@@ -75,9 +75,8 @@ func (o *Ownership) owned(kind string, declared, existing []string) []string {
 // delete removes the given items, keeping ownership of any it fails to delete so
 // a later pass retries them.
 func (o *Ownership) delete(kind string, names []string, remove func(name string) error) error {
-	if len(names) > DefaultMaxPruneCount {
-		return fmt.Errorf("refusing to delete %d %s (threshold is %d); check the resource lists everything it should",
-			len(names), kind, DefaultMaxPruneCount)
+	if err := pruneLimit(kind, len(names)); err != nil {
+		return err
 	}
 	for _, name := range names {
 		if err := remove(name); err != nil {
@@ -89,6 +88,14 @@ func (o *Ownership) delete(kind string, names []string, remove func(name string)
 		}
 		metrics.ResourcesPrunedTotal.WithLabelValues(o.app, kind).Inc()
 		o.pruned = append(o.pruned, PrunedResource{Type: kind, Name: name})
+	}
+	return nil
+}
+
+func pruneLimit(kind string, n int) error {
+	if n > DefaultMaxPruneCount {
+		return fmt.Errorf("refusing to delete %d %s (threshold is %d); check the resource lists everything it should",
+			n, kind, DefaultMaxPruneCount)
 	}
 	return nil
 }

@@ -110,8 +110,8 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			continue
 		}
 		err := svc.reconcile(ctx, sc, writes, owned, &config)
-		if err == nil && ctrlcommon.PruneEnabled(config.Spec.Reconcile) && !writes.Observe {
-			err = pruneSeerrService(ctx, sc, owned, svc.kind, svc.conn.Name)
+		if err == nil && ctrlcommon.PruneEnabled(config.Spec.Reconcile) {
+			err = pruneSeerrService(ctx, sc, writes, owned, svc.kind, svc.conn.Name)
 		}
 		if err != nil {
 			logger.Error(err, "failed to reconcile connection", "service", svc.kind)
@@ -158,12 +158,12 @@ func (r *SeerrConfigReconciler) seerrClient(ctx context.Context, config *request
 
 // pruneSeerrService deletes the connections of a kind the operator created other
 // than the declared one.
-func pruneSeerrService(ctx context.Context, sc *seerrclient.Client, owned *engine.Ownership, kind, declared string) error {
+func pruneSeerrService(ctx context.Context, sc *seerrclient.Client, w *engine.Writes, owned *engine.Ownership, kind, declared string) error {
 	names, ids, err := seerrServices(ctx, sc, kind)
 	if err != nil {
 		return err
 	}
-	return owned.Prune(kind, []string{declared}, names, func(name string) error {
+	return w.Prune(owned, kind, []string{declared}, names, func(name string) error {
 		return sc.Delete(ctx, fmt.Sprintf("/api/v1/settings/%s/%d", kind, ids[name]))
 	})
 }

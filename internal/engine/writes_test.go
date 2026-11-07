@@ -57,3 +57,26 @@ func TestWritesRecordDrift(t *testing.T) {
 	assert.Equal(t, []string{"action/a", "action/b"}, w.Drift())
 	assert.Equal(t, before+1, testutil.ToFloat64(observed), "drift_observed_total for action/a")
 }
+
+func TestWritesPruneObserveRecordsWhatItWouldDelete(t *testing.T) {
+	owned := NewOwnership("writes-prune", map[string][]string{"feeds": {"old", "kept"}})
+	w := &Writes{App: "writes-prune", Observe: true}
+
+	require.NoError(t, w.Prune(owned, "feeds", []string{"kept"}, []string{"old", "kept", "hand-made"}, func(string) error {
+		require.Fail(t, "observe mode must not delete")
+		return nil
+	}))
+
+	assert.Equal(t, []string{"feeds/old"}, w.Drift())
+	assert.Equal(t, map[string][]string{"feeds": {"old", "kept"}}, owned.Managed(), "observe mode changed ownership")
+}
+
+func TestWritesPruneEnforceDeletes(t *testing.T) {
+	owned := NewOwnership("writes-prune", map[string][]string{"feeds": {"old"}})
+	var removed []string
+	require.NoError(t, (&Writes{}).Prune(owned, "feeds", []string{"kept"}, []string{"old", "kept"}, func(name string) error {
+		removed = append(removed, name)
+		return nil
+	}))
+	assert.Equal(t, []string{"old"}, removed)
+}

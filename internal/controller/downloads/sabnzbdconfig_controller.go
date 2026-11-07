@@ -73,15 +73,20 @@ func (r *SabnzbdConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	servers, syncErrors := r.resolveSabnzbdServers(ctx, &config)
 	writes := planSabnzbd(current, config.Spec, servers, string(config.UID))
 
+	owned := engine.NewOwnership("sabnzbd", config.Status.ManagedResources)
+	prune := ctrlcommon.PruneEnabled(config.Spec.Reconcile)
 	if ctrlcommon.ObserveOnly(config.Spec.Reconcile) {
 		for _, w := range writes {
 			metrics.DriftObservedTotal.WithLabelValues("sabnzbd", w.resourceType, w.name).Inc()
 		}
-		ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, true, len(writes) > 0, syncErrors)
+		observed := &engine.Writes{App: "sabnzbd", Observe: true}
+		if prune {
+			syncErrors = append(syncErrors, pruneSabnzbd(ctx, sc, current, config.Spec, owned, observed)...)
+		}
+		ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, true, len(writes) > 0 || len(observed.Drift()) > 0, syncErrors)
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
 
-	owned := engine.NewOwnership("sabnzbd", config.Status.ManagedResources)
 	syncErrors = append(syncErrors, applySabnzbd(ctx, sc, writes, owned)...)
 	// A fresh SABnzbd creates its default categories on the first category
 	// write and discards that write, so check once more after writing.
@@ -92,8 +97,12 @@ func (r *SabnzbdConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			syncErrors = append(syncErrors, applySabnzbd(ctx, sc, planSabnzbd(current, config.Spec, servers, string(config.UID)), owned)...)
 		}
 	}
-	if ctrlcommon.PruneEnabled(config.Spec.Reconcile) && len(syncErrors) == 0 {
-		syncErrors = append(syncErrors, pruneSabnzbd(ctx, sc, config.Spec, owned)...)
+	if prune && len(syncErrors) == 0 {
+		if current, err = sc.GetConfig(ctx); err != nil {
+			syncErrors = append(syncErrors, fmt.Sprintf("reading config to prune: %v", err))
+		} else {
+			syncErrors = append(syncErrors, pruneSabnzbd(ctx, sc, current, config.Spec, owned, &engine.Writes{App: "sabnzbd"})...)
+		}
 	}
 
 	ctrlcommon.UpdateStatusManaged(&config, owned.Managed())
@@ -218,11 +227,10 @@ func (r *SabnzbdConfigReconciler) sabnzbdClient(ctx context.Context, config *dow
 
 // pruneSabnzbd deletes the servers and categories the operator created that the
 // spec no longer declares.
-func pruneSabnzbd(ctx context.Context, sc *sabnzbdclient.Client, spec downloadsv1alpha1.SabnzbdConfigSpec, owned *engine.Ownership) []string {
-	current, err := sc.GetConfig(ctx)
-	if err != nil {
-		return []string{fmt.Sprintf("reading config to prune: %v", err)}
-	}
+func pruneSabnzbd(
+	ctx context.Context, sc *sabnzbdclient.Client, current map[string]any, spec downloadsv1alpha1.SabnzbdConfigSpec,
+	owned *engine.Ownership, w *engine.Writes,
+) []string {
 	declared := map[string][]string{}
 	for _, s := range spec.Servers {
 		declared["servers"] = append(declared["servers"], s.Name)
@@ -232,7 +240,7 @@ func pruneSabnzbd(ctx context.Context, sc *sabnzbdclient.Client, spec downloadsv
 	}
 	var problems []string
 	for _, section := range []string{"servers", "categories"} {
-		err := owned.Prune(section, declared[section], sabnzbdNames(current, section), func(name string) error {
+		err := w.Prune(owned, section, declared[section], sabnzbdNames(current, section), func(name string) error {
 			return sc.DeleteNamed(ctx, section, name)
 		})
 		if err != nil {

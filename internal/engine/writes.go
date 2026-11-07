@@ -26,6 +26,22 @@ func (w *Writes) Apply(kind, name string, write func() error) error {
 	return write()
 }
 
+// Prune deletes what owned.Prune would, or in observe mode records each item it
+// would delete as a difference.
+func (w *Writes) Prune(owned *Ownership, kind string, declared, existing []string, remove func(name string) error) error {
+	if !w.Observe {
+		return owned.Prune(kind, declared, existing, remove)
+	}
+	candidates := owned.Candidates(kind, declared, existing)
+	if err := pruneLimit(kind, len(candidates)); err != nil {
+		return err
+	}
+	for _, name := range candidates {
+		w.RecordDrift(kind, name)
+	}
+	return nil
+}
+
 // RecordDrift records a difference observe mode found without a write to
 // withhold, such as one that depends on a resource observe did not create.
 func (w *Writes) RecordDrift(kind, name string) {
