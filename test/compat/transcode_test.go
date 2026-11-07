@@ -78,6 +78,23 @@ func TestTdarr(t *testing.T) {
 			flow, err := tc.GetByID(context.Background(), "FlowsJSONDB", "compatFlow1")
 			require.NoError(t, err)
 			assert.Equal(t, "Compat - remux check", flow["name"])
+			assert.Len(t, compatMoviesVariables(t, tc), 1)
+		},
+		cleanup: func(t *testing.T) {
+			assert.Empty(t, compatMoviesVariables(t, tc), "the library variable the operator created is still there")
 		},
 	})
+}
+
+func compatMoviesVariables(t *testing.T, tc *tdarrclient.Client) []map[string]any {
+	t.Helper()
+	docs, err := tc.GetAll(context.Background(), "VariablesJSONDB")
+	require.NoError(t, err)
+	var out []map[string]any
+	for _, doc := range docs {
+		if doc["type"] == "library:compatMovies" {
+			out = append(out, doc)
+		}
+	}
+	return out
 }

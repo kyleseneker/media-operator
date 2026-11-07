@@ -44,32 +44,28 @@ func (r *TdarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, ctrlcommon.Lifecycle{Prune: true}); done {
+	cleanup := func(ctx context.Context) error {
+		tc, _, err := r.tdarrClient(ctx, &config)
+		if err != nil {
+			return err
+		}
+		return (&tdarrSync{tc: tc, owned: engine.NewOwnership("tdarr", config.Status.ManagedResources)}).cleanup(ctx)
+	}
+	lifecycle := ctrlcommon.Lifecycle{Remove: cleanup, Prune: true}
+	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, lifecycle); done {
 		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
-	// Resolve API key
-	apiKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.APIKeySecretRef)
+	tc, reason, err := r.tdarrClient(ctx, &config)
 	if err != nil {
-		logger.Error(err, "failed to resolve API key secret")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
+		logger.Error(err, "failed to build the Tdarr client")
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, reason, err.Error())
+		if reason == engine.ReasonInvalidConfig {
+			return ctrl.Result{}, nil
+		}
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
-	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
-	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-	}
-
-	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthAPIKey, engine.WithAPIKey(apiKey), engine.WithAPIKeyHeader("x-api-key"), engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("tdarr"), engine.WithTimeout(3*time.Minute))
-	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonInvalidConfig, err.Error())
-		return ctrl.Result{}, nil
-	}
-	tc := tdarrclient.NewClient(hc)
-
-	// Health check
 	if err := tc.Ping(ctx); err != nil {
 		logger.Error(err, "Tdarr unreachable")
 		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonAppUnreachable, err.Error())
@@ -86,6 +82,24 @@ func (r *TdarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, sync.Observe, len(sync.Drift()) > 0, syncErrors)
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
+}
+
+func (r *TdarrConfigReconciler) tdarrClient(ctx context.Context, config *transcodev1alpha1.TdarrConfig) (*tdarrclient.Client, string, error) {
+	apiKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.APIKeySecretRef)
+	if err != nil {
+		return nil, engine.ReasonSecretNotFound, err
+	}
+	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
+	if err != nil {
+		return nil, engine.ReasonSecretNotFound, err
+	}
+	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthAPIKey, engine.WithAPIKey(apiKey),
+		engine.WithAPIKeyHeader("x-api-key"), engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("tdarr"),
+		engine.WithTimeout(3*time.Minute))
+	if err != nil {
+		return nil, engine.ReasonInvalidConfig, err
+	}
+	return tdarrclient.NewClient(hc), "", nil
 }
 
 // tdarrSync applies one TdarrConfig. With observe set it only reads, and
@@ -232,6 +246,31 @@ func (s *tdarrSync) pruneLibraryVariables(ctx context.Context, lib transcodev1al
 		declared = append(declared, lib.ID+"/"+key)
 	}
 	return s.owned.Prune(variablesResource, declared, present, func(name string) error {
+		return s.tc.Remove(ctx, variablesCollection, ids[name])
+	})
+}
+
+// cleanup deletes the library variables the operator created, for
+// deletionPolicy delete. Libraries are kept.
+func (s *tdarrSync) cleanup(ctx context.Context) error {
+	docs, err := s.tc.GetAll(ctx, variablesCollection)
+	if err != nil {
+		return err
+	}
+	ids := map[string]string{}
+	present := make([]string, 0, len(docs))
+	for _, doc := range docs {
+		varType, _ := doc["type"].(string)
+		key, _ := doc["key"].(string)
+		id, _ := doc["_id"].(string)
+		libraryID, ok := strings.CutPrefix(varType, libraryVariableType(""))
+		if !ok || key == "" || id == "" {
+			continue
+		}
+		ids[libraryID+"/"+key] = id
+		present = append(present, libraryID+"/"+key)
+	}
+	return s.owned.Cleanup(variablesResource, present, func(name string) error {
 		return s.tc.Remove(ctx, variablesCollection, ids[name])
 	})
 }

@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -25,6 +26,7 @@ import (
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	transcodev1alpha1 "github.com/kyleseneker/media-operator/api/transcode/v1alpha1"
+	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 )
 
 const (
@@ -405,6 +407,31 @@ func TestLibraryVariablesRecordWhatTheyCreate(t *testing.T) {
 	c := runTdarr(t, cfg, true)
 
 	assert.Equal(t, []string{"movies/created"}, tdarrManaged(t, c)[variablesResource])
+}
+
+func TestTdarrDeletionPolicyRemovesTheVariablesItCreated(t *testing.T) {
+	app := &fakeTdarr{docFound: true, vars: []map[string]any{
+		{"_id": "v1", "key": "created", "value": "1", "type": "library:movies"},
+		{"_id": "v2", "key": "hand_made", "value": "x", "type": "library:movies"},
+		{"_id": "v3", "key": "created", "value": "1", "type": "library:tv"},
+	}}
+	cfg := tdarrConfig(app.serve(t))
+	policy := ctrlcommon.DeletionPolicyDelete
+	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DeletionPolicy: &policy}
+	cfg.Status.ManagedResources = map[string][]string{variablesResource: {"movies/created", "tv/created"}}
+	now := metav1.NewTime(time.Now())
+	cfg.DeletionTimestamp = &now
+	cfg.Finalizers = []string{ctrlcommon.Finalizer}
+
+	runTdarr(t, cfg, true)
+
+	removed := make([]string, 0, 2)
+	for _, w := range app.varWrites() {
+		if w.mode == "removeOne" {
+			removed = append(removed, w.docID)
+		}
+	}
+	assert.ElementsMatch(t, []string{"v1", "v3"}, removed)
 }
 
 func tdarrManaged(t *testing.T, c client.Client) map[string][]string {
