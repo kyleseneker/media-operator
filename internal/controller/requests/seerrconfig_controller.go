@@ -48,10 +48,6 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
-	if ctrlcommon.RejectUnsupportedObserve(ctx, r.Status(), &config) {
-		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
-	}
-
 	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
 	if err != nil {
 		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
@@ -73,65 +69,26 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
+	writes := &seerrWrites{observe: ctrlcommon.ObserveOnly(config.Spec.Reconcile)}
+	if !isInitialized && writes.observe {
+		// Signing in to a Seerr that has not been set up configures its media
+		// server, so observe mode reports the setup as missing and stops.
+		config.Status.Initialized = &isInitialized
+		drift, err := engine.ObserveDifference("seerr", "settings", "initialization", nil, map[string]any{"initialized": true})
+		ctrlcommon.UpdateObservationStatus(ctx, r.Status(), &config, drift, err)
+		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
+	}
+
 	if err := r.establishSession(ctx, sc, &config); err != nil {
 		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	if !isInitialized {
-		var initErrors []string
-
-		// Sync media server libraries
-		if config.Spec.JellyfinAuth != nil {
-			if err := syncJellyfinLibraries(ctx, sc, config.Spec.JellyfinAuth); err != nil {
-				logger.Error(err, "failed to configure Jellyfin libraries")
-				initErrors = append(initErrors, err.Error())
-			}
-		}
-		if config.Spec.PlexAuth != nil {
-			if _, err := sc.Post(ctx, "/api/v1/settings/plex/sync", map[string]any{}); err != nil {
-				logger.Error(err, "failed to sync Plex libraries")
-				initErrors = append(initErrors, fmt.Sprintf("plex library sync: %v", err))
-			}
-		}
-
-		// Configure Sonarr if specified
-		if config.Spec.Sonarr != nil {
-			if err := r.reconcileSonarrConnection(ctx, sc, &config, true); err != nil {
-				logger.Error(err, "failed to configure Sonarr during initialization")
-				initErrors = append(initErrors, fmt.Sprintf("sonarr init: %v", err))
-			}
-		}
-
-		// Configure Radarr if specified
-		if config.Spec.Radarr != nil {
-			if err := r.reconcileRadarrConnection(ctx, sc, &config, true); err != nil {
-				logger.Error(err, "failed to configure Radarr during initialization")
-				initErrors = append(initErrors, fmt.Sprintf("radarr init: %v", err))
-			}
-		}
-
-		// Update main settings if specified
-		if config.Spec.Main != nil {
-			if err := reconcileSeerrMainSettings(ctx, sc, config.Spec.Main); err != nil {
-				logger.Error(err, "failed to configure main settings during initialization")
-				initErrors = append(initErrors, fmt.Sprintf("main settings init: %v", err))
-			}
-		}
-
-		if len(initErrors) > 0 {
-			ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("initialization failed: %v", initErrors))
+		if err := r.setup(ctx, sc, writes, &config); err != nil {
+			ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, err.Error())
 			return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 		}
-
-		// Complete initialization
-		if _, err := sc.Post(ctx, "/api/v1/settings/initialize", map[string]any{}); err != nil {
-			logger.Error(err, "failed to initialize Seerr")
-			ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("initialization: %v", err))
-			return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
-		}
-
-		logger.Info("Seerr initialization completed")
 	}
 
 	initialized := true
@@ -141,7 +98,7 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Reconcile Sonarr connection
 	if config.Spec.Sonarr != nil {
-		if err := r.reconcileSonarrConnection(ctx, sc, &config, false); err != nil {
+		if err := r.reconcileSonarrConnection(ctx, sc, writes, &config, false); err != nil {
 			logger.Error(err, "failed to reconcile Sonarr connection")
 			syncErrors = append(syncErrors, fmt.Sprintf("sonarr: %v", err))
 		}
@@ -149,7 +106,7 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Reconcile Radarr connection
 	if config.Spec.Radarr != nil {
-		if err := r.reconcileRadarrConnection(ctx, sc, &config, false); err != nil {
+		if err := r.reconcileRadarrConnection(ctx, sc, writes, &config, false); err != nil {
 			logger.Error(err, "failed to reconcile Radarr connection")
 			syncErrors = append(syncErrors, fmt.Sprintf("radarr: %v", err))
 		}
@@ -157,7 +114,7 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Reconcile main settings
 	if config.Spec.Main != nil {
-		if err := reconcileSeerrMainSettings(ctx, sc, config.Spec.Main); err != nil {
+		if err := reconcileSeerrMainSettings(ctx, sc, writes, config.Spec.Main); err != nil {
 			logger.Error(err, "failed to reconcile main settings")
 			syncErrors = append(syncErrors, fmt.Sprintf("main: %v", err))
 		}
@@ -165,13 +122,19 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Reconcile notification agents
 	for _, agent := range config.Spec.Notifications {
-		if err := reconcileSeerrNotificationAgent(ctx, sc, agent); err != nil {
+		if err := reconcileSeerrNotificationAgent(ctx, sc, writes, agent); err != nil {
 			logger.Error(err, "failed to reconcile notification agent", "agent", agent.Agent)
 			syncErrors = append(syncErrors, fmt.Sprintf("notification(%s): %v", agent.Agent, err))
 		}
 	}
 
-	if len(syncErrors) > 0 {
+	if writes.observe {
+		var observeErr error
+		if len(syncErrors) > 0 {
+			observeErr = fmt.Errorf("%v", syncErrors)
+		}
+		ctrlcommon.UpdateObservationStatus(ctx, r.Status(), &config, len(writes.drift) > 0, observeErr)
+	} else if len(syncErrors) > 0 {
 		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync failure: %v", syncErrors))
 	} else {
 		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, true, engine.ReasonSynced, "all configuration sections synced")
@@ -180,7 +143,61 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
 
-func (r *SeerrConfigReconciler) reconcileSonarrConnection(ctx context.Context, sc *seerrclient.Client, config *requestsv1alpha1.SeerrConfig, createOnly bool) error {
+// setup runs Seerr's first-time setup: the media server's libraries, the Sonarr
+// and Radarr connections and the main settings, then marks Seerr initialized.
+func (r *SeerrConfigReconciler) setup(
+	ctx context.Context, sc *seerrclient.Client, writes *seerrWrites, config *requestsv1alpha1.SeerrConfig,
+) error {
+	logger := log.FromContext(ctx)
+	var initErrors []string
+
+	// Sync media server libraries
+	if config.Spec.JellyfinAuth != nil {
+		if err := syncJellyfinLibraries(ctx, sc, config.Spec.JellyfinAuth); err != nil {
+			logger.Error(err, "failed to configure Jellyfin libraries")
+			initErrors = append(initErrors, err.Error())
+		}
+	}
+	if config.Spec.PlexAuth != nil {
+		if _, err := sc.Post(ctx, "/api/v1/settings/plex/sync", map[string]any{}); err != nil {
+			logger.Error(err, "failed to sync Plex libraries")
+			initErrors = append(initErrors, fmt.Sprintf("plex library sync: %v", err))
+		}
+	}
+
+	if config.Spec.Sonarr != nil {
+		if err := r.reconcileSonarrConnection(ctx, sc, writes, config, true); err != nil {
+			logger.Error(err, "failed to configure Sonarr during initialization")
+			initErrors = append(initErrors, fmt.Sprintf("sonarr init: %v", err))
+		}
+	}
+	if config.Spec.Radarr != nil {
+		if err := r.reconcileRadarrConnection(ctx, sc, writes, config, true); err != nil {
+			logger.Error(err, "failed to configure Radarr during initialization")
+			initErrors = append(initErrors, fmt.Sprintf("radarr init: %v", err))
+		}
+	}
+	if config.Spec.Main != nil {
+		if err := reconcileSeerrMainSettings(ctx, sc, writes, config.Spec.Main); err != nil {
+			logger.Error(err, "failed to configure main settings during initialization")
+			initErrors = append(initErrors, fmt.Sprintf("main settings init: %v", err))
+		}
+	}
+	if len(initErrors) > 0 {
+		return fmt.Errorf("initialization failed: %v", initErrors)
+	}
+
+	if _, err := sc.Post(ctx, "/api/v1/settings/initialize", map[string]any{}); err != nil {
+		logger.Error(err, "failed to initialize Seerr")
+		return fmt.Errorf("initialization: %w", err)
+	}
+	logger.Info("Seerr initialization completed")
+	return nil
+}
+
+func (r *SeerrConfigReconciler) reconcileSonarrConnection(
+	ctx context.Context, sc *seerrclient.Client, w *seerrWrites, config *requestsv1alpha1.SeerrConfig, createOnly bool,
+) error {
 	sonarrAPIKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Sonarr.APIKeySecretRef)
 	if err != nil {
 		return fmt.Errorf("resolving sonarr API key: %w", err)
@@ -210,18 +227,24 @@ func (r *SeerrConfigReconciler) reconcileSonarrConnection(ctx context.Context, s
 			if !ok {
 				continue
 			}
-			if !seerrChanged("sonarr", name, e, payload) {
+			if !seerrDiffers(e, payload) {
 				return nil
 			}
-			return sc.Put(ctx, fmt.Sprintf("/api/v1/settings/sonarr/%d", int(id)), payload)
+			return w.apply("sonarr", name, func() error {
+				return sc.Put(ctx, fmt.Sprintf("/api/v1/settings/sonarr/%d", int(id)), payload)
+			})
 		}
 	}
 
-	_, err = sc.Post(ctx, "/api/v1/settings/sonarr", payload)
-	return err
+	return w.apply("sonarr", config.Spec.Sonarr.Name, func() error {
+		_, err := sc.Post(ctx, "/api/v1/settings/sonarr", payload)
+		return err
+	})
 }
 
-func (r *SeerrConfigReconciler) reconcileRadarrConnection(ctx context.Context, sc *seerrclient.Client, config *requestsv1alpha1.SeerrConfig, createOnly bool) error {
+func (r *SeerrConfigReconciler) reconcileRadarrConnection(
+	ctx context.Context, sc *seerrclient.Client, w *seerrWrites, config *requestsv1alpha1.SeerrConfig, createOnly bool,
+) error {
 	radarrAPIKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Radarr.APIKeySecretRef)
 	if err != nil {
 		return fmt.Errorf("resolving radarr API key: %w", err)
@@ -251,15 +274,19 @@ func (r *SeerrConfigReconciler) reconcileRadarrConnection(ctx context.Context, s
 			if !ok {
 				continue
 			}
-			if !seerrChanged("radarr", name, e, payload) {
+			if !seerrDiffers(e, payload) {
 				return nil
 			}
-			return sc.Put(ctx, fmt.Sprintf("/api/v1/settings/radarr/%d", int(id)), payload)
+			return w.apply("radarr", name, func() error {
+				return sc.Put(ctx, fmt.Sprintf("/api/v1/settings/radarr/%d", int(id)), payload)
+			})
 		}
 	}
 
-	_, err = sc.Post(ctx, "/api/v1/settings/radarr", payload)
-	return err
+	return w.apply("radarr", config.Spec.Radarr.Name, func() error {
+		_, err := sc.Post(ctx, "/api/v1/settings/radarr", payload)
+		return err
+	})
 }
 
 func buildServicePayload(svc *requestsv1alpha1.SeerrServiceConnection, apiKey string) map[string]any {
@@ -311,7 +338,7 @@ func buildServicePayload(svc *requestsv1alpha1.SeerrServiceConnection, apiKey st
 	return payload
 }
 
-func reconcileSeerrMainSettings(ctx context.Context, sc *seerrclient.Client, main *requestsv1alpha1.SeerrMain) error {
+func reconcileSeerrMainSettings(ctx context.Context, sc *seerrclient.Client, w *seerrWrites, main *requestsv1alpha1.SeerrMain) error {
 	payload := map[string]any{}
 	if main.ApplicationTitle != "" {
 		payload["applicationTitle"] = main.ApplicationTitle
@@ -346,14 +373,18 @@ func reconcileSeerrMainSettings(ctx context.Context, sc *seerrclient.Client, mai
 	if err != nil {
 		return fmt.Errorf("reading main settings: %w", err)
 	}
-	if !seerrChanged("settings", "main", current, payload) {
+	if !seerrDiffers(current, payload) {
 		return nil
 	}
-	_, err = sc.Post(ctx, "/api/v1/settings/main", payload)
-	return err
+	return w.apply("settings", "main", func() error {
+		_, err := sc.Post(ctx, "/api/v1/settings/main", payload)
+		return err
+	})
 }
 
-func reconcileSeerrNotificationAgent(ctx context.Context, sc *seerrclient.Client, agent requestsv1alpha1.SeerrNotificationAgent) error {
+func reconcileSeerrNotificationAgent(
+	ctx context.Context, sc *seerrclient.Client, w *seerrWrites, agent requestsv1alpha1.SeerrNotificationAgent,
+) error {
 	payload := map[string]any{}
 	if agent.Enabled != nil {
 		payload["enabled"] = *agent.Enabled
@@ -374,17 +405,35 @@ func reconcileSeerrNotificationAgent(ctx context.Context, sc *seerrclient.Client
 	if err != nil {
 		return fmt.Errorf("reading %s notifications: %w", agent.Agent, err)
 	}
-	if !seerrChanged("notifications", agent.Agent, current, payload) {
+	if !seerrDiffers(current, payload) {
 		return nil
 	}
-	_, err = sc.Post(ctx, path, payload)
-	return err
+	return w.apply("notifications", agent.Agent, func() error {
+		_, err := sc.Post(ctx, path, payload)
+		return err
+	})
 }
 
-// seerrChanged reports whether Seerr's stored settings lack any declared value,
-// counting the correction when they do. Writing every section on every pass made
-// each reconcile a burst of settings saves.
-func seerrChanged(kind, name string, current, payload map[string]any) bool {
+// seerrWrites sends Seerr's settings writes, or in observe mode records them
+// instead.
+type seerrWrites struct {
+	observe bool
+	drift   []string
+}
+
+func (w *seerrWrites) apply(kind, name string, write func() error) error {
+	if w.observe {
+		metrics.DriftObservedTotal.WithLabelValues("seerr", kind, name).Inc()
+		w.drift = append(w.drift, kind+"/"+name)
+		return nil
+	}
+	metrics.DriftCorrectedTotal.WithLabelValues("seerr", kind, name).Inc()
+	return write()
+}
+
+// seerrDiffers reports whether Seerr's stored settings lack any declared value.
+// Writing every section on every pass made each reconcile a burst of saves.
+func seerrDiffers(current, payload map[string]any) bool {
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return true
@@ -393,11 +442,7 @@ func seerrChanged(kind, name string, current, payload map[string]any) bool {
 	if err := json.Unmarshal(raw, &desired); err != nil {
 		return true
 	}
-	if reconciler.Covers(current, desired) {
-		return false
-	}
-	metrics.DriftCorrectedTotal.WithLabelValues("seerr", kind, name).Inc()
-	return true
+	return !reconciler.Covers(current, desired)
 }
 
 // seerrReferencesSecret returns true if the SeerrConfig references the named secret.

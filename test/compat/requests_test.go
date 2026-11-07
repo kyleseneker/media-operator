@@ -81,7 +81,8 @@ func TestSeerr(t *testing.T) {
 		reconciler: func(c client.Client) reconcile.Reconciler {
 			return &requests.SeerrConfigReconciler{Client: c, Scheme: c.Scheme(), Recorder: events.NewFakeRecorder(100)}
 		},
-		proxy: proxy,
+		proxy:   proxy,
+		observe: true,
 		// Signing in through Jellyfin is a POST; after setup it changes nothing.
 		read: func(r request) bool {
 			return getOnly(r) || (r.Method == http.MethodPost && r.Path == "/api/v1/auth/jellyfin")
