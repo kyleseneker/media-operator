@@ -56,19 +56,19 @@ func (r *BazarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	apiKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.APIKeySecretRef)
 	if err != nil {
 		logger.Error(err, "failed to resolve API key secret")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthFormEncoded, engine.WithAPIKey(apiKey), engine.WithAPIKeyHeader("X-API-KEY"), engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("bazarr"))
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonInvalidConfig, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonInvalidConfig, err.Error())
 		return ctrl.Result{}, nil
 	}
 	bc := bazarrclient.NewClient(hc)
@@ -76,20 +76,20 @@ func (r *BazarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	// Health check
 	if err := bc.Ping(ctx); err != nil {
 		logger.Error(err, "Bazarr unreachable")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonAppUnreachable, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonAppUnreachable, err.Error())
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
 	desired, problems := r.bazarrDesired(ctx, &config)
 	settings, err := bc.GetSettings(ctx)
 	if err != nil {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("reading settings: %v", err))
+		ctrlcommon.UpdateStatus(ctx, r.Client, &config, false, engine.ReasonSyncFailed, fmt.Sprintf("reading settings: %v", err))
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
 	var profiles []map[string]any
 	if desired.Has("languages-profiles") {
 		if profiles, err = bc.GetLanguageProfiles(ctx); err != nil {
-			ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("reading language profiles: %v", err))
+			ctrlcommon.UpdateStatus(ctx, r.Client, &config, false, engine.ReasonSyncFailed, fmt.Sprintf("reading language profiles: %v", err))
 			return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 		}
 	}
@@ -99,7 +99,7 @@ func (r *BazarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		for key := range changes {
 			metrics.DriftObservedTotal.WithLabelValues("bazarr", bazarrSettingSection(key), key).Inc()
 		}
-		ctrlcommon.UpdateSyncStatus(ctx, r.Status(), &config, true, len(changes) > 0, problems)
+		ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, true, len(changes) > 0, problems)
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
 
@@ -116,7 +116,7 @@ func (r *BazarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}
 
-	ctrlcommon.UpdateSyncStatus(ctx, r.Status(), &config, false, false, problems)
+	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, false, false, problems)
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }

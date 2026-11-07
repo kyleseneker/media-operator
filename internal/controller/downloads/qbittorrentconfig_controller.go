@@ -51,7 +51,7 @@ func (r *QBittorrentConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	username, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.UsernameSecretRef)
 	if err != nil {
 		logger.Error(err, "failed to resolve username secret")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
@@ -59,19 +59,19 @@ func (r *QBittorrentConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	password, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.PasswordSecretRef)
 	if err != nil {
 		logger.Error(err, "failed to resolve password secret")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthCookie, engine.WithTLSConfig(tlsCfg), engine.WithDisableRedirect(), engine.WithAppLabel("qbittorrent"))
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonInvalidConfig, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonInvalidConfig, err.Error())
 		return ctrl.Result{}, nil
 	}
 	qb := qbclient.NewClient(hc, username, password)
@@ -79,20 +79,20 @@ func (r *QBittorrentConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// Login
 	if err := qb.Login(ctx); err != nil {
 		logger.Error(err, "qBittorrent login failed")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonAppUnreachable, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonAppUnreachable, err.Error())
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
 	// Health check
 	if err := qb.Ping(ctx); err != nil {
 		logger.Error(err, "qBittorrent unreachable")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonAppUnreachable, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonAppUnreachable, err.Error())
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
 	if ctrlcommon.ObserveOnly(config.Spec.Reconcile) {
 		drift, err := observeQBConfig(ctx, qb, config.Spec)
-		ctrlcommon.UpdateObservationStatus(ctx, r.Status(), &config, drift, err)
+		ctrlcommon.UpdateObservationStatus(ctx, r.Client, &config, drift, err)
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
 
@@ -124,9 +124,9 @@ func (r *QBittorrentConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	if len(syncErrors) > 0 {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync failure: %v", syncErrors))
+		ctrlcommon.UpdateStatus(ctx, r.Client, &config, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync failure: %v", syncErrors))
 	} else {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, true, engine.ReasonSynced, "all configuration sections synced")
+		ctrlcommon.UpdateStatus(ctx, r.Client, &config, true, engine.ReasonSynced, "all configuration sections synced")
 	}
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil

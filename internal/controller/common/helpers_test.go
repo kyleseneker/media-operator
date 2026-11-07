@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -120,7 +121,7 @@ func TestObservationStatus(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			obj := newConfig("", 0)
 			c := testClient(obj).WithStatusSubresource(obj).Build()
-			UpdateObservationStatus(context.Background(), c.Status(), obj, tt.drift, tt.err)
+			UpdateObservationStatus(context.Background(), c, obj, tt.drift, tt.err)
 			require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(obj), obj))
 			condition := meta.FindStatusCondition(obj.Status.Conditions, "Synced")
 			require.NotNil(t, condition)
@@ -147,7 +148,7 @@ func TestUpdateResultStatusReportsObservedDrift(t *testing.T) {
 			obj := newConfig("", 0)
 			obj.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &tc.policy}
 			c := testClient(obj).WithStatusSubresource(obj).Build()
-			UpdateResultStatus(context.Background(), c.Status(), obj, tc.result)
+			UpdateResultStatus(context.Background(), c, obj, tc.result)
 			require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(obj), obj))
 			condition := meta.FindStatusCondition(obj.Status.Conditions, "Synced")
 			require.NotNil(t, condition)
@@ -155,6 +156,36 @@ func TestUpdateResultStatusReportsObservedDrift(t *testing.T) {
 			assert.Equal(t, tc.reason, condition.Reason)
 		})
 	}
+}
+
+// A spec edit while a pass runs makes the status write conflict. Dropping it
+// would lose the ownership the pass recorded, leaving resources the operator
+// created that it can never prune or clean up.
+func TestUpdateStatusSurvivesASpecEditMidPass(t *testing.T) {
+	ctx := context.Background()
+	obj := newConfig("", 0)
+	cl := testClient(obj).WithStatusSubresource(obj).Build()
+	key := client.ObjectKeyFromObject(obj)
+
+	stale := &pvrv1alpha1.SonarrConfig{}
+	require.NoError(t, cl.Get(ctx, key, stale))
+	edited := &pvrv1alpha1.SonarrConfig{}
+	require.NoError(t, cl.Get(ctx, key, edited))
+	edited.Spec.Connection.URL = "http://sonarr.edited:8989"
+	require.NoError(t, cl.Update(ctx, edited))
+	require.True(t, apierrors.IsConflict(cl.Status().Update(ctx, stale.DeepCopy())),
+		"precondition: a plain status write from the stale copy conflicts")
+
+	UpdateStatusManaged(stale, map[string][]string{"downloadClients": {"qbit"}})
+	UpdateStatus(ctx, cl, stale, true, engine.ReasonSynced, "ok")
+
+	got := &pvrv1alpha1.SonarrConfig{}
+	require.NoError(t, cl.Get(ctx, key, got))
+	assert.Equal(t, map[string][]string{"downloadClients": {"qbit"}}, got.Status.ManagedResources, "ownership was lost")
+	condition := meta.FindStatusCondition(got.Status.Conditions, "Synced")
+	require.NotNil(t, condition)
+	assert.Equal(t, metav1.ConditionTrue, condition.Status)
+	assert.Equal(t, "http://sonarr.edited:8989", got.Spec.Connection.URL, "the status write reverted the spec edit")
 }
 
 func TestUpdateSyncStatus(t *testing.T) {
@@ -176,7 +207,7 @@ func TestUpdateSyncStatus(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			obj := newConfig("", 0)
 			c := testClient(obj).WithStatusSubresource(obj).Build()
-			UpdateSyncStatus(context.Background(), c.Status(), obj, tc.observe, tc.drift, tc.errors)
+			UpdateSyncStatus(context.Background(), c, obj, tc.observe, tc.drift, tc.errors)
 			require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(obj), obj))
 			condition := meta.FindStatusCondition(obj.Status.Conditions, "Synced")
 			require.NotNil(t, condition)
@@ -360,11 +391,11 @@ func TestConfigSyncedGaugeTracksOutcome(t *testing.T) {
 	cl := fake.NewClientBuilder().WithScheme(scheme.Scheme).
 		WithObjects(c).WithStatusSubresource(c).Build()
 
-	UpdateStatus(context.Background(), cl.Status(), c, true, "Synced", "ok")
+	UpdateStatus(context.Background(), cl, c, true, "Synced", "ok")
 	assert.Equal(t, 1.0, testutil.ToFloat64(metrics.ConfigSynced.WithLabelValues("SonarrConfig", "arr", "s")),
 		"expected gauge 1 after a successful sync")
 
-	UpdateStatusUnreachable(context.Background(), cl.Status(), c, "AppUnreachable", "boom")
+	UpdateStatusUnreachable(context.Background(), cl, c, "AppUnreachable", "boom")
 	assert.Equal(t, 0.0, testutil.ToFloat64(metrics.ConfigSynced.WithLabelValues("SonarrConfig", "arr", "s")),
 		"expected gauge 0 after failure")
 }

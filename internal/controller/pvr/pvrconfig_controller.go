@@ -41,7 +41,7 @@ func reconcilePVR(ctx context.Context, c client.Client, recorder events.EventRec
 	}
 
 	missingSecret := func(err error) (ctrl.Result, error) {
-		ctrlcommon.UpdateStatusUnreachable(ctx, c.Status(), obj, engine.ReasonSecretNotFound, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, c, obj, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
@@ -62,11 +62,11 @@ func reconcilePVR(ctx context.Context, c client.Client, recorder events.EventRec
 		engine.WithOwner(namespace+"/"+obj.GetName()+"/"+string(obj.GetUID())),
 		engine.WithAPIKey(apiKey), engine.WithTLSConfig(tlsCfg), engine.WithAppLabel(cfg.app))
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, c.Status(), obj, engine.ReasonInvalidConfig, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, c, obj, engine.ReasonInvalidConfig, err.Error())
 		return ctrl.Result{}, nil
 	}
 	if err := hc.Ping(ctx, "/api/"+cfg.apiVersion+"/system/status"); err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, c.Status(), obj, engine.ReasonAppUnreachable, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, c, obj, engine.ReasonAppUnreachable, err.Error())
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
@@ -82,12 +82,12 @@ func reconcilePVR(ctx context.Context, c client.Client, recorder events.EventRec
 
 	result, err := pvrclient.Reconcile(ctx, hc, cfg.apiVersion, cfg.spec, opts, ctrlcommon.Policy(cfg.policy), *obj.GetManagedResources())
 	if err != nil {
-		ctrlcommon.UpdateStatus(ctx, c.Status(), obj, false, engine.ReasonSyncFailed, err.Error())
+		ctrlcommon.UpdateStatus(ctx, c, obj, false, engine.ReasonSyncFailed, err.Error())
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(cfg.policy)}, nil
 	}
 	ctrlcommon.UpdateStatusManaged(obj, result.Managed)
 	ctrlcommon.EmitPruneEvents(recorder, obj, result.Pruned)
-	ctrlcommon.UpdateResultStatus(ctx, c.Status(), obj, result)
+	ctrlcommon.UpdateResultStatus(ctx, c, obj, result)
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(cfg.policy)}, nil
 }

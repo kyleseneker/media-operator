@@ -51,19 +51,19 @@ func (r *TdarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	apiKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.APIKeySecretRef)
 	if err != nil {
 		logger.Error(err, "failed to resolve API key secret")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthAPIKey, engine.WithAPIKey(apiKey), engine.WithAPIKeyHeader("x-api-key"), engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("tdarr"), engine.WithTimeout(3*time.Minute))
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonInvalidConfig, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonInvalidConfig, err.Error())
 		return ctrl.Result{}, nil
 	}
 	tc := tdarrclient.NewClient(hc)
@@ -71,13 +71,13 @@ func (r *TdarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Health check
 	if err := tc.Ping(ctx); err != nil {
 		logger.Error(err, "Tdarr unreachable")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonAppUnreachable, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonAppUnreachable, err.Error())
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
 	sync := &tdarrSync{App: "tdarr", Observe: ctrlcommon.ObserveOnly(config.Spec.Reconcile), tc: tc}
 	syncErrors := sync.run(ctx, &config.Spec)
-	ctrlcommon.UpdateSyncStatus(ctx, r.Status(), &config, sync.Observe, len(sync.Drift()) > 0, syncErrors)
+	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, sync.Observe, len(sync.Drift()) > 0, syncErrors)
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }

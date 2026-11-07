@@ -49,26 +49,26 @@ func (r *PlexConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	token, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.TokenSecretRef)
 	if err != nil {
 		logger.Error(err, "failed to resolve Plex token")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthPlexToken, engine.WithPlexToken(token), engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("plex"))
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonInvalidConfig, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonInvalidConfig, err.Error())
 		return ctrl.Result{}, nil
 	}
 	pc := plexclient.NewClient(hc)
 
 	if err := pc.Ping(ctx); err != nil {
 		logger.Error(err, "Plex unreachable")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonAppUnreachable, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonAppUnreachable, err.Error())
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
@@ -76,7 +76,7 @@ func (r *PlexConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	syncErrors := reconcilePlexPreferences(ctx, pc, writes, string(config.UID), buildPlexPreferences(config.Spec))
 	syncErrors = append(syncErrors, reconcilePlexLibraries(ctx, pc, writes, config.Spec.Libraries)...)
 
-	ctrlcommon.UpdateSyncStatus(ctx, r.Status(), &config, writes.Observe, len(writes.Drift()) > 0, syncErrors)
+	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, writes.Observe, len(writes.Drift()) > 0, syncErrors)
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
 

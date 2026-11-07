@@ -47,13 +47,13 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthSession, engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("seerr"))
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonInvalidConfig, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonInvalidConfig, err.Error())
 		return ctrl.Result{}, nil
 	}
 	sc := seerrclient.NewClient(hc)
@@ -62,7 +62,7 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	isInitialized, err := sc.IsInitialized(ctx)
 	if err != nil {
 		logger.Error(err, "Seerr unreachable")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonAppUnreachable, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonAppUnreachable, err.Error())
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
@@ -72,18 +72,18 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// server, so observe mode reports the setup as missing and stops.
 		config.Status.Initialized = &isInitialized
 		drift, err := engine.ObserveDifference("seerr", "settings", "initialization", nil, map[string]any{"initialized": true})
-		ctrlcommon.UpdateObservationStatus(ctx, r.Status(), &config, drift, err)
+		ctrlcommon.UpdateObservationStatus(ctx, r.Client, &config, drift, err)
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
 
 	if err := r.establishSession(ctx, sc, &config); err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	if !isInitialized {
 		if err := r.setup(ctx, sc, writes, &config); err != nil {
-			ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, err.Error())
+			ctrlcommon.UpdateStatus(ctx, r.Client, &config, false, engine.ReasonSyncFailed, err.Error())
 			return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 		}
 	}
@@ -125,7 +125,7 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 
-	ctrlcommon.UpdateSyncStatus(ctx, r.Status(), &config, writes.Observe, len(writes.Drift()) > 0, syncErrors)
+	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, writes.Observe, len(writes.Drift()) > 0, syncErrors)
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }

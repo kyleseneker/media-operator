@@ -53,7 +53,7 @@ func (r *MaintainerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
@@ -61,14 +61,14 @@ func (r *MaintainerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthNone,
 		engine.WithTLSConfig(tlsCfg), engine.WithAppLabel(maintainerrApp))
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonInvalidConfig, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonInvalidConfig, err.Error())
 		return ctrl.Result{}, nil
 	}
 	mc := maintainerrclient.NewClient(hc)
 
 	if err := mc.Ping(ctx); err != nil {
 		logger.Error(err, "Maintainerr unreachable")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonAppUnreachable, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonAppUnreachable, err.Error())
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
@@ -77,7 +77,7 @@ func (r *MaintainerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		c: r.Client, mc: mc, namespace: config.Namespace,
 	}
 	syncErrors := sync.run(ctx, &config.Spec)
-	ctrlcommon.UpdateSyncStatus(ctx, r.Status(), &config, sync.Observe, len(sync.Drift()) > 0, syncErrors)
+	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, sync.Observe, len(sync.Drift()) > 0, syncErrors)
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }

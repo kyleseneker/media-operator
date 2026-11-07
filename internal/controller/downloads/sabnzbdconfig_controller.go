@@ -51,32 +51,32 @@ func (r *SabnzbdConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	apiKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.APIKeySecretRef)
 	if err != nil {
 		logger.Error(err, "failed to resolve API key")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthNone, engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("sabnzbd"))
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonInvalidConfig, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonInvalidConfig, err.Error())
 		return ctrl.Result{}, nil
 	}
 	sc := sabnzbdclient.NewClient(hc, apiKey)
 
 	if err := sc.Ping(ctx); err != nil {
 		logger.Error(err, "SABnzbd unreachable")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonAppUnreachable, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonAppUnreachable, err.Error())
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
 	current, err := sc.GetConfig(ctx)
 	if err != nil {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("reading config: %v", err))
+		ctrlcommon.UpdateStatus(ctx, r.Client, &config, false, engine.ReasonSyncFailed, fmt.Sprintf("reading config: %v", err))
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
 	servers, syncErrors := r.resolveSabnzbdServers(ctx, &config)
@@ -86,7 +86,7 @@ func (r *SabnzbdConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		for _, w := range writes {
 			metrics.DriftObservedTotal.WithLabelValues("sabnzbd", w.resourceType, w.name).Inc()
 		}
-		ctrlcommon.UpdateSyncStatus(ctx, r.Status(), &config, true, len(writes) > 0, syncErrors)
+		ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, true, len(writes) > 0, syncErrors)
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
 
@@ -101,7 +101,7 @@ func (r *SabnzbdConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	ctrlcommon.UpdateSyncStatus(ctx, r.Status(), &config, false, false, syncErrors)
+	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, false, false, syncErrors)
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
 

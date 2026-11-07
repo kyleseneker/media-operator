@@ -113,7 +113,7 @@ func HandleLifecycle(ctx context.Context, c client.Client, recorder events.Event
 			if ObserveOnly(rc) {
 				message = "deletionPolicy delete conflicts with driftPolicy observe; use orphan"
 			}
-			UpdateStatusUnreachable(ctx, c.Status(), obj, engine.ReasonInvalidConfig, message)
+			UpdateStatusUnreachable(ctx, c, obj, engine.ReasonInvalidConfig, message)
 			return true, ReconcileInterval(rc)
 		}
 	}

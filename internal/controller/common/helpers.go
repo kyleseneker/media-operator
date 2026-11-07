@@ -9,9 +9,11 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/events"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -58,37 +60,37 @@ func Policy(rc *commonv1alpha1.ReconcileConfig) engine.SyncPolicy {
 
 // UpdateObservationStatus reports comparison results without claiming drift was
 // corrected. Read failures take precedence over any differences already found.
-func UpdateObservationStatus(ctx context.Context, sw client.SubResourceWriter, obj ConfigResource, drift bool, err error) {
+func UpdateObservationStatus(ctx context.Context, c client.Client, obj ConfigResource, drift bool, err error) {
 	if err != nil {
-		UpdateStatus(ctx, sw, obj, false, engine.ReasonSyncFailed, "observation failed: "+err.Error())
+		UpdateStatus(ctx, c, obj, false, engine.ReasonSyncFailed, "observation failed: "+err.Error())
 	} else if drift {
-		UpdateStatus(ctx, sw, obj, false, "DriftDetected", "configuration differs; observe policy prevents application writes")
+		UpdateStatus(ctx, c, obj, false, "DriftDetected", "configuration differs; observe policy prevents application writes")
 	} else {
-		UpdateStatus(ctx, sw, obj, true, "Observed", "observable configuration matches; no application writes performed")
+		UpdateStatus(ctx, c, obj, true, "Observed", "observable configuration matches; no application writes performed")
 	}
 }
 
 // UpdateResultStatus reports an engine reconcile: what was applied or, under
 // the observe policy, whether anything differs.
-func UpdateResultStatus(ctx context.Context, sw client.SubResourceWriter, obj ConfigResource, result engine.ReconcileResult) {
+func UpdateResultStatus(ctx context.Context, c client.Client, obj ConfigResource, result engine.ReconcileResult) {
 	if ObserveOnly(obj.GetReconcileConfig()) {
-		UpdateObservationStatus(ctx, sw, obj, len(result.Drift) > 0, syncError(result.Errors))
+		UpdateObservationStatus(ctx, c, obj, len(result.Drift) > 0, syncError(result.Errors))
 		return
 	}
-	UpdateStatus(ctx, sw, obj, result.Success(), ResultReason(result), result.Message())
+	UpdateStatus(ctx, c, obj, result.Success(), ResultReason(result), result.Message())
 }
 
 // UpdateSyncStatus reports a pass of an integration that writes through its
 // own client: under the observe policy, whether anything differs; otherwise
 // what failed.
-func UpdateSyncStatus(ctx context.Context, sw client.SubResourceWriter, obj ConfigResource, observe, drift bool, syncErrors []string) {
+func UpdateSyncStatus(ctx context.Context, c client.Client, obj ConfigResource, observe, drift bool, syncErrors []string) {
 	switch {
 	case observe:
-		UpdateObservationStatus(ctx, sw, obj, drift, syncError(syncErrors))
+		UpdateObservationStatus(ctx, c, obj, drift, syncError(syncErrors))
 	case len(syncErrors) > 0:
-		UpdateStatus(ctx, sw, obj, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync failure: %v", syncErrors))
+		UpdateStatus(ctx, c, obj, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync failure: %v", syncErrors))
 	default:
-		UpdateStatus(ctx, sw, obj, true, engine.ReasonSynced, "all configuration sections synced")
+		UpdateStatus(ctx, c, obj, true, engine.ReasonSynced, "all configuration sections synced")
 	}
 }
 
@@ -107,8 +109,6 @@ func ResultReason(r engine.ReconcileResult) string {
 	return engine.ReasonSyncFailed
 }
 
-// UpdateStatus sets the Synced and Ready conditions on a config resource and persists the status.
-// Ready=True indicates the app is reachable; Synced reflects whether config was applied.
 // UpdateStatusManaged records the resources the operator now manages, so prune
 // can distinguish them from resources created outside the operator.
 func UpdateStatusManaged(obj ConfigResource, managed map[string][]string) {
@@ -118,7 +118,9 @@ func UpdateStatusManaged(obj ConfigResource, managed map[string][]string) {
 	*obj.GetManagedResources() = managed
 }
 
-func UpdateStatus(ctx context.Context, sw client.SubResourceWriter, obj ConfigResource, synced bool, reason, message string) {
+// UpdateStatus sets the Synced and Ready conditions on a config resource and persists the status.
+// Ready=True indicates the app is reachable; Synced reflects whether config was applied.
+func UpdateStatus(ctx context.Context, c client.Client, obj ConfigResource, synced bool, reason, message string) {
 	syncedStatus := string(metav1.ConditionFalse)
 	if synced {
 		syncedStatus = string(metav1.ConditionTrue)
@@ -132,9 +134,7 @@ func UpdateStatus(ctx context.Context, sw client.SubResourceWriter, obj ConfigRe
 	reconciler.SetCondition(conditions, generation, engine.ConditionReady, string(metav1.ConditionTrue), engine.ReasonSynced, "app is reachable")
 	*obj.GetObservedGeneration() = generation
 	recordSynced(obj, synced)
-	if err := sw.Update(ctx, obj); err != nil {
-		log.FromContext(ctx).Error(err, "failed to update status")
-	}
+	writeStatus(ctx, c, obj)
 }
 
 func recordSynced(obj ConfigResource, synced bool) {
@@ -149,14 +149,39 @@ func recordSynced(obj ConfigResource, synced bool) {
 }
 
 // UpdateStatusUnreachable sets Ready=False and Synced=False when the app cannot be reached.
-func UpdateStatusUnreachable(ctx context.Context, sw client.SubResourceWriter, obj ConfigResource, reason, message string) {
+func UpdateStatusUnreachable(ctx context.Context, c client.Client, obj ConfigResource, reason, message string) {
 	generation := obj.GetGeneration()
 	conditions := obj.GetConditions()
 	reconciler.SetCondition(conditions, generation, engine.ConditionReady, string(metav1.ConditionFalse), reason, message)
 	reconciler.SetCondition(conditions, generation, engine.ConditionSynced, string(metav1.ConditionFalse), reason, message)
 	*obj.GetObservedGeneration() = generation
 	recordSynced(obj, false)
-	if err := sw.Update(ctx, obj); err != nil {
+	writeStatus(ctx, c, obj)
+}
+
+// writeStatus persists obj's status. Only this controller writes the status, so
+// a conflict means only that something else changed the object mid-pass, most
+// often a spec edit. Losing the write would also lose any ownership this pass
+// recorded in status.managedResources, and a resource the operator created but
+// no longer tracks can never be pruned or cleaned up. So retry against the
+// latest resourceVersion; the status subresource ignores everything but status.
+func writeStatus(ctx context.Context, c client.Client, obj ConfigResource) {
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		err := c.Status().Update(ctx, obj)
+		if !apierrors.IsConflict(err) {
+			return err
+		}
+		latest, ok := obj.DeepCopyObject().(client.Object)
+		if !ok {
+			return err
+		}
+		if getErr := c.Get(ctx, client.ObjectKeyFromObject(obj), latest); getErr != nil {
+			return getErr
+		}
+		obj.SetResourceVersion(latest.GetResourceVersion())
+		return err
+	})
+	if err != nil && !apierrors.IsNotFound(err) {
 		log.FromContext(ctx).Error(err, "failed to update status")
 	}
 }

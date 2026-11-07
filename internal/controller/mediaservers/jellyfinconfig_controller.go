@@ -50,26 +50,26 @@ func (r *JellyfinConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	username, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.AdminUser.UsernameSecretRef)
 	if err != nil {
 		logger.Error(err, "failed to resolve admin username secret")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	password, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.AdminUser.PasswordSecretRef)
 	if err != nil {
 		logger.Error(err, "failed to resolve admin password secret")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthMediaBrowser, engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("jellyfin"))
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonInvalidConfig, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonInvalidConfig, err.Error())
 		return ctrl.Result{}, nil
 	}
 	jf := jellyfinclient.NewClient(hc)
@@ -78,14 +78,14 @@ func (r *JellyfinConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	setupComplete, err := jf.IsSetupComplete(ctx)
 	if err != nil {
 		logger.Error(err, "Jellyfin unreachable")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonAppUnreachable, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonAppUnreachable, err.Error())
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
 	if !setupComplete && ctrlcommon.ObserveOnly(config.Spec.Reconcile) {
 		config.Status.Initialized = &setupComplete
 		drift, err := engine.ObserveDifference("jellyfin", "settings", "initialization", nil, map[string]any{"initialized": true})
-		ctrlcommon.UpdateObservationStatus(ctx, r.Status(), &config, drift, err)
+		ctrlcommon.UpdateObservationStatus(ctx, r.Client, &config, drift, err)
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
 
@@ -108,7 +108,7 @@ func (r *JellyfinConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 		if err := jf.RunSetupWizard(ctx, username, password, serverName, metadataLang, countryCode); err != nil {
 			logger.Error(err, "failed to run setup wizard")
-			ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("setup wizard: %v", err))
+			ctrlcommon.UpdateStatus(ctx, r.Client, &config, false, engine.ReasonSyncFailed, fmt.Sprintf("setup wizard: %v", err))
 			return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 		}
 		logger.Info("Jellyfin setup wizard completed")
@@ -120,13 +120,13 @@ func (r *JellyfinConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// Authenticate
 	if err := jf.Authenticate(ctx, username, password); err != nil {
 		logger.Error(err, "Jellyfin authentication failed")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonAppUnreachable, fmt.Sprintf("authentication: %v", err))
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonAppUnreachable, fmt.Sprintf("authentication: %v", err))
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
 	if ctrlcommon.ObserveOnly(config.Spec.Reconcile) {
 		drift, err := observeJellyfinConfig(ctx, jf, config.Spec)
-		ctrlcommon.UpdateObservationStatus(ctx, r.Status(), &config, drift, err)
+		ctrlcommon.UpdateObservationStatus(ctx, r.Client, &config, drift, err)
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
 
@@ -157,9 +157,9 @@ func (r *JellyfinConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	if len(syncErrors) > 0 {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync failure: %v", syncErrors))
+		ctrlcommon.UpdateStatus(ctx, r.Client, &config, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync failure: %v", syncErrors))
 	} else {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, true, engine.ReasonSynced, "all configuration sections synced")
+		ctrlcommon.UpdateStatus(ctx, r.Client, &config, true, engine.ReasonSynced, "all configuration sections synced")
 	}
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil

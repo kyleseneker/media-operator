@@ -47,13 +47,13 @@ func (r *FlareSolverrConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthNone, engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("flaresolverr"))
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonInvalidConfig, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonInvalidConfig, err.Error())
 		return ctrl.Result{}, nil
 	}
 	fc := flaresolverrclient.NewClient(hc)
@@ -61,7 +61,7 @@ func (r *FlareSolverrConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// Health check
 	if err := fc.Ping(ctx); err != nil {
 		logger.Error(err, "FlareSolverr unreachable")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonAppUnreachable, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonAppUnreachable, err.Error())
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
@@ -71,7 +71,7 @@ func (r *FlareSolverrConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 		if err == nil {
 			config.Status.ActiveSessions = count
 		}
-		ctrlcommon.UpdateObservationStatus(ctx, r.Status(), &config, drift, err)
+		ctrlcommon.UpdateObservationStatus(ctx, r.Client, &config, drift, err)
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
 
@@ -92,9 +92,9 @@ func (r *FlareSolverrConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	if len(syncErrors) > 0 {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync failure: %v", syncErrors))
+		ctrlcommon.UpdateStatus(ctx, r.Client, &config, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync failure: %v", syncErrors))
 	} else {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, true, engine.ReasonSynced, "all configuration sections synced")
+		ctrlcommon.UpdateStatus(ctx, r.Client, &config, true, engine.ReasonSynced, "all configuration sections synced")
 	}
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil

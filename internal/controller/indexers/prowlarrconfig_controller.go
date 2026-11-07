@@ -45,25 +45,25 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	apiKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.APIKeySecretRef)
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthAPIKey, engine.WithOwner(config.Namespace+"/"+config.Name+"/"+string(config.UID)), engine.WithAPIKey(apiKey), engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("prowlarr"))
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonInvalidConfig, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonInvalidConfig, err.Error())
 		return ctrl.Result{}, nil
 	}
 
 	def := prowlarrclient.ProwlarrDefinition()
 	if err := hc.Ping(ctx, def.HealthPath); err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonAppUnreachable, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonAppUnreachable, err.Error())
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
@@ -72,7 +72,7 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	for i := range indexers {
 		f, ferr := ctrlcommon.ResolveProwlarrFields(ctx, r.Client, config.Namespace, "indexer "+indexers[i].Name, indexers[i].Fields)
 		if ferr != nil {
-			ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSecretNotFound, ferr.Error())
+			ctrlcommon.UpdateStatus(ctx, r.Client, &config, false, engine.ReasonSecretNotFound, ferr.Error())
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
 		indexers[i].Fields = f
@@ -82,7 +82,7 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	for i := range downloadClients {
 		f, ferr := ctrlcommon.ResolveProwlarrFields(ctx, r.Client, config.Namespace, "download client "+downloadClients[i].Name, downloadClients[i].Fields)
 		if ferr != nil {
-			ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSecretNotFound, ferr.Error())
+			ctrlcommon.UpdateStatus(ctx, r.Client, &config, false, engine.ReasonSecretNotFound, ferr.Error())
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
 		downloadClients[i].Fields = f
@@ -102,19 +102,19 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		indexers[i].Fields = indexersWithSecrets[i].Fields
 	}
 	if terr != nil {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, terr.Error())
+		ctrlcommon.UpdateStatus(ctx, r.Client, &config, false, engine.ReasonSyncFailed, terr.Error())
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
 	notifications, nerr := ctrlcommon.ResolveNotificationSecrets(ctx, r.Client, config.Namespace, resolved.Notifications)
 	if nerr != nil {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSecretNotFound, nerr.Error())
+		ctrlcommon.UpdateStatus(ctx, r.Client, &config, false, engine.ReasonSecretNotFound, nerr.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	appPayloads, aerr := r.buildApplicationPayloads(ctx, config.Namespace, config.Spec.Applications, tagIDs)
 	if aerr != nil {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSecretNotFound, aerr.Error())
+		ctrlcommon.UpdateStatus(ctx, r.Client, &config, false, engine.ReasonSecretNotFound, aerr.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
@@ -134,7 +134,7 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	result.Managed = rest.Managed
 	ctrlcommon.UpdateStatusManaged(&config, result.Managed)
 	ctrlcommon.EmitPruneEvents(r.Recorder, &config, result.Pruned)
-	ctrlcommon.UpdateResultStatus(ctx, r.Status(), &config, result)
+	ctrlcommon.UpdateResultStatus(ctx, r.Client, &config, result)
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
