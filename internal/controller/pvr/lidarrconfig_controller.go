@@ -2,7 +2,6 @@ package pvr
 
 import (
 	"context"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -16,8 +15,6 @@ import (
 	pvrv1alpha1 "github.com/kyleseneker/media-operator/api/pvr/v1alpha1"
 	pvrclient "github.com/kyleseneker/media-operator/internal/client/pvr"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
-	"github.com/kyleseneker/media-operator/internal/engine"
-	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
 
 type LidarrConfigReconciler struct {
@@ -36,84 +33,24 @@ func (r *LidarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if err := r.Get(ctx, req.NamespacedName, &config); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-
-	cleanup := func(ctx context.Context) error {
-		return ctrlcommon.CleanupApp(ctx, r.Client, r.Recorder, &config, config.Spec.Connection, pvrclient.Definition("v1"), "lidarr")
-	}
-	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, cleanup); done {
-		return ctrl.Result{RequeueAfter: after}, nil
-	}
-
-	apiKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.APIKeySecretRef)
-	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-	}
-
-	dcSecrets, err := ctrlcommon.ResolveDownloadClientSecrets(ctx, r.Client, config.Namespace, config.Spec.DownloadClients)
-	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-	}
-
-	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
-	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-	}
-
-	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthAPIKey, engine.WithOwner(config.Namespace+"/"+config.Name+"/"+string(config.UID)), engine.WithAPIKey(apiKey), engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("lidarr"))
-	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonInvalidConfig, err.Error())
-		return ctrl.Result{}, nil
-	}
-	if err := hc.Ping(ctx, "/api/v1/system/status"); err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonAppUnreachable, err.Error())
-		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
-	}
-
-	indexers, err := ctrlcommon.ResolveIndexerSecrets(ctx, r.Client, config.Namespace, config.Spec.Indexers)
-	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-	}
-
-	notifications, err := ctrlcommon.ResolveNotificationSecrets(ctx, r.Client, config.Namespace, config.Spec.Notifications)
-	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-	}
-
-	importLists, err := ctrlcommon.ResolveImportListSecrets(ctx, r.Client, config.Namespace, config.Spec.ImportLists)
-	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-	}
-
-	result, err := pvrclient.Reconcile(ctx, hc, "v1", config.Spec, pvrclient.Options{
-		RootFolders:        config.Spec.RootFolders,
-		RemotePathMappings: config.Spec.RemotePathMappings,
-		DownloadClients:    config.Spec.DownloadClients,
-		DCSecrets:          dcSecrets,
-		CategoryField:      "musicCategory",
-		ImportListFields:   pvrclient.ImportListFields{AutomaticAdd: "enableAutomaticAdd", Monitor: "shouldMonitor", MonitorAll: "entireArtist"},
-		MetadataProfiles:   true,
-		QualityProfiles:    config.Spec.QualityProfiles,
-		CustomFormats:      config.Spec.CustomFormats,
-		Tags:               config.Spec.Tags,
-		Indexers:           indexers,
-		Notifications:      notifications,
-		ImportLists:        importLists,
-	}, ctrlcommon.Policy(config.Spec.Reconcile), config.Status.ManagedResources)
-	if err != nil {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, err.Error())
-		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
-	}
-	ctrlcommon.UpdateStatusManaged(&config, result.Managed)
-	ctrlcommon.EmitPruneEvents(r.Recorder, &config, result.Pruned)
-	ctrlcommon.UpdateResultStatus(ctx, r.Status(), &config, result)
-
-	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
+	s := config.Spec
+	return reconcilePVR(ctx, r.Client, r.Recorder, pvrConfig{
+		app: "lidarr", apiVersion: "v1", obj: &config, spec: s, connection: s.Connection, policy: s.Reconcile,
+		options: pvrclient.Options{
+			RootFolders:        s.RootFolders,
+			RemotePathMappings: s.RemotePathMappings,
+			DownloadClients:    s.DownloadClients,
+			CategoryField:      "musicCategory",
+			ImportListFields:   pvrclient.ImportListFields{AutomaticAdd: "enableAutomaticAdd", Monitor: "shouldMonitor", MonitorAll: "entireArtist"},
+			MetadataProfiles:   true,
+			QualityProfiles:    s.QualityProfiles,
+			CustomFormats:      s.CustomFormats,
+			Tags:               s.Tags,
+			Indexers:           s.Indexers,
+			Notifications:      s.Notifications,
+			ImportLists:        s.ImportLists,
+		},
+	})
 }
 
 func (r *LidarrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -123,7 +60,7 @@ func (r *LidarrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return ctrlcommon.FindConfigsBySecret(ctx, r.Client, obj, &pvrv1alpha1.LidarrConfigList{}, func(list *pvrv1alpha1.LidarrConfigList) []reconcile.Request {
 				var reqs []reconcile.Request
 				for _, c := range list.Items {
-					if c.Spec.Connection.APIKeySecretRef.Name == obj.GetName() || ctrlcommon.DownloadClientReferencesSecret(c.Spec.DownloadClients, obj.GetName()) || ctrlcommon.ListsReferenceSecret(c.Spec.Indexers, c.Spec.Notifications, c.Spec.ImportLists, obj.GetName()) {
+					if pvrReferencesSecret(c.Spec.Connection, c.Spec.DownloadClients, c.Spec.Indexers, c.Spec.Notifications, c.Spec.ImportLists, obj.GetName()) {
 						reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&c)})
 					}
 				}
