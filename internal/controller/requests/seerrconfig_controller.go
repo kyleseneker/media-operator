@@ -97,6 +97,12 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			syncErrors = append(syncErrors, fmt.Sprintf("jellyfin: %v", err))
 		}
 	}
+	if config.Spec.PlexAuth != nil {
+		if err := reconcileSeerrPlex(ctx, sc, writes, config.Spec.PlexAuth); err != nil {
+			logger.Error(err, "failed to reconcile Plex server")
+			syncErrors = append(syncErrors, fmt.Sprintf("plex: %v", err))
+		}
+	}
 
 	for _, svc := range []struct {
 		kind      string
@@ -226,9 +232,9 @@ func (r *SeerrConfigReconciler) setup(
 		}
 	}
 	if config.Spec.PlexAuth != nil {
-		if _, err := sc.Post(ctx, "/api/v1/settings/plex/sync", map[string]any{}); err != nil {
-			logger.Error(err, "failed to sync Plex libraries")
-			initErrors = append(initErrors, fmt.Sprintf("plex library sync: %v", err))
+		if err := syncPlexLibraries(ctx, sc, writes, config.Spec.PlexAuth); err != nil {
+			logger.Error(err, "failed to configure Plex libraries")
+			initErrors = append(initErrors, err.Error())
 		}
 	}
 
@@ -507,7 +513,7 @@ func syncJellyfinLibraries(ctx context.Context, sc *seerrclient.Client, w *engin
 	if err := reconcileSeerrJellyfin(ctx, sc, w, auth); err != nil {
 		return err
 	}
-	return enableJellyfinLibraries(ctx, sc)
+	return enableLibraries(ctx, sc, "jellyfin")
 }
 
 // reconcileSeerrJellyfin keeps Seerr's Jellyfin server at the declared address.
@@ -538,23 +544,55 @@ func reconcileSeerrJellyfin(ctx context.Context, sc *seerrclient.Client, w *engi
 	})
 }
 
-// enableJellyfinLibraries refreshes Seerr's library list from Jellyfin and
+func syncPlexLibraries(ctx context.Context, sc *seerrclient.Client, w *engine.Writes, auth *requestsv1alpha1.SeerrPlexAuth) error {
+	if err := reconcileSeerrPlex(ctx, sc, w, auth); err != nil {
+		return err
+	}
+	return enableLibraries(ctx, sc, "plex")
+}
+
+// reconcileSeerrPlex keeps Seerr's Plex server at the declared address. Seerr
+// connects to it to check the address before saving.
+func reconcileSeerrPlex(ctx context.Context, sc *seerrclient.Client, w *engine.Writes, auth *requestsv1alpha1.SeerrPlexAuth) error {
+	port := 32400
+	if auth.Port != nil {
+		port = *auth.Port
+	}
+	payload := map[string]any{
+		"ip":     auth.Hostname,
+		"port":   port,
+		"useSsl": auth.UseSsl != nil && *auth.UseSsl,
+	}
+	current, err := sc.Get(ctx, "/api/v1/settings/plex")
+	if err != nil {
+		return fmt.Errorf("reading plex settings: %w", err)
+	}
+	if !seerrDiffers(current, payload) {
+		return nil
+	}
+	return w.Apply("settings", "plex", func() error {
+		_, err := sc.Post(ctx, "/api/v1/settings/plex", payload)
+		return err
+	})
+}
+
+// enableLibraries refreshes Seerr's library list from its media server and
 // enables each library. Seerr 3.5.0 replaced the old sync/enable query
 // parameters on GET .../library with these endpoints, and its request validator
-// rejects the old form. The sync answers 404 while Jellyfin has no libraries;
+// rejects the old form. The sync answers 404 while the server has no libraries;
 // setup then retries rather than finishing with none enabled.
-func enableJellyfinLibraries(ctx context.Context, sc *seerrclient.Client) error {
-	libraries, err := sc.PostList(ctx, "/api/v1/settings/jellyfin/library/sync", map[string]any{})
+func enableLibraries(ctx context.Context, sc *seerrclient.Client, server string) error {
+	libraries, err := sc.PostList(ctx, fmt.Sprintf("/api/v1/settings/%s/library/sync", server), map[string]any{})
 	if err != nil {
-		return fmt.Errorf("jellyfin library sync: %w", err)
+		return fmt.Errorf("%s library sync: %w", server, err)
 	}
 	for _, lib := range libraries {
 		id, ok := lib["id"].(string)
 		if !ok || id == "" {
 			continue
 		}
-		if err := sc.Put(ctx, fmt.Sprintf("/api/v1/settings/jellyfin/library/%s", id), map[string]any{"enabled": true}); err != nil {
-			return fmt.Errorf("enabling jellyfin library %s: %w", id, err)
+		if err := sc.Put(ctx, fmt.Sprintf("/api/v1/settings/%s/library/%s", server, id), map[string]any{"enabled": true}); err != nil {
+			return fmt.Errorf("enabling %s library %s: %w", server, id, err)
 		}
 	}
 	return nil

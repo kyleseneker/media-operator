@@ -133,8 +133,8 @@ type fakeSeerr struct {
 	rejected    []string
 	authBodies  map[string]map[string]any
 	initialized bool
-	// libraries is what a Jellyfin library sync finds, keyed by "id" with an
-	// "enabled" flag the library PUT updates.
+	// libraries is what a media server library sync finds, keyed by "id" with
+	// an "enabled" flag the library PUT updates.
 	libraries []map[string]any
 	// services holds the Sonarr and Radarr connections, keyed by "sonarr" or
 	// "radarr". Like Seerr, a POST appends one rather than replacing by name.
@@ -142,12 +142,39 @@ type fakeSeerr struct {
 	// jellyfin is the stored Jellyfin server. Like Seerr, a POST merges the body
 	// into it, keeping keys Seerr does not use.
 	jellyfin map[string]any
+	plex     map[string]any
 }
 
 func (f *fakeSeerr) jellyfinServer() map[string]any {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return maps.Clone(f.jellyfin)
+}
+
+// mediaServer returns the stored Jellyfin or Plex server for a settings path,
+// creating it on first use. The caller holds f.mu.
+func (f *fakeSeerr) mediaServer(path string) map[string]any {
+	server := &f.jellyfin
+	if strings.HasSuffix(path, "/plex") {
+		server = &f.plex
+	}
+	if *server == nil {
+		*server = map[string]any{}
+	}
+	return *server
+}
+
+func mediaServerLibraries(path string) string {
+	if strings.HasPrefix(path, "/api/v1/settings/plex/") {
+		return "/api/v1/settings/plex/library/"
+	}
+	return "/api/v1/settings/jellyfin/library/"
+}
+
+func (f *fakeSeerr) plexServer() map[string]any {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return maps.Clone(f.plex)
 }
 
 func (f *fakeSeerr) serviceCount(kind string) int {
@@ -241,7 +268,7 @@ func (f *fakeSeerr) serve(t *testing.T) string {
 			_ = json.NewEncoder(w).Encode(map[string]any{"message": "Unknown query parameter"})
 			return
 		}
-		const libraryPrefix = "/api/v1/settings/jellyfin/library/"
+		libraryPrefix := mediaServerLibraries(r.URL.Path)
 		switch {
 		case r.URL.Path == "/api/v1/settings/public":
 			_ = json.NewEncoder(w).Encode(map[string]any{"initialized": f.initialized})
@@ -259,14 +286,12 @@ func (f *fakeSeerr) serve(t *testing.T) string {
 		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/v1/settings/"):
 			kind, id, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/api/v1/settings/"), "/")
 			f.services[kind] = slices.DeleteFunc(f.services[kind], func(s map[string]any) bool { return fmt.Sprint(s["id"]) == id })
-		case r.URL.Path == "/api/v1/settings/jellyfin":
-			if f.jellyfin == nil {
-				f.jellyfin = map[string]any{}
-			}
+		case r.URL.Path == "/api/v1/settings/jellyfin" || r.URL.Path == "/api/v1/settings/plex":
+			server := f.mediaServer(r.URL.Path)
 			if r.Method == http.MethodPost {
-				maps.Copy(f.jellyfin, body)
+				maps.Copy(server, body)
 			}
-			_ = json.NewEncoder(w).Encode(f.jellyfin)
+			_ = json.NewEncoder(w).Encode(server)
 		case r.URL.Path == "/api/v1/settings/initialize" && r.Method == http.MethodPost:
 			f.initialized = true
 			_ = json.NewEncoder(w).Encode(map[string]any{"initialized": true})
@@ -630,4 +655,51 @@ func TestSeerrObserveReportsAConnectionPruneWouldDelete(t *testing.T) {
 
 	assert.ElementsMatch(t, []string{"ObserveOld", "Hand-made"}, seerrServiceNames(app, "sonarr"))
 	assert.Equal(t, before+1, testutil.ToFloat64(observed))
+}
+
+func plexServerConfig(addr string, initialized bool) *requestsv1alpha1.SeerrConfig {
+	cfg := seerrConfig(addr)
+	if initialized {
+		cfg.Spec.Connection.APIKeySecretRef = &commonv1alpha1.SecretKeyRef{Name: "seerr-secrets", Key: "api-key"}
+	}
+	cfg.Spec.PlexAuth = &requestsv1alpha1.SeerrPlexAuth{
+		Hostname: "plex", TokenSecretRef: commonv1alpha1.SecretKeyRef{Name: "seerr-secrets", Key: "token"},
+	}
+	return cfg
+}
+
+func TestSeerrStoresTheDeclaredPlexServer(t *testing.T) {
+	app := &fakeSeerr{initialized: true, plex: map[string]any{"ip": "old-plex", "port": float64(32400), "useSsl": false}}
+
+	runSeerr(t, plexServerConfig(app.serve(t), true))
+
+	got := app.plexServer()
+	assert.Equal(t, "plex", got["ip"])
+	assert.Equal(t, float64(32400), got["port"], "the port defaults to Plex's 32400")
+	assert.Equal(t, false, got["useSsl"])
+}
+
+func TestSeerrPlexFirstRunSavesTheServerThenEnablesLibraries(t *testing.T) {
+	app := &fakeSeerr{libraries: []map[string]any{{"id": "1", "name": "Movies", "enabled": false}}}
+
+	runSeerr(t, plexServerConfig(app.serve(t), false))
+
+	require.True(t, app.saw("POST", "/api/v1/settings/initialize"), "setup never completed")
+	assert.Equal(t, "plex", app.plexServer()["ip"])
+	saved, synced := app.order("POST", "/api/v1/settings/plex"), app.order("POST", "/api/v1/settings/plex/library/sync")
+	require.NotEqual(t, -1, synced, "the Plex libraries were never synced")
+	assert.Less(t, saved, synced, "Seerr syncs libraries from the saved server, so it must be saved first")
+	assert.True(t, app.libraryEnabled("1"), "the Plex library was not enabled")
+	assert.False(t, app.saw("POST", "/api/v1/settings/plex/sync"), "called the full-scan job instead of the library sync")
+}
+
+func TestSeerrLeavesAMatchingPlexServerAlone(t *testing.T) {
+	app := &fakeSeerr{initialized: true, plex: map[string]any{
+		"ip": "plex", "port": float64(32400), "useSsl": false, "name": "home", "machineId": "abc",
+	}}
+
+	runSeerr(t, plexServerConfig(app.serve(t), true))
+
+	require.True(t, app.saw("GET", "/api/v1/settings/plex"), "never read the Plex server")
+	assert.False(t, app.saw("POST", "/api/v1/settings/plex"), "rewrote a Plex server that already matched")
 }
