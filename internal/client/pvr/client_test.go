@@ -1119,3 +1119,32 @@ func TestQualityProfileResolvesCustomFormatsCreatedInTheSameRun(t *testing.T) {
 	require.NotEmpty(t, qpBodies, "quality profile was never written")
 	assert.Contains(t, qpBodies[0], "101", "quality profile did not reference the newly created custom format id")
 }
+
+func TestKeepGroupIDsReusesTheAppsGroupIDs(t *testing.T) {
+	payload := BuildQualityProfilePayload(commonv1alpha1.QualityProfile{
+		Name:   "Any",
+		Cutoff: "WEB 1080p",
+		Items: []commonv1alpha1.QualityProfileItem{
+			{Quality: &commonv1alpha1.QualityReference{ID: 1, Name: "SDTV"}},
+			{Name: "WEB 720p", Items: []commonv1alpha1.QualityProfileGroupItem{{Quality: commonv1alpha1.QualityReference{ID: 5, Name: "WEBDL-720p"}}}},
+			{Name: "New group", Items: []commonv1alpha1.QualityProfileGroupItem{{Quality: commonv1alpha1.QualityReference{ID: 6, Name: "WEBRip-720p"}}}},
+			{Name: "WEB 1080p", Items: []commonv1alpha1.QualityProfileGroupItem{{Quality: commonv1alpha1.QualityReference{ID: 3, Name: "WEBDL-1080p"}}}},
+		},
+	}, nil)
+	profile := map[string]any{"items": []any{
+		map[string]any{"quality": map[string]any{"id": float64(1)}},
+		map[string]any{"id": float64(1001), "name": "WEB 720p"},
+		map[string]any{"id": float64(1000), "name": "WEB 1080p"},
+	}}
+
+	KeepGroupIDs(payload, profile)
+
+	ids := map[string]any{}
+	for _, item := range payload["items"].([]map[string]any) {
+		if name, ok := item["name"].(string); ok {
+			ids[name] = item["id"]
+		}
+	}
+	assert.Equal(t, map[string]any{"WEB 720p": 1001, "WEB 1080p": 1000, "New group": 1002}, ids)
+	assert.Equal(t, 1000, payload["cutoff"], "the cutoff follows its group's id")
+}

@@ -854,9 +854,14 @@ func qualityProfileResources(ctx context.Context, client *engine.HTTPClient, api
 	if err != nil {
 		return nil, err
 	}
-	existing, err := engine.FetchNamedIDs(ctx, client, fmt.Sprintf("/api/%s/qualityprofile", apiVersion), "name")
+	current, err := client.GetJSONList(ctx, fmt.Sprintf("/api/%s/qualityprofile", apiVersion))
 	if err != nil {
 		return nil, err
+	}
+	existing := map[string]map[string]any{}
+	for _, profile := range current {
+		name, _ := profile["name"].(string)
+		existing[name] = profile
 	}
 	var qps []map[string]any
 	for _, qp := range profiles {
@@ -870,6 +875,9 @@ func qualityProfileResources(ctx context.Context, client *engine.HTTPClient, api
 		}
 		payload := BuildQualityProfilePayload(qp, cfIDs)
 		if items, ok := payload["items"].([]map[string]any); ok {
+			if profile, ok := existing[qp.Name]; ok {
+				KeepGroupIDs(payload, profile)
+			}
 			payload["items"] = CompleteQualityItems(items, qp.Items, definitions)
 		}
 		if _, ok := existing[qp.Name]; !ok {
@@ -879,6 +887,56 @@ func qualityProfileResources(ctx context.Context, client *engine.HTTPClient, api
 		qps = append(qps, payload)
 	}
 	return qps, nil
+}
+
+// KeepGroupIDs gives each declared quality group the id it already has in the
+// app's profile of the same name, and new groups the lowest free ids. The apps
+// number groups themselves, so ids from a group's position would rewrite every
+// profile the app created.
+func KeepGroupIDs(payload, profile map[string]any) {
+	existing := map[string]int{}
+	rawItems, _ := profile["items"].([]any)
+	for _, raw := range rawItems {
+		item, _ := raw.(map[string]any)
+		if _, single := item["quality"].(map[string]any); single {
+			continue
+		}
+		name, _ := item["name"].(string)
+		if id, ok := item["id"].(float64); ok {
+			existing[name] = int(id)
+		}
+	}
+	items, _ := payload["items"].([]map[string]any)
+	used := map[int]bool{}
+	remap := map[int]int{}
+	var unmatched []map[string]any
+	for _, item := range items {
+		if _, single := item["quality"]; single {
+			continue
+		}
+		name, _ := item["name"].(string)
+		if id, ok := existing[name]; ok && !used[id] {
+			remap[item["id"].(int)] = id
+			item["id"] = id
+			used[id] = true
+			continue
+		}
+		unmatched = append(unmatched, item)
+	}
+	next := 1000
+	for _, item := range unmatched {
+		for used[next] {
+			next++
+		}
+		remap[item["id"].(int)] = next
+		item["id"] = next
+		used[next] = true
+	}
+	if cutoff, ok := payload["cutoff"].(int); ok {
+		if id, ok := remap[cutoff]; ok {
+			payload["cutoff"] = id
+		}
+	}
 }
 
 // CompleteFormatItems lists every custom format the app has, scoring the
