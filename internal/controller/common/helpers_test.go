@@ -21,6 +21,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
+	downloadsv1alpha1 "github.com/kyleseneker/media-operator/api/downloads/v1alpha1"
+	indexersv1alpha1 "github.com/kyleseneker/media-operator/api/indexers/v1alpha1"
 	pvrv1alpha1 "github.com/kyleseneker/media-operator/api/pvr/v1alpha1"
 	"github.com/kyleseneker/media-operator/internal/engine"
 	"github.com/kyleseneker/media-operator/internal/metrics"
@@ -93,38 +95,6 @@ func TestBoolTo01(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.want, BoolTo01(tt.b))
-		})
-	}
-}
-
-func TestDownloadClientReferencesSecret(t *testing.T) {
-	dcs := []commonv1alpha1.DownloadClient{
-		{
-			Name:              "qbit",
-			UsernameSecretRef: &commonv1alpha1.SecretKeyRef{Name: "qbit-creds", Key: "username"},
-			PasswordSecretRef: &commonv1alpha1.SecretKeyRef{Name: "qbit-creds", Key: "password"},
-		},
-		{
-			Name:            "sabnzbd",
-			APIKeySecretRef: &commonv1alpha1.SecretKeyRef{Name: "sab-secret", Key: "apiKey"},
-		},
-		{
-			Name: "no-secrets",
-		},
-	}
-
-	tests := []struct {
-		name       string
-		secretName string
-		want       bool
-	}{
-		{"username ref matches", "qbit-creds", true},
-		{"apiKey ref matches", "sab-secret", true},
-		{"no match", "unknown-secret", false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, DownloadClientReferencesSecret(dcs, tt.secretName))
 		})
 	}
 }
@@ -266,14 +236,46 @@ func TestResolveDownloadClientSecrets_MissingSecret(t *testing.T) {
 	assert.Contains(t, err.Error(), "username")
 }
 
-func TestFindConfigsBySecret_NonSecret(t *testing.T) {
-	fc := newFakeClient()
-	// Passing a non-Secret object should return nil
-	pod := &corev1.Pod{Name: "test", Namespace: "default"}
-	result := FindConfigsBySecret(context.Background(), fc, pod, &corev1.SecretList{}, func(_ *corev1.SecretList) []reconcile.Request {
-		return nil
-	})
-	assert.Nil(t, result)
+func TestReferencesSecretFindsEveryReference(t *testing.T) {
+	ref := commonv1alpha1.SecretKeyRef{Name: "target", Key: "k"}
+	for name, config := range map[string]any{
+		"an optional TLS CA": &pvrv1alpha1.SonarrConfig{Spec: pvrv1alpha1.SonarrConfigSpec{
+			Connection: commonv1alpha1.AppConnection{TLS: &commonv1alpha1.TLSConfig{CASecretRef: &ref}},
+		}},
+		"a download client password": pvrv1alpha1.SonarrConfigSpec{
+			DownloadClients: []commonv1alpha1.DownloadClient{{Name: "q", PasswordSecretRef: &ref}},
+		},
+		"a field read from a Secret": indexersv1alpha1.ProwlarrConfigSpec{
+			Indexers: []indexersv1alpha1.ProwlarrIndexer{{Name: "x", Fields: []indexersv1alpha1.ProwlarrField{{Name: "apiKey", ValueFrom: &ref}}}},
+		},
+		"a Usenet server password": downloadsv1alpha1.SabnzbdConfigSpec{
+			Servers: []downloadsv1alpha1.SabnzbdServer{{Name: "s", PasswordSecretRef: &ref}},
+		},
+		"a map value": map[string]commonv1alpha1.SecretKeyRef{"x": ref},
+	} {
+		assert.True(t, ReferencesSecret(config, "target"), name)
+		assert.False(t, ReferencesSecret(config, "other"), name)
+	}
+}
+
+func TestEnqueueForSecretQueuesOnlyConfigsThatReferToIt(t *testing.T) {
+	s := runtime.NewScheme()
+	require.NoError(t, scheme.AddToScheme(s))
+	require.NoError(t, pvrv1alpha1.AddToScheme(s))
+	withCA := func(name, namespace string) *pvrv1alpha1.SonarrConfig {
+		return &pvrv1alpha1.SonarrConfig{Name: name, Namespace: namespace, Spec: pvrv1alpha1.SonarrConfigSpec{
+			Connection: commonv1alpha1.AppConnection{TLS: &commonv1alpha1.TLSConfig{CASecretRef: &commonv1alpha1.SecretKeyRef{Name: "ca", Key: "ca.crt"}}},
+		}}
+	}
+	c := fake.NewClientBuilder().WithScheme(s).WithObjects(
+		withCA("uses", "media"), withCA("elsewhere", "other"),
+		&pvrv1alpha1.SonarrConfig{Name: "unrelated", Namespace: "media"},
+	).Build()
+	configs := configsForSecret(c, &pvrv1alpha1.SonarrConfigList{})
+
+	reqs := configs(context.Background(), &corev1.Secret{Name: "ca", Namespace: "media"})
+	assert.Equal(t, []reconcile.Request{{Name: "uses", Namespace: "media"}}, reqs)
+	assert.Nil(t, configs(context.Background(), &corev1.Pod{Name: "ca", Namespace: "media"}), "only Secrets are mapped")
 }
 
 func newSecretClient() *fake.ClientBuilder {
@@ -315,15 +317,6 @@ func TestResolveConfigFieldsMissingSecret(t *testing.T) {
 	}
 	_, err := ResolveConfigFields(context.Background(), c, "arr", "indexer x", fields)
 	require.Error(t, err, "expected an error for a missing secret")
-}
-
-func TestListsReferenceSecret(t *testing.T) {
-	idx := []commonv1alpha1.Indexer{{
-		Name:   "tl",
-		Fields: []commonv1alpha1.ConfigField{{Name: "apiKey", ValueFrom: &commonv1alpha1.SecretKeyRef{Name: "tracker", Key: "passkey"}}},
-	}}
-	assert.True(t, ListsReferenceSecret(idx, nil, nil, "tracker"), "should match the referenced secret")
-	assert.False(t, ListsReferenceSecret(idx, nil, nil, "other"), "should not match an unrelated secret")
 }
 
 func TestConfigSyncedGaugeTracksOutcome(t *testing.T) {

@@ -14,9 +14,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	transcodev1alpha1 "github.com/kyleseneker/media-operator/api/transcode/v1alpha1"
 	tdarrclient "github.com/kyleseneker/media-operator/internal/client/tdarr"
@@ -478,17 +476,7 @@ func (s *tdarrSync) convergeWorkerLimit(ctx context.Context, nodeID, workerType 
 func (r *TdarrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&transcodev1alpha1.TdarrConfig{}, builder.WithPredicates(ctrlcommon.ConfigChangedPredicate())).
-		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-			return ctrlcommon.FindConfigsBySecret(ctx, r.Client, obj, &transcodev1alpha1.TdarrConfigList{}, func(list *transcodev1alpha1.TdarrConfigList) []reconcile.Request {
-				var reqs []reconcile.Request
-				for _, c := range list.Items {
-					if c.Spec.Connection.APIKeySecretRef.Name == obj.GetName() {
-						reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&c)})
-					}
-				}
-				return reqs
-			})
-		})).
+		Watches(&corev1.Secret{}, ctrlcommon.EnqueueForSecret(r.Client, &transcodev1alpha1.TdarrConfigList{})).
 		Named("tdarrconfig").
 		Complete(r)
 }

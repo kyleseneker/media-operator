@@ -2,6 +2,9 @@ package envtest
 
 import (
 	"context"
+	"encoding/pem"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -13,6 +16,8 @@ import (
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/config"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	automationv1alpha1 "github.com/kyleseneker/media-operator/api/automation/v1alpha1"
@@ -32,6 +37,7 @@ import (
 	"github.com/kyleseneker/media-operator/internal/controller/pvr"
 	"github.com/kyleseneker/media-operator/internal/controller/requests"
 	"github.com/kyleseneker/media-operator/internal/controller/subtitles"
+	"github.com/kyleseneker/media-operator/internal/engine"
 )
 
 // controllerCase describes one kind well enough to drive it through a create,
@@ -261,4 +267,57 @@ func TestControllersPersistStatusAndReleaseOnDelete(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A changed Secret re-reconciles the configs that refer to it rather than
+// waiting out the requeue. FlareSolverr reads only a TLS CA, which nothing
+// watched before.
+func TestSecretChangeReconcilesTheConfigReferringToIt(t *testing.T) {
+	cfg, c := startControlPlane(t, indexersv1alpha1.AddToScheme)
+	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
+		Scheme:     c.Scheme(),
+		Metrics:    metricsserver.Options{BindAddress: "0"},
+		Controller: config.Controller{SkipNameValidation: new(true)},
+	})
+	require.NoError(t, err)
+	rec := &indexers.FlareSolverrConfigReconciler{
+		Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Recorder: events.NewFakeRecorder(100),
+	}
+	require.NoError(t, rec.SetupWithManager(mgr))
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() { _ = mgr.Start(ctx) }()
+
+	app := httptest.NewTLSServer(http.NotFoundHandler())
+	t.Cleanup(app.Close)
+	cr := &indexersv1alpha1.FlareSolverrConfig{ObjectMeta: meta("watched"), Spec: indexersv1alpha1.FlareSolverrConfigSpec{
+		Connection: indexersv1alpha1.FlareSolverrConnection{URL: app.URL, TLS: &commonv1alpha1.TLSConfig{
+			CASecretRef: &commonv1alpha1.SecretKeyRef{Name: "private-ca", Key: "ca.crt"},
+		}},
+	}}
+	require.NoError(t, c.Create(ctx, cr))
+	syncedReason := func() string {
+		var got indexersv1alpha1.FlareSolverrConfig
+		if c.Get(ctx, client.ObjectKeyFromObject(cr), &got) != nil {
+			return ""
+		}
+		for _, cond := range got.Status.Conditions {
+			if cond.Type == engine.ConditionSynced {
+				return cond.Reason
+			}
+		}
+		return ""
+	}
+	require.Eventually(t, func() bool { return syncedReason() == engine.ReasonSecretNotFound },
+		10*time.Second, 100*time.Millisecond, "the missing CA was never reported")
+
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: app.Certificate().Raw})
+	require.NoError(t, c.Create(ctx, &corev1.Secret{
+		ObjectMeta: meta("private-ca"), Data: map[string][]byte{"ca.crt": caPEM},
+	}))
+	// Well inside the 30-second requeue for a missing Secret.
+	require.Eventually(t, func() bool {
+		reason := syncedReason()
+		return reason != "" && reason != engine.ReasonSecretNotFound
+	}, 10*time.Second, 100*time.Millisecond, "creating the CA Secret did not re-reconcile the config")
 }

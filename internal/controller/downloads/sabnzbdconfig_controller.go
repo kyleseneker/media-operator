@@ -14,9 +14,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	downloadsv1alpha1 "github.com/kyleseneker/media-operator/api/downloads/v1alpha1"
@@ -118,17 +116,7 @@ func (r *SabnzbdConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 func (r *SabnzbdConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&downloadsv1alpha1.SabnzbdConfig{}, builder.WithPredicates(ctrlcommon.ConfigChangedPredicate())).
-		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-			return ctrlcommon.FindConfigsBySecret(ctx, r.Client, obj, &downloadsv1alpha1.SabnzbdConfigList{}, func(list *downloadsv1alpha1.SabnzbdConfigList) []reconcile.Request {
-				var reqs []reconcile.Request
-				for _, c := range list.Items {
-					if c.Spec.Connection.APIKeySecretRef.Name == obj.GetName() {
-						reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&c)})
-					}
-				}
-				return reqs
-			})
-		})).
+		Watches(&corev1.Secret{}, ctrlcommon.EnqueueForSecret(r.Client, &downloadsv1alpha1.SabnzbdConfigList{})).
 		Named("sabnzbdconfig").
 		Complete(r)
 }

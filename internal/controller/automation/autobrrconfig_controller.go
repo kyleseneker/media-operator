@@ -13,9 +13,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	automationv1alpha1 "github.com/kyleseneker/media-operator/api/automation/v1alpha1"
 	autobrrclient "github.com/kyleseneker/media-operator/internal/client/autobrr"
@@ -465,63 +463,11 @@ func (s *autobrrSync) actions(
 	return nil
 }
 
-// referencesSecret checks if the config references the given secret name.
-func referencesSecret(config *automationv1alpha1.AutobrrConfig, secretName string) bool {
-	if config.Spec.Connection.APIKeySecretRef.Name == secretName {
-		return true
-	}
-	for _, dc := range config.Spec.DownloadClients {
-		if dc.UsernameSecretRef != nil && dc.UsernameSecretRef.Name == secretName {
-			return true
-		}
-		if dc.PasswordSecretRef != nil && dc.PasswordSecretRef.Name == secretName {
-			return true
-		}
-		if dc.APIKeySecretRef != nil && dc.APIKeySecretRef.Name == secretName {
-			return true
-		}
-	}
-	for _, idx := range config.Spec.Indexers {
-		if idx.APIKeySecretRef != nil && idx.APIKeySecretRef.Name == secretName {
-			return true
-		}
-	}
-	for _, irc := range config.Spec.IRCNetworks {
-		if irc.AuthAccountSecretRef != nil && irc.AuthAccountSecretRef.Name == secretName {
-			return true
-		}
-		if irc.AuthPasswordSecretRef != nil && irc.AuthPasswordSecretRef.Name == secretName {
-			return true
-		}
-		for _, ch := range irc.Channels {
-			if ch.PasswordSecretRef != nil && ch.PasswordSecretRef.Name == secretName {
-				return true
-			}
-		}
-	}
-	for _, feed := range config.Spec.Feeds {
-		if feed.APIKeySecretRef != nil && feed.APIKeySecretRef.Name == secretName {
-			return true
-		}
-	}
-	return false
-}
-
 // SetupWithManager sets up the controller with the Manager.
 func (r *AutobrrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&automationv1alpha1.AutobrrConfig{}, builder.WithPredicates(ctrlcommon.ConfigChangedPredicate())).
-		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-			return ctrlcommon.FindConfigsBySecret(ctx, r.Client, obj, &automationv1alpha1.AutobrrConfigList{}, func(list *automationv1alpha1.AutobrrConfigList) []reconcile.Request {
-				var reqs []reconcile.Request
-				for _, c := range list.Items {
-					if referencesSecret(&c, obj.GetName()) {
-						reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&c)})
-					}
-				}
-				return reqs
-			})
-		})).
+		Watches(&corev1.Secret{}, ctrlcommon.EnqueueForSecret(r.Client, &automationv1alpha1.AutobrrConfigList{})).
 		Named("autobrrconfig").
 		Complete(r)
 }

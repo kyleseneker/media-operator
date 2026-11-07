@@ -14,9 +14,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	mediaserversv1alpha1 "github.com/kyleseneker/media-operator/api/mediaservers/v1alpha1"
 	plexclient "github.com/kyleseneker/media-operator/internal/client/plex"
@@ -178,17 +176,7 @@ func plexLibraryDefaults(lib mediaserversv1alpha1.PlexLibrary) (agent, scanner, 
 func (r *PlexConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&mediaserversv1alpha1.PlexConfig{}, builder.WithPredicates(ctrlcommon.ConfigChangedPredicate())).
-		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-			return ctrlcommon.FindConfigsBySecret(ctx, r.Client, obj, &mediaserversv1alpha1.PlexConfigList{}, func(list *mediaserversv1alpha1.PlexConfigList) []reconcile.Request {
-				var reqs []reconcile.Request
-				for _, c := range list.Items {
-					if c.Spec.Connection.TokenSecretRef.Name == obj.GetName() {
-						reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&c)})
-					}
-				}
-				return reqs
-			})
-		})).
+		Watches(&corev1.Secret{}, ctrlcommon.EnqueueForSecret(r.Client, &mediaserversv1alpha1.PlexConfigList{})).
 		Named("plexconfig").
 		Complete(r)
 }

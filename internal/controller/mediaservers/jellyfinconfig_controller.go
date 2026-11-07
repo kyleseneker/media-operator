@@ -13,9 +13,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	mediaserversv1alpha1 "github.com/kyleseneker/media-operator/api/mediaservers/v1alpha1"
 	jellyfinclient "github.com/kyleseneker/media-operator/internal/client/jellyfin"
@@ -274,18 +272,7 @@ func buildPathInfos(paths []string) []map[string]any {
 func (r *JellyfinConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&mediaserversv1alpha1.JellyfinConfig{}, builder.WithPredicates(ctrlcommon.ConfigChangedPredicate())).
-		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-			return ctrlcommon.FindConfigsBySecret(ctx, r.Client, obj, &mediaserversv1alpha1.JellyfinConfigList{}, func(list *mediaserversv1alpha1.JellyfinConfigList) []reconcile.Request {
-				var reqs []reconcile.Request
-				for _, c := range list.Items {
-					if c.Spec.AdminUser.UsernameSecretRef.Name == obj.GetName() ||
-						c.Spec.AdminUser.PasswordSecretRef.Name == obj.GetName() {
-						reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&c)})
-					}
-				}
-				return reqs
-			})
-		})).
+		Watches(&corev1.Secret{}, ctrlcommon.EnqueueForSecret(r.Client, &mediaserversv1alpha1.JellyfinConfigList{})).
 		Named("jellyfinconfig").
 		Complete(r)
 }

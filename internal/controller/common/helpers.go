@@ -9,10 +9,12 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -150,15 +152,35 @@ func BoolTo01(b bool) string {
 	return "0"
 }
 
-// FindConfigsBySecret is a generic helper for watching Secrets and mapping them back to config CRs.
-func FindConfigsBySecret[L client.ObjectList](ctx context.Context, c client.Client, obj client.Object, list L, extract func(L) []reconcile.Request) []reconcile.Request {
-	if _, ok := obj.(*corev1.Secret); !ok {
-		return nil
+// EnqueueForSecret re-reconciles every config of the listed kind, in a changed
+// Secret's namespace, that refers to that Secret.
+func EnqueueForSecret(c client.Client, list client.ObjectList) handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(configsForSecret(c, list))
+}
+
+func configsForSecret(c client.Client, list client.ObjectList) handler.MapFunc {
+	return func(ctx context.Context, obj client.Object) []reconcile.Request {
+		if _, ok := obj.(*corev1.Secret); !ok {
+			return nil
+		}
+		configs := list.DeepCopyObject().(client.ObjectList)
+		if err := c.List(ctx, configs, client.InNamespace(obj.GetNamespace())); err != nil {
+			log.FromContext(ctx).Error(err, "listing configs for a changed Secret", "secret", obj.GetName())
+			return nil
+		}
+		items, err := meta.ExtractList(configs)
+		if err != nil {
+			return nil
+		}
+		var reqs []reconcile.Request
+		for _, item := range items {
+			config, ok := item.(client.Object)
+			if ok && ReferencesSecret(config, obj.GetName()) {
+				reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(config)})
+			}
+		}
+		return reqs
 	}
-	if err := c.List(ctx, list, client.InNamespace(obj.GetNamespace())); err != nil {
-		return nil
-	}
-	return extract(list)
 }
 
 // ResolveDownloadClientSecrets resolves all secret references for a list of download clients.
@@ -288,57 +310,43 @@ func ResolveProwlarrFields(ctx context.Context, c client.Reader, namespace, owne
 	return out, nil
 }
 
-// ProwlarrFieldsReferenceSecret returns true if any field sources from the named secret.
-func ProwlarrFieldsReferenceSecret(fields []indexersv1alpha1.ProwlarrField, secretName string) bool {
-	for _, f := range fields {
-		if f.ValueFrom != nil && f.ValueFrom.Name == secretName {
-			return true
-		}
-	}
-	return false
+var secretKeyRefType = reflect.TypeFor[commonv1alpha1.SecretKeyRef]()
+
+// ReferencesSecret reports whether a config refers to the named Secret
+// anywhere. Every Secret reference in the API is a SecretKeyRef, so walking the
+// config finds new ones as fields are added rather than relying on a list kept
+// by hand.
+func ReferencesSecret(config any, name string) bool {
+	return referencesSecret(reflect.ValueOf(config), name)
 }
 
-// ListsReferenceSecret returns true if any indexer, notification or import list sources from the named secret.
-func ListsReferenceSecret(indexers []commonv1alpha1.Indexer, notifications []commonv1alpha1.Notification, importLists []commonv1alpha1.ImportList, secretName string) bool {
-	for _, x := range indexers {
-		if ConfigFieldsReferenceSecret(x.Fields, secretName) {
-			return true
+func referencesSecret(v reflect.Value, name string) bool {
+	switch v.Kind() {
+	case reflect.Pointer, reflect.Interface:
+		return !v.IsNil() && referencesSecret(v.Elem(), name)
+	case reflect.Struct:
+		if v.Type() == secretKeyRefType {
+			return v.FieldByName("Name").String() == name
 		}
-	}
-	for _, x := range notifications {
-		if ConfigFieldsReferenceSecret(x.Fields, secretName) {
-			return true
+		for i := range v.NumField() {
+			if v.Type().Field(i).IsExported() && referencesSecret(v.Field(i), name) {
+				return true
+			}
 		}
-	}
-	for _, x := range importLists {
-		if ConfigFieldsReferenceSecret(x.Fields, secretName) {
-			return true
+	case reflect.Slice, reflect.Array:
+		if v.Type().Elem().Kind() == reflect.Uint8 {
+			return false // raw JSON
 		}
-	}
-	return false
-}
-
-// ConfigFieldsReferenceSecret returns true if any field sources from the named secret.
-func ConfigFieldsReferenceSecret(fields []commonv1alpha1.ConfigField, secretName string) bool {
-	for _, f := range fields {
-		if f.ValueFrom != nil && f.ValueFrom.Name == secretName {
-			return true
+		for i := range v.Len() {
+			if referencesSecret(v.Index(i), name) {
+				return true
+			}
 		}
-	}
-	return false
-}
-
-// DownloadClientReferencesSecret returns true if any download client references the named secret.
-func DownloadClientReferencesSecret(downloadClients []commonv1alpha1.DownloadClient, secretName string) bool {
-	for _, dc := range downloadClients {
-		if dc.UsernameSecretRef != nil && dc.UsernameSecretRef.Name == secretName {
-			return true
-		}
-		if dc.PasswordSecretRef != nil && dc.PasswordSecretRef.Name == secretName {
-			return true
-		}
-		if dc.APIKeySecretRef != nil && dc.APIKeySecretRef.Name == secretName {
-			return true
+	case reflect.Map:
+		for it := v.MapRange(); it.Next(); {
+			if referencesSecret(it.Value(), name) {
+				return true
+			}
 		}
 	}
 	return false

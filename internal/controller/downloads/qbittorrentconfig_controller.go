@@ -14,9 +14,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	downloadsv1alpha1 "github.com/kyleseneker/media-operator/api/downloads/v1alpha1"
 	qbclient "github.com/kyleseneker/media-operator/internal/client/qbittorrent"
@@ -240,18 +238,7 @@ func reconcileQBCategory(ctx context.Context, qb *qbclient.Client, existing map[
 func (r *QBittorrentConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&downloadsv1alpha1.QBittorrentConfig{}, builder.WithPredicates(ctrlcommon.ConfigChangedPredicate())).
-		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-			return ctrlcommon.FindConfigsBySecret(ctx, r.Client, obj, &downloadsv1alpha1.QBittorrentConfigList{}, func(list *downloadsv1alpha1.QBittorrentConfigList) []reconcile.Request {
-				var reqs []reconcile.Request
-				for _, c := range list.Items {
-					if c.Spec.Connection.UsernameSecretRef.Name == obj.GetName() ||
-						c.Spec.Connection.PasswordSecretRef.Name == obj.GetName() {
-						reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&c)})
-					}
-				}
-				return reqs
-			})
-		})).
+		Watches(&corev1.Secret{}, ctrlcommon.EnqueueForSecret(r.Client, &downloadsv1alpha1.QBittorrentConfigList{})).
 		Named("qbittorrentconfig").
 		Complete(r)
 }

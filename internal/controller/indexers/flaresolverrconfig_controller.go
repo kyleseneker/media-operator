@@ -6,6 +6,7 @@ import (
 	"slices"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -29,6 +30,7 @@ type FlareSolverrConfigReconciler struct {
 // +kubebuilder:rbac:groups=media-operator.dev,resources=flaresolverrconfigs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=media-operator.dev,resources=flaresolverrconfigs/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=media-operator.dev,resources=flaresolverrconfigs/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
 func (r *FlareSolverrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -163,6 +165,7 @@ func reconcileFlareSolverrSessions(ctx context.Context, fc *flaresolverrclient.C
 func (r *FlareSolverrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&indexersv1alpha1.FlareSolverrConfig{}, builder.WithPredicates(ctrlcommon.ConfigChangedPredicate())).
+		Watches(&corev1.Secret{}, ctrlcommon.EnqueueForSecret(r.Client, &indexersv1alpha1.FlareSolverrConfigList{})).
 		Named("flaresolverrconfig").
 		Complete(r)
 }

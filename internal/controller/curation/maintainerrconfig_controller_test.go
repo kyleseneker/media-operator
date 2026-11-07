@@ -505,17 +505,6 @@ func TestMaintainerrObserveReportsUnresolvableGroupsOnceTheRestMatches(t *testin
 	assert.Contains(t, synced.Message, `no Jellyfin property "nope"`)
 }
 
-func TestMaintainerrSecretWatchCoversEveryReference(t *testing.T) {
-	spec := jellyfinSpec("http://maintainerr")
-	spec.Tautulli = &curationv1alpha1.MaintainerrServiceConnection{URL: "http://t", APIKeySecretRef: commonv1alpha1.SecretKeyRef{Name: "tautulli"}}
-	spec.Sonarr = []curationv1alpha1.MaintainerrArrServer{{Name: "s", APIKeySecretRef: commonv1alpha1.SecretKeyRef{Name: "sonarr"}}}
-	cfg := &curationv1alpha1.MaintainerrConfig{Spec: spec}
-	for _, name := range []string{"media-credentials", "tautulli", "sonarr"} {
-		assert.True(t, maintainerrReferencesSecret(cfg, name), name)
-	}
-	assert.False(t, maintainerrReferencesSecret(cfg, "unrelated"))
-}
-
 // Maintainerr strips settings keys it does not know without an error, so a spec
 // field the builder never maps is silently inert.
 func TestMaintainerrJobsFieldsAllReachThePayload(t *testing.T) {

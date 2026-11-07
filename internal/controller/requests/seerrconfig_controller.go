@@ -12,9 +12,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	requestsv1alpha1 "github.com/kyleseneker/media-operator/api/requests/v1alpha1"
 	seerrclient "github.com/kyleseneker/media-operator/internal/client/seerr"
@@ -445,40 +443,11 @@ func seerrDiffers(current, payload map[string]any) bool {
 	return !reconciler.Covers(current, desired)
 }
 
-// seerrReferencesSecret returns true if the SeerrConfig references the named secret.
-func seerrReferencesSecret(c *requestsv1alpha1.SeerrConfig, secretName string) bool {
-	if c.Spec.JellyfinAuth != nil {
-		if c.Spec.JellyfinAuth.UsernameSecretRef.Name == secretName || c.Spec.JellyfinAuth.PasswordSecretRef.Name == secretName {
-			return true
-		}
-	}
-	if c.Spec.PlexAuth != nil && c.Spec.PlexAuth.TokenSecretRef.Name == secretName {
-		return true
-	}
-	if c.Spec.Sonarr != nil && c.Spec.Sonarr.APIKeySecretRef.Name == secretName {
-		return true
-	}
-	if c.Spec.Radarr != nil && c.Spec.Radarr.APIKeySecretRef.Name == secretName {
-		return true
-	}
-	return false
-}
-
 // SetupWithManager sets up the controller with the Manager.
 func (r *SeerrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&requestsv1alpha1.SeerrConfig{}, builder.WithPredicates(ctrlcommon.ConfigChangedPredicate())).
-		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-			return ctrlcommon.FindConfigsBySecret(ctx, r.Client, obj, &requestsv1alpha1.SeerrConfigList{}, func(list *requestsv1alpha1.SeerrConfigList) []reconcile.Request {
-				var reqs []reconcile.Request
-				for _, c := range list.Items {
-					if seerrReferencesSecret(&c, obj.GetName()) {
-						reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&c)})
-					}
-				}
-				return reqs
-			})
-		})).
+		Watches(&corev1.Secret{}, ctrlcommon.EnqueueForSecret(r.Client, &requestsv1alpha1.SeerrConfigList{})).
 		Named("seerrconfig").
 		Complete(r)
 }

@@ -9,8 +9,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	pvrv1alpha1 "github.com/kyleseneker/media-operator/api/pvr/v1alpha1"
 	pvrclient "github.com/kyleseneker/media-operator/internal/client/pvr"
@@ -56,17 +54,7 @@ func (r *ReadarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 func (r *ReadarrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&pvrv1alpha1.ReadarrConfig{}, builder.WithPredicates(ctrlcommon.ConfigChangedPredicate())).
-		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-			return ctrlcommon.FindConfigsBySecret(ctx, r.Client, obj, &pvrv1alpha1.ReadarrConfigList{}, func(list *pvrv1alpha1.ReadarrConfigList) []reconcile.Request {
-				var reqs []reconcile.Request
-				for _, c := range list.Items {
-					if pvrReferencesSecret(c.Spec.Connection, c.Spec.DownloadClients, c.Spec.Indexers, c.Spec.Notifications, c.Spec.ImportLists, obj.GetName()) {
-						reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&c)})
-					}
-				}
-				return reqs
-			})
-		})).
+		Watches(&corev1.Secret{}, ctrlcommon.EnqueueForSecret(r.Client, &pvrv1alpha1.ReadarrConfigList{})).
 		Named("readarrconfig").
 		Complete(r)
 }

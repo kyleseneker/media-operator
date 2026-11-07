@@ -11,8 +11,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	indexersv1alpha1 "github.com/kyleseneker/media-operator/api/indexers/v1alpha1"
 	prowlarrclient "github.com/kyleseneker/media-operator/internal/client/prowlarr"
@@ -157,41 +155,7 @@ func (r *ProwlarrConfigReconciler) buildApplicationPayloads(ctx context.Context,
 func (r *ProwlarrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&indexersv1alpha1.ProwlarrConfig{}, builder.WithPredicates(ctrlcommon.ConfigChangedPredicate())).
-		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-			return ctrlcommon.FindConfigsBySecret(ctx, r.Client, obj, &indexersv1alpha1.ProwlarrConfigList{}, func(list *indexersv1alpha1.ProwlarrConfigList) []reconcile.Request {
-				var reqs []reconcile.Request
-				for _, c := range list.Items {
-					if prowlarrReferencesSecret(c.Spec, obj.GetName()) {
-						reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&c)})
-					}
-				}
-				return reqs
-			})
-		})).
+		Watches(&corev1.Secret{}, ctrlcommon.EnqueueForSecret(r.Client, &indexersv1alpha1.ProwlarrConfigList{})).
 		Named("prowlarrconfig").
 		Complete(r)
-}
-
-// prowlarrReferencesSecret reports whether a spec reads anything from the named
-// Secret, so rotating any referenced credential reconciles immediately.
-func prowlarrReferencesSecret(spec indexersv1alpha1.ProwlarrConfigSpec, name string) bool {
-	if spec.Connection.APIKeySecretRef.Name == name {
-		return true
-	}
-	for _, app := range spec.Applications {
-		if app.APIKeySecretRef.Name == name {
-			return true
-		}
-	}
-	for _, idx := range spec.Indexers {
-		if ctrlcommon.ProwlarrFieldsReferenceSecret(idx.Fields, name) {
-			return true
-		}
-	}
-	for _, dc := range spec.DownloadClients {
-		if ctrlcommon.ProwlarrFieldsReferenceSecret(dc.Fields, name) {
-			return true
-		}
-	}
-	return ctrlcommon.ListsReferenceSecret(nil, spec.Notifications, nil, name)
 }

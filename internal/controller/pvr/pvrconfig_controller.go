@@ -91,14 +91,3 @@ func reconcilePVR(ctx context.Context, c client.Client, recorder events.EventRec
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(cfg.policy)}, nil
 }
-
-// pvrReferencesSecret reports whether a PVR config reads the named Secret, so
-// a change to it re-reconciles the config.
-func pvrReferencesSecret(conn commonv1alpha1.AppConnection, downloadClients []commonv1alpha1.DownloadClient,
-	indexers []commonv1alpha1.Indexer, notifications []commonv1alpha1.Notification,
-	importLists []commonv1alpha1.ImportList, name string,
-) bool {
-	return conn.APIKeySecretRef.Name == name ||
-		ctrlcommon.DownloadClientReferencesSecret(downloadClients, name) ||
-		ctrlcommon.ListsReferenceSecret(indexers, notifications, importLists, name)
-}

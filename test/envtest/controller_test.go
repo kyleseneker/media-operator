@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -32,9 +33,9 @@ import (
 	"github.com/kyleseneker/media-operator/internal/controller/transcode"
 )
 
-// startAPIServerWith boots one control plane for a set of API groups, so a table
+// startControlPlane boots one control plane for a set of API groups, so a table
 // of kinds does not pay for a control plane each.
-func startAPIServerWith(t *testing.T, adders ...func(*runtime.Scheme) error) client.Client {
+func startControlPlane(t *testing.T, adders ...func(*runtime.Scheme) error) (*rest.Config, client.Client) {
 	t.Helper()
 	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
 		t.Skip("KUBEBUILDER_ASSETS unset; run via `make test-envtest`")
@@ -55,29 +56,18 @@ func startAPIServerWith(t *testing.T, adders ...func(*runtime.Scheme) error) cli
 	}
 	c, err := client.New(cfg, client.Options{Scheme: scheme})
 	require.NoError(t, err, "building client")
+	return cfg, c
+}
+
+func startAPIServerWith(t *testing.T, adders ...func(*runtime.Scheme) error) client.Client {
+	t.Helper()
+	_, c := startControlPlane(t, adders...)
 	return c
 }
 
 func startAPIServer(t *testing.T) client.Client {
 	t.Helper()
-	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
-		t.Skip("KUBEBUILDER_ASSETS unset; run via `make test-envtest`")
-	}
-
-	env := &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
-		ErrorIfCRDPathMissing: true,
-	}
-	cfg, err := env.Start()
-	require.NoError(t, err, "starting control plane")
-	t.Cleanup(func() { _ = env.Stop() })
-
-	scheme := runtime.NewScheme()
-	require.NoError(t, clientgoscheme.AddToScheme(scheme), "client-go scheme")
-	require.NoError(t, transcodev1alpha1.AddToScheme(scheme), "transcode scheme")
-	c, err := client.New(cfg, client.Options{Scheme: scheme})
-	require.NoError(t, err, "building client")
-	return c
+	return startAPIServerWith(t, transcodev1alpha1.AddToScheme)
 }
 
 // fakeTdarrServer answers the endpoints the controller touches, on a routable

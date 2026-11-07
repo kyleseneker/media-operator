@@ -12,11 +12,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	curationv1alpha1 "github.com/kyleseneker/media-operator/api/curation/v1alpha1"
 	maintainerrclient "github.com/kyleseneker/media-operator/internal/client/maintainerr"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
@@ -396,51 +393,11 @@ func serviceURL(url string) string {
 	return strings.TrimRight(strings.TrimSpace(url), "/")
 }
 
-// maintainerrReferencesSecret checks if the config references the given secret name.
-func maintainerrReferencesSecret(config *curationv1alpha1.MaintainerrConfig, secretName string) bool {
-	var refs []commonv1alpha1.SecretKeyRef
-	if tls := config.Spec.Connection.TLS; tls != nil && tls.CASecretRef != nil {
-		refs = append(refs, *tls.CASecretRef)
-	}
-	if ms := config.Spec.MediaServer; ms != nil {
-		if ms.Plex != nil {
-			refs = append(refs, ms.Plex.TokenSecretRef)
-		}
-		if ms.Jellyfin != nil {
-			refs = append(refs, ms.Jellyfin.APIKeySecretRef)
-		}
-	}
-	for _, server := range append(append([]curationv1alpha1.MaintainerrArrServer{}, config.Spec.Sonarr...), config.Spec.Radarr...) {
-		refs = append(refs, server.APIKeySecretRef)
-	}
-	for _, conn := range []*curationv1alpha1.MaintainerrServiceConnection{config.Spec.Seerr, config.Spec.Tautulli} {
-		if conn != nil {
-			refs = append(refs, conn.APIKeySecretRef)
-		}
-	}
-	for _, ref := range refs {
-		if ref.Name == secretName {
-			return true
-		}
-	}
-	return false
-}
-
 // SetupWithManager sets up the controller with the Manager.
 func (r *MaintainerrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&curationv1alpha1.MaintainerrConfig{}, builder.WithPredicates(ctrlcommon.ConfigChangedPredicate())).
-		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-			return ctrlcommon.FindConfigsBySecret(ctx, r.Client, obj, &curationv1alpha1.MaintainerrConfigList{}, func(list *curationv1alpha1.MaintainerrConfigList) []reconcile.Request {
-				var reqs []reconcile.Request
-				for _, c := range list.Items {
-					if maintainerrReferencesSecret(&c, obj.GetName()) {
-						reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&c)})
-					}
-				}
-				return reqs
-			})
-		})).
+		Watches(&corev1.Secret{}, ctrlcommon.EnqueueForSecret(r.Client, &curationv1alpha1.MaintainerrConfigList{})).
 		Named("maintainerrconfig").
 		Complete(r)
 }

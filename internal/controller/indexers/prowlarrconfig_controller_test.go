@@ -342,18 +342,3 @@ func TestProwlarrResolvesDownloadClientAndNotificationSecrets(t *testing.T) {
 		require.Contains(t, string(raw), `"s3cret"`, "%s was sent without its Secret value", path)
 	}
 }
-
-func TestProwlarrSecretWatchCoversEveryReference(t *testing.T) {
-	ref := &commonv1alpha1.SecretKeyRef{Name: "trackers", Key: "k"}
-	field := []indexersv1alpha1.ProwlarrField{{Name: "apiKey", ValueFrom: ref}}
-	for name, spec := range map[string]indexersv1alpha1.ProwlarrConfigSpec{
-		"indexer":         {Indexers: []indexersv1alpha1.ProwlarrIndexer{{Name: "x", Fields: field}}},
-		"download client": {DownloadClients: []indexersv1alpha1.ProwlarrDownloadClient{{Name: "x", Fields: field}}},
-		"notification": {Notifications: []commonv1alpha1.Notification{{
-			Name: "x", Fields: []commonv1alpha1.ConfigField{{Name: "token", ValueFrom: ref}},
-		}}},
-	} {
-		require.True(t, prowlarrReferencesSecret(spec, "trackers"), name)
-		require.False(t, prowlarrReferencesSecret(spec, "other"), name)
-	}
-}
