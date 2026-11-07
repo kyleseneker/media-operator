@@ -4,11 +4,16 @@ package compat
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -65,4 +70,56 @@ func TestProwlarr(t *testing.T) {
 			})
 		},
 	})
+}
+
+func TestFlareSolverr(t *testing.T) {
+	t.Parallel()
+	fs := startContainer(t, containerSpec{
+		name: "flaresolverr", image: flaresolverrImage, port: 8191, env: map[string]string{"LOG_LEVEL": "info"},
+	})
+	waitFor(t, "flaresolverr", 3*time.Minute, func() error {
+		_, err := flaresolverrSessions(fs.url())
+		return err
+	})
+	proxy := newRecordingProxy(t, fs.url())
+
+	checkCompat(t, compatCase{
+		fixture: "flaresolverr.yaml",
+		vars:    map[string]string{"URL": proxy.url()},
+		newObj:  func() ctrlcommon.ConfigResource { return &indexersv1alpha1.FlareSolverrConfig{} },
+		reconciler: func(c client.Client) reconcile.Reconciler {
+			return &indexers.FlareSolverrConfigReconciler{Client: c, Scheme: c.Scheme(), Recorder: events.NewFakeRecorder(100)}
+		},
+		proxy: proxy,
+		// Every command is a POST to /v1; listing sessions changes nothing.
+		read: func(r request) bool {
+			return getOnly(r) || strings.Contains(r.Body, `"sessions.list"`)
+		},
+		observe: true,
+		verify: func(t *testing.T) {
+			sessions, err := flaresolverrSessions(fs.url())
+			require.NoError(t, err)
+			assert.Subset(t, sessions, []string{"prowlarr", "compat"})
+		},
+	})
+}
+
+// flaresolverrSessions lists sessions directly, outside the operator.
+func flaresolverrSessions(base string) ([]string, error) {
+	resp, err := http.Post(base+"/v1", "application/json", strings.NewReader(`{"cmd":"sessions.list"}`))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var reply struct {
+		Status   string   `json:"status"`
+		Sessions []string `json:"sessions"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&reply); err != nil {
+		return nil, err
+	}
+	if reply.Status != "ok" {
+		return nil, fmt.Errorf("sessions.list: %s", reply.Status)
+	}
+	return reply.Sessions, nil
 }

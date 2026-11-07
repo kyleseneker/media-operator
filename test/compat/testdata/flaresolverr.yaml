@@ -1,0 +1,10 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: FlareSolverrConfig
+metadata:
+  name: flaresolverr
+spec:
+  connection:
+    url: ${URL}
+  sessions:
+    - name: prowlarr
+    - name: compat
