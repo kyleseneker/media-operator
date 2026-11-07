@@ -149,6 +149,12 @@ func TestQBittorrent(t *testing.T) {
 			require.NoError(t, err)
 			assert.Contains(t, categories, "movies")
 		},
+		cleanup: func(t *testing.T) {
+			hc := qbittorrentClient(t, qbit.url(), password)
+			categories, err := hc.GetJSON(context.Background(), "/api/v2/torrents/categories")
+			require.NoError(t, err)
+			assert.Empty(t, categories, "categories the operator created are still there")
+		},
 	})
 }
 

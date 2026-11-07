@@ -77,10 +77,10 @@ prune, removing an item from the resource only stops managing it.
 | Autobrr | download clients, indexers, IRC networks, feeds, filters and their actions |
 | Seerr | Sonarr and Radarr servers |
 | SABnzbd | servers, categories |
+| qBittorrent | categories |
 | Maintainerr | rule groups, Sonarr and Radarr servers |
 
-Jellyfin, Plex, qBittorrent and Bazarr reject `prune: true` with
-`InvalidConfig`.
+Jellyfin, Plex and Bazarr reject `prune: true` with `InvalidConfig`.
 
 - A list with no declared items is not pruned.
 - Settings, root folders, tags, libraries and Prowlarr sync profiles are never
@@ -88,6 +88,7 @@ Jellyfin, Plex, qBittorrent and Bazarr reject `prune: true` with
 - A pass that would delete more than 25 items of one kind deletes none of them.
 - Observe mode never prunes.
 - Deleting a Maintainerr rule group also deletes its collection.
+- Deleting a qBittorrent category leaves its torrents uncategorized.
 
 ## Deletion
 
@@ -96,7 +97,7 @@ Deleting a resource leaves the app unchanged. With
 created, the same kinds prune covers. Everything else is kept.
 
 `delete` is supported for the apps in the prune table, and not in observe mode;
-Jellyfin, Plex, qBittorrent and Bazarr reject it with `InvalidConfig`. If
+Jellyfin, Plex and Bazarr reject it with `InvalidConfig`. If
 cleanup keeps failing, the operator gives up after 10 minutes, records a
 warning event and removes the finalizer.
 

@@ -2,6 +2,7 @@ package downloads
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,11 +18,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	downloadsv1alpha1 "github.com/kyleseneker/media-operator/api/downloads/v1alpha1"
+	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/controller/internal/contract"
 )
 
@@ -240,4 +244,131 @@ func TestQBEnforceWritesOnlyWhatDiffers(t *testing.T) {
 			assert.Equal(t, tt.writes, writes)
 		})
 	}
+}
+
+type fakeQB struct {
+	mu         sync.Mutex
+	categories map[string]any
+	removed    []string
+	writes     []string
+}
+
+func (f *fakeQB) serve(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", net.JoinHostPort(routableAddr(t), "0"))
+	require.NoError(t, err)
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		switch r.URL.Path {
+		case "/api/v2/auth/login":
+			http.SetCookie(w, &http.Cookie{Name: "SID", Value: "session", Path: "/"})
+			_, _ = w.Write([]byte("Ok."))
+		case "/api/v2/app/version":
+			_, _ = w.Write([]byte("v5"))
+		case "/api/v2/torrents/categories":
+			_ = json.NewEncoder(w).Encode(f.categories)
+		case "/api/v2/torrents/removeCategories":
+			require.NoError(t, r.ParseForm())
+			f.removed = append(f.removed, r.Form.Get("categories"))
+			delete(f.categories, r.Form.Get("categories"))
+		default:
+			f.writes = append(f.writes, r.Method+" "+r.URL.Path)
+		}
+	}))
+	_ = srv.Listener.Close()
+	srv.Listener = ln
+	srv.Start()
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+func qbConfig(url string, categories ...string) *downloadsv1alpha1.QBittorrentConfig {
+	cfg := &downloadsv1alpha1.QBittorrentConfig{Name: "qbit", Namespace: "media"}
+	cfg.Spec.Connection = downloadsv1alpha1.QBittorrentConnection{URL: url,
+		UsernameSecretRef: commonv1alpha1.SecretKeyRef{Name: "creds", Key: "user"},
+		PasswordSecretRef: commonv1alpha1.SecretKeyRef{Name: "creds", Key: "password"}}
+	for _, name := range categories {
+		cfg.Spec.Categories = append(cfg.Spec.Categories, downloadsv1alpha1.QBittorrentCategory{Name: name, SavePath: "/downloads/" + name})
+	}
+	return cfg
+}
+
+func runQB(t *testing.T, cfg *downloadsv1alpha1.QBittorrentConfig) *downloadsv1alpha1.QBittorrentConfig {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	require.NoError(t, downloadsv1alpha1.AddToScheme(scheme))
+	require.NoError(t, corev1.AddToScheme(scheme))
+	secret := &corev1.Secret{Name: "creds", Namespace: "media",
+		Data: map[string][]byte{"user": []byte("admin"), "password": []byte("pw")}}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cfg, secret).
+		WithStatusSubresource(&downloadsv1alpha1.QBittorrentConfig{}).Build()
+	r := &QBittorrentConfigReconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(20)}
+	key := types.NamespacedName{Name: "qbit", Namespace: "media"}
+	_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
+	require.NoError(t, err)
+	var got downloadsv1alpha1.QBittorrentConfig
+	if err := c.Get(context.Background(), key, &got); err != nil {
+		return nil
+	}
+	return &got
+}
+
+func qbCategories(names ...string) map[string]any {
+	out := map[string]any{}
+	for _, n := range names {
+		out[n] = map[string]any{"name": n, "savePath": "/downloads/" + n}
+	}
+	return out
+}
+
+func TestQBPrunesOnlyCategoriesItCreated(t *testing.T) {
+	app := &fakeQB{categories: qbCategories("tv", "old", "hand-made")}
+	cfg := qbConfig(app.serve(t), "tv")
+	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{Prune: new(true)}
+	cfg.Status.ManagedResources = map[string][]string{"categories": {"tv", "old"}}
+
+	got := runQB(t, cfg)
+
+	assert.Equal(t, []string{"old"}, app.removed)
+	assert.Equal(t, []string{"tv"}, got.Status.ManagedResources["categories"])
+}
+
+func TestQBRecordsTheCategoriesItCreates(t *testing.T) {
+	app := &fakeQB{categories: qbCategories("adopted")}
+
+	got := runQB(t, qbConfig(app.serve(t), "adopted", "created"))
+
+	assert.Equal(t, []string{"POST /api/v2/torrents/createCategory"}, app.writes)
+	assert.Equal(t, []string{"created"}, got.Status.ManagedResources["categories"])
+}
+
+func TestQBObserveReportsACategoryPruneWouldDelete(t *testing.T) {
+	app := &fakeQB{categories: qbCategories("tv", "old")}
+	cfg := qbConfig(app.serve(t), "tv")
+	observe := "observe"
+	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{Prune: new(true), DriftPolicy: &observe}
+	cfg.Status.ManagedResources = map[string][]string{"categories": {"old"}}
+
+	got := runQB(t, cfg)
+
+	assert.Empty(t, app.removed)
+	assert.True(t, slices.ContainsFunc(got.Status.Conditions, func(c metav1.Condition) bool {
+		return c.Type == "Synced" && c.Reason == "DriftDetected"
+	}), "%+v", got.Status.Conditions)
+}
+
+func TestQBDeletionPolicyRemovesWhatItCreated(t *testing.T) {
+	app := &fakeQB{categories: qbCategories("tv", "hand-made")}
+	cfg := qbConfig(app.serve(t), "tv")
+	policy := ctrlcommon.DeletionPolicyDelete
+	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DeletionPolicy: &policy}
+	cfg.Status.ManagedResources = map[string][]string{"categories": {"tv"}}
+	now := metav1.NewTime(time.Now())
+	cfg.DeletionTimestamp = &now
+	cfg.Finalizers = []string{ctrlcommon.Finalizer}
+
+	runQB(t, cfg)
+
+	assert.Equal(t, []string{"tv"}, app.removed)
 }

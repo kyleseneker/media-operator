@@ -103,6 +103,14 @@ func (c *Client) CreateCategory(ctx context.Context, name, savePath string) erro
 	return err
 }
 
+// RemoveCategory deletes a category. Its torrents stay, uncategorized.
+func (c *Client) RemoveCategory(ctx context.Context, name string) error {
+	form := url.Values{}
+	form.Set("categories", name)
+	_, err := c.hc.DoForm(ctx, "/api/v2/torrents/removeCategories", form)
+	return err
+}
+
 // EditCategory updates an existing torrent category's save path.
 func (c *Client) EditCategory(ctx context.Context, name, savePath string) error {
 	form := url.Values{}

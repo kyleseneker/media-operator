@@ -3,7 +3,9 @@ package downloads
 import (
 	"context"
 	"fmt"
+	"maps"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -43,40 +45,22 @@ func (r *QBittorrentConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, ctrlcommon.Lifecycle{}); done {
+	cleanup := func(ctx context.Context) error { return r.cleanup(ctx, &config) }
+	lifecycle := ctrlcommon.Lifecycle{Remove: cleanup, Prune: true}
+	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, lifecycle); done {
 		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
-	// Resolve username
-	username, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.UsernameSecretRef)
+	qb, reason, err := r.qbClient(ctx, &config)
 	if err != nil {
-		logger.Error(err, "failed to resolve username secret")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
+		logger.Error(err, "failed to build the qBittorrent client")
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, reason, err.Error())
+		if reason == engine.ReasonInvalidConfig {
+			return ctrl.Result{}, nil
+		}
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
-	// Resolve password
-	password, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.PasswordSecretRef)
-	if err != nil {
-		logger.Error(err, "failed to resolve password secret")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-	}
-
-	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
-	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-	}
-
-	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthCookie, engine.WithTLSConfig(tlsCfg), engine.WithDisableRedirect(), engine.WithAppLabel("qbittorrent"))
-	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonInvalidConfig, err.Error())
-		return ctrl.Result{}, nil
-	}
-	qb := qbclient.NewClient(hc, username, password)
-
-	// Login
 	if err := qb.Login(ctx); err != nil {
 		logger.Error(err, "qBittorrent login failed")
 		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonAppUnreachable, err.Error())
@@ -90,8 +74,10 @@ func (r *QBittorrentConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
+	owned := engine.NewOwnership("qbittorrent", config.Status.ManagedResources)
+	prune := ctrlcommon.PruneEnabled(config.Spec.Reconcile)
 	if ctrlcommon.ObserveOnly(config.Spec.Reconcile) {
-		drift, err := observeQBConfig(ctx, qb, config.Spec)
+		drift, err := observeQBConfig(ctx, qb, config.Spec, prune, owned)
 		ctrlcommon.UpdateObservationStatus(ctx, r.Client, &config, drift, err)
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
@@ -106,28 +92,13 @@ func (r *QBittorrentConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 	}
 
-	// Reconcile categories
 	if len(config.Spec.Categories) > 0 {
-		existing, err := qb.ListCategories(ctx)
-		if err != nil {
-			syncErrors = append(syncErrors, fmt.Sprintf("listing categories: %v", err))
-		}
-		for _, cat := range config.Spec.Categories {
-			if err != nil {
-				break
-			}
-			if cerr := reconcileQBCategory(ctx, qb, existing, cat); cerr != nil {
-				logger.Error(cerr, "failed to reconcile category", "name", cat.Name)
-				syncErrors = append(syncErrors, fmt.Sprintf("category(%s): %v", cat.Name, cerr))
-			}
-		}
+		syncErrors = append(syncErrors, reconcileQBCategories(ctx, qb, config.Spec.Categories, prune, owned)...)
 	}
 
-	if len(syncErrors) > 0 {
-		ctrlcommon.UpdateStatus(ctx, r.Client, &config, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync failure: %v", syncErrors))
-	} else {
-		ctrlcommon.UpdateStatus(ctx, r.Client, &config, true, engine.ReasonSynced, "all configuration sections synced")
-	}
+	ctrlcommon.UpdateStatusManaged(&config, owned.Managed())
+	ctrlcommon.EmitPruneEvents(r.Recorder, &config, owned.Pruned())
+	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, false, false, syncErrors)
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
@@ -215,10 +186,90 @@ func reconcileQBPreferences(ctx context.Context, qb *qbclient.Client, prefs *dow
 	return qb.SetPreferences(ctx, payload)
 }
 
-func reconcileQBCategory(ctx context.Context, qb *qbclient.Client, existing map[string]any, cat downloadsv1alpha1.QBittorrentCategory) error {
+func (r *QBittorrentConfigReconciler) qbClient(ctx context.Context, config *downloadsv1alpha1.QBittorrentConfig) (*qbclient.Client, string, error) {
+	username, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.UsernameSecretRef)
+	if err != nil {
+		return nil, engine.ReasonSecretNotFound, fmt.Errorf("resolving username: %w", err)
+	}
+	password, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.PasswordSecretRef)
+	if err != nil {
+		return nil, engine.ReasonSecretNotFound, fmt.Errorf("resolving password: %w", err)
+	}
+	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
+	if err != nil {
+		return nil, engine.ReasonSecretNotFound, err
+	}
+	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthCookie, engine.WithTLSConfig(tlsCfg),
+		engine.WithDisableRedirect(), engine.WithAppLabel("qbittorrent"))
+	if err != nil {
+		return nil, engine.ReasonInvalidConfig, err
+	}
+	return qbclient.NewClient(hc, username, password), "", nil
+}
+
+func reconcileQBCategories(
+	ctx context.Context, qb *qbclient.Client, categories []downloadsv1alpha1.QBittorrentCategory, prune bool, owned *engine.Ownership,
+) []string {
+	existing, err := qb.ListCategories(ctx)
+	if err != nil {
+		return []string{fmt.Sprintf("listing categories: %v", err)}
+	}
+	var errs []string
+	for _, cat := range categories {
+		if err := reconcileQBCategory(ctx, qb, existing, cat, owned); err != nil {
+			log.FromContext(ctx).Error(err, "failed to reconcile category", "name", cat.Name)
+			errs = append(errs, fmt.Sprintf("category(%s): %v", cat.Name, err))
+		}
+	}
+	if !prune || len(errs) > 0 {
+		return errs
+	}
+	err = owned.Prune("categories", qbCategoryNames(categories), slices.Collect(maps.Keys(existing)), func(name string) error {
+		return qb.RemoveCategory(ctx, name)
+	})
+	if err != nil {
+		return []string{fmt.Sprintf("categories(prune): %v", err)}
+	}
+	return nil
+}
+
+func qbCategoryNames(categories []downloadsv1alpha1.QBittorrentCategory) []string {
+	names := make([]string, 0, len(categories))
+	for _, c := range categories {
+		names = append(names, c.Name)
+	}
+	return names
+}
+
+// cleanup deletes the categories the operator created, for deletionPolicy delete.
+func (r *QBittorrentConfigReconciler) cleanup(ctx context.Context, config *downloadsv1alpha1.QBittorrentConfig) error {
+	qb, _, err := r.qbClient(ctx, config)
+	if err != nil {
+		return err
+	}
+	if err := qb.Login(ctx); err != nil {
+		return err
+	}
+	existing, err := qb.ListCategories(ctx)
+	if err != nil {
+		return err
+	}
+	owned := engine.NewOwnership("qbittorrent", config.Status.ManagedResources)
+	return owned.Cleanup("categories", slices.Collect(maps.Keys(existing)), func(name string) error {
+		return qb.RemoveCategory(ctx, name)
+	})
+}
+
+func reconcileQBCategory(
+	ctx context.Context, qb *qbclient.Client, existing map[string]any, cat downloadsv1alpha1.QBittorrentCategory, owned *engine.Ownership,
+) error {
 	current, exists := existing[cat.Name].(map[string]any)
 	if !exists {
-		return qb.CreateCategory(ctx, cat.Name, qbPath(cat.SavePath))
+		if err := qb.CreateCategory(ctx, cat.Name, qbPath(cat.SavePath)); err != nil {
+			return err
+		}
+		owned.Created("categories", cat.Name)
+		return nil
 	}
 	changed, err := engine.CorrectDifference("qbittorrent", "categories", cat.Name, current, map[string]any{"savePath": qbPath(cat.SavePath)})
 	if err != nil || !changed {
@@ -236,7 +287,9 @@ func (r *QBittorrentConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func observeQBConfig(ctx context.Context, qb *qbclient.Client, spec downloadsv1alpha1.QBittorrentConfigSpec) (bool, error) {
+func observeQBConfig(
+	ctx context.Context, qb *qbclient.Client, spec downloadsv1alpha1.QBittorrentConfigSpec, prune bool, owned *engine.Ownership,
+) (bool, error) {
 	drift := false
 	if spec.Preferences != nil {
 		desired, err := qbPreferencePayload(spec.Preferences)
@@ -264,6 +317,17 @@ func observeQBConfig(ctx context.Context, qb *qbclient.Client, spec downloadsv1a
 	for _, category := range spec.Categories {
 		current, _ := categories[category.Name].(map[string]any)
 		changed, err := engine.ObserveDifference("qbittorrent", "categories", category.Name, current, map[string]any{"savePath": qbPath(category.SavePath)})
+		if err != nil {
+			return drift, err
+		}
+		drift = drift || changed
+	}
+	if !prune {
+		return drift, nil
+	}
+	for _, name := range owned.Candidates("categories", qbCategoryNames(spec.Categories), slices.Collect(maps.Keys(categories))) {
+		changed, err := engine.ObserveDifference("qbittorrent", "categories", name,
+			map[string]any{"exists": true}, map[string]any{"exists": false})
 		if err != nil {
 			return drift, err
 		}
