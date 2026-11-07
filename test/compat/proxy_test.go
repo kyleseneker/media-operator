@@ -22,7 +22,7 @@ import (
 )
 
 // request is one call the operator made to an application. Before holds the
-// resource as the application served it just ahead of a PUT.
+// resource as the application served it just ahead of a PUT or POST.
 type request struct {
 	Method string
 	Path   string
@@ -129,7 +129,8 @@ func newRecordingProxy(t *testing.T, target string) *recordingProxy {
 		body, _ := io.ReadAll(r.Body)
 		r.Body = io.NopCloser(bytes.NewReader(body))
 		rec := request{Method: r.Method, Path: r.URL.RequestURI(), Body: string(body)}
-		if r.Method == http.MethodPut {
+		// Some apps write settings with POST to the path they are read from.
+		if r.Method == http.MethodPut || r.Method == http.MethodPost {
 			rec.Before = fetchBefore(target, r)
 		}
 		p.mu.Lock()

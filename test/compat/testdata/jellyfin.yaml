@@ -1,0 +1,57 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: JellyfinConfig
+metadata:
+  name: jellyfin
+spec:
+  connection:
+    url: ${URL}
+  adminUser:
+    usernameSecretRef:
+      name: compat-credentials
+      key: username
+    passwordSecretRef:
+      name: compat-credentials
+      key: password
+  server:
+    serverName: compat-jellyfin
+    preferredMetadataLanguage: en
+    metadataCountryCode: US
+    logFileRetentionDays: 3
+    enableGroupingMoviesIntoCollections: true
+    displaySpecialsWithinSeasons: true
+    libraryMonitorDelay: 60
+  # No GPU in CI: software encoding, with every other setting declared.
+  encoding:
+    hardwareAccelerationType: none
+    vaapiDevice: /dev/dri/renderD128
+    enableHardwareEncoding: false
+    allowHevcEncoding: true
+    enableTonemapping: false
+    enableVppTonemapping: false
+    h264Crf: 23
+    h265Crf: 28
+    encoderPreset: veryfast
+    enableIntelLowPowerH264HwEncoder: false
+    enableIntelLowPowerHevcHwEncoder: false
+    enableSubtitleExtraction: true
+    enableThrottling: true
+    throttleDelaySeconds: 180
+    hardwareDecodingCodecs:
+      - h264
+      - hevc
+  libraries:
+    - name: Movies
+      collectionType: movies
+      paths:
+        - /media/movies
+      enableRealtimeMonitor: true
+      enableTrickplayImageExtraction: false
+      automaticRefreshIntervalDays: 30
+      preferredMetadataLanguage: en
+      metadataCountryCode: US
+    - name: TV Shows
+      collectionType: tvshows
+      paths:
+        - /media/tv
+      enableRealtimeMonitor: true
+      automaticRefreshIntervalDays: 30
