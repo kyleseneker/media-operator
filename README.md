@@ -115,8 +115,8 @@ doesn't matter, the operator just reads them and re-reconciles when they change.
 
 `media-operator export` reads a running app and prints a config that describes
 it, with a Secret for its credentials. It supports Sonarr, Radarr, Lidarr,
-Readarr, Prowlarr, FlareSolverr, Bazarr, qBittorrent, SABnzbd, Jellyfin, Plex
-and Seerr so far. qBittorrent and Jellyfin take `--username` and `--password`, and
+Readarr, Prowlarr, FlareSolverr, Bazarr, qBittorrent, SABnzbd, Jellyfin, Plex,
+Seerr and Tdarr so far. qBittorrent and Jellyfin take `--username` and `--password`, and
 Plex `--token`, instead of `--api-key`. Get it from the `media-operator-cli`
 release archives, or run it in the cluster from the
 `ghcr.io/kyleseneker/media-operator-cli` image:

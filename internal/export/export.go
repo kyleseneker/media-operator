@@ -25,6 +25,7 @@ import (
 	pvrv1alpha1 "github.com/kyleseneker/media-operator/api/pvr/v1alpha1"
 	requestsv1alpha1 "github.com/kyleseneker/media-operator/api/requests/v1alpha1"
 	subtitlesv1alpha1 "github.com/kyleseneker/media-operator/api/subtitles/v1alpha1"
+	transcodev1alpha1 "github.com/kyleseneker/media-operator/api/transcode/v1alpha1"
 	pvrclient "github.com/kyleseneker/media-operator/internal/client/pvr"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/engine"
@@ -106,6 +107,11 @@ var apps = map[string]app{
 	"seerr": {
 		auth: engine.AuthSession, apiKey: true, export: exportSeerr,
 		newObj: func() client.Object { return &requestsv1alpha1.SeerrConfig{} },
+	},
+	"tdarr": {
+		auth: engine.AuthAPIKey, apiKey: true, export: exportTdarr,
+		options: []engine.HTTPClientOption{engine.WithAPIKeyHeader("x-api-key")},
+		newObj:  func() client.Object { return &transcodev1alpha1.TdarrConfig{} },
 	},
 	"bazarr": {
 		auth: engine.AuthFormEncoded, apiKey: true, export: exportBazarr,

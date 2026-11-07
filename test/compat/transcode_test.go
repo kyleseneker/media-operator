@@ -51,6 +51,7 @@ func TestTdarr(t *testing.T) {
 
 	checkCompat(t, compatCase{
 		fixture: "tdarr.yaml",
+		export:  "tdarr",
 		vars:    map[string]string{"URL": proxy.url()},
 		// Tdarr 3 enables authentication on a fresh config; this runs it without, as
 		// homelab does. The key is still required by the CRD.
