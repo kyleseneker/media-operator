@@ -1,6 +1,10 @@
 package export
 
 import (
+	"maps"
+	"slices"
+	"strings"
+
 	autobrrclient "github.com/kyleseneker/media-operator/internal/client/autobrr"
 	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
@@ -26,7 +30,8 @@ func exportAutobrr(r *reader) (map[string]any, error) {
 		}
 		r.autobrrSecret(dc, "usernameSecretRef", c["username"], "download-client", name, "username")
 		r.autobrrSecret(dc, "passwordSecretRef", c["password"], "download-client", name, "password")
-		r.autobrrSecret(dc, "apiKeySecretRef", c["api_key"], "download-client", name, "api-key")
+		settings, _ := c["settings"].(map[string]any)
+		r.autobrrSecret(dc, "apiKeySecretRef", settings["apikey"], "download-client", name, "api-key")
 		dcs = append(dcs, dc)
 	}
 	setList(spec, "downloadClients", dcs)
@@ -36,14 +41,12 @@ func exportAutobrr(r *reader) (map[string]any, error) {
 		return nil, err
 	}
 	var idxs []any
-	for _, i := range indexers {
-		name, _ := i["name"].(string)
-		idx := pick(i, "name", "implementation")
-		idx["enable"] = i["enabled"]
-		setText(idx, "baseURL", i["base_url"])
-		setText(idx, "feedURL", i["feed_url"])
-		r.autobrrSecret(idx, "apiKeySecretRef", i["api_key"], "indexer", name, "api-key")
-		idxs = append(idxs, idx)
+	for _, summary := range indexers {
+		i, err := ac.GetIndexer(r.ctx, int(num(summary["id"])))
+		if err != nil {
+			return nil, err
+		}
+		idxs = append(idxs, r.autobrrIndexer(i))
 	}
 	setList(spec, "indexers", idxs)
 
@@ -84,12 +87,14 @@ func exportAutobrr(r *reader) (map[string]any, error) {
 	var fs []any
 	for _, f := range feeds {
 		name, _ := f["name"].(string)
-		feed := pick(f, "name", "type", "url")
+		feed := pick(f, "name", "url")
+		feed["type"] = crdName(autobrrFeedTypes, f["type"])
 		feed["enable"] = f["enabled"]
 		if interval := num(f["interval"]); interval != 0 {
 			feed["interval"] = interval
 		}
-		setText(feed, "indexerRef", f["indexer"])
+		indexer, _ := f["indexer"].(map[string]any)
+		setText(feed, "indexerRef", indexer["name"])
 		r.autobrrSecret(feed, "apiKeySecretRef", f["api_key"], "feed", name, "api-key")
 		fs = append(fs, feed)
 	}
@@ -117,7 +122,6 @@ func exportAutobrr(r *reader) (map[string]any, error) {
 }
 
 func (r *reader) autobrrFilter(f map[string]any, actions []map[string]any, clientNames map[float64]any) map[string]any {
-	name, _ := f["name"].(string)
 	filter := pick(f, "name", "priority", "delay")
 	filter["enable"] = f["enabled"]
 	if v, ok := f["use_regex"]; ok {
@@ -129,16 +133,22 @@ func (r *reader) autobrrFilter(f map[string]any, actions []map[string]any, clien
 	} {
 		setText(filter, field, f[key])
 	}
-	for _, field := range []string{"resolutions", "sources", "codecs", "tags", "indexers"} {
-		values, ok := f[field].([]any)
-		if !ok || len(values) == 0 {
-			continue
+	for _, field := range []string{"resolutions", "sources", "codecs"} {
+		if values, ok := f[field].([]any); ok && len(values) > 0 {
+			filter[field] = texts(values)
 		}
-		if texts := texts(values); len(texts) == len(values) {
-			filter[field] = texts
-		} else {
-			r.warn("filter %q: AutobrrConfig lists %s by name, so they stay as set in Autobrr", name, field)
+	}
+	if tags, _ := f["tags"].(string); tags != "" {
+		filter["tags"] = strings.Split(tags, ",")
+	}
+	var indexers []string
+	for _, i := range list(f["indexers"]) {
+		if n, _ := i["name"].(string); n != "" {
+			indexers = append(indexers, n)
 		}
+	}
+	if len(indexers) > 0 {
+		filter["indexers"] = indexers
 	}
 	as := make([]any, 0, len(actions))
 	for _, a := range actions {
@@ -160,6 +170,38 @@ func (r *reader) autobrrFilter(f map[string]any, actions []map[string]any, clien
 		filter["actions"] = as
 	}
 	return filter
+}
+
+var autobrrFeedTypes = map[string]string{"Torznab": "TORZNAB", "Newznab": "NEWZNAB", "RSS": "RSS"}
+
+// autobrrIndexer exports an indexer by its definition. Autobrr names a feed
+// indexer's definition after its implementation.
+func (r *reader) autobrrIndexer(i map[string]any) map[string]any {
+	name, _ := i["name"].(string)
+	idx := pick(i, "name")
+	idx["enable"] = i["enabled"]
+	idx["identifier"] = i["identifier"]
+	if implementation, _ := i["implementation"].(string); implementation != autobrrclient.ImplementationIRC {
+		idx["identifier"] = implementation
+	} else {
+		setText(idx, "baseURL", i["base_url"])
+	}
+	settings, _ := i["settings"].(map[string]any)
+	var out []any
+	for _, key := range slices.Sorted(maps.Keys(settings)) {
+		value, _ := settings[key].(string)
+		switch {
+		case value == "":
+		case reconciler.IsMasked(value):
+			out = append(out, map[string]any{"name": key, "valueFrom": r.creds.ref("", "indexer", name, key)})
+		default:
+			out = append(out, map[string]any{"name": key, "value": value})
+		}
+	}
+	if len(out) > 0 {
+		idx["settings"] = out
+	}
+	return idx
 }
 
 func (r *reader) autobrrSecret(out map[string]any, field string, value any, parts ...string) {

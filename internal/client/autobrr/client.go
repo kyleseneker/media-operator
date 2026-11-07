@@ -57,8 +57,23 @@ func (c *Client) UpdateDownloadClient(ctx context.Context, id int, dc map[string
 
 // --- Indexers ---
 
+// ImplementationIRC is the implementation of an indexer that announces over IRC.
+const ImplementationIRC = "irc"
+
+// IndexerDefinitions returns the indexer definitions Autobrr knows, each with
+// its identifier, implementation and urls.
+func (c *Client) IndexerDefinitions(ctx context.Context) ([]map[string]any, error) {
+	return c.hc.GetJSONList(ctx, "/api/indexer/schema")
+}
+
 func (c *Client) ListIndexers(ctx context.Context) ([]map[string]any, error) {
 	return c.hc.GetJSONList(ctx, "/api/indexer")
+}
+
+// GetIndexer returns one indexer as stored, with its settings. The indexer
+// list returns each indexer's definition instead.
+func (c *Client) GetIndexer(ctx context.Context, id int) (map[string]any, error) {
+	return c.hc.GetJSON(ctx, fmt.Sprintf("/api/indexer/%d", id))
 }
 
 func (c *Client) CreateIndexer(ctx context.Context, idx map[string]any) error {

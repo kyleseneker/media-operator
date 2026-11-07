@@ -20,6 +20,35 @@ spec:
       passwordSecretRef:
         name: compat-credentials
         key: qbittorrent-password
+    - name: Sonarr
+      type: Sonarr
+      enable: true
+      host: http://${HOST}:8989
+      apiKeySecretRef:
+        name: compat-credentials
+        key: sonarr-api-key
+  indexers:
+    - name: IPTorrents
+      identifier: ipt
+      enable: false
+      settings:
+        - name: passkey
+          valueFrom:
+            name: compat-credentials
+            key: ipt-passkey
+    - name: Compat Torznab
+      identifier: torznab
+      enable: false
+  feeds:
+    - name: Compat Torznab
+      type: Torznab
+      enable: false
+      url: http://${HOST}:9117/api
+      interval: 30
+      indexerRef: Compat Torznab
+      apiKeySecretRef:
+        name: compat-credentials
+        key: torznab-api-key
   ircNetworks:
     - name: Compat IRC
       enable: false
@@ -34,6 +63,11 @@ spec:
     - name: TV - 1080p
       enable: true
       priority: 1
+      indexers:
+        - IPTorrents
+      tags:
+        - tv
+        - hd
       resolutions:
         - 1080p
       sources:

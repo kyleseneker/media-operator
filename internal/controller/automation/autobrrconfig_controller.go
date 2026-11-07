@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"slices"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -113,6 +115,8 @@ type autobrrSync struct {
 	namespace string
 	prune     bool
 	owned     *engine.Ownership
+
+	definitions []map[string]any
 }
 
 // created records an item once create succeeds.
@@ -207,7 +211,7 @@ func (s *autobrrSync) downloadClient(ctx context.Context, dc automationv1alpha1.
 		if err != nil {
 			return fmt.Errorf("resolving API key: %w", err)
 		}
-		obj["api_key"] = val
+		obj["settings"] = map[string]any{"apikey": val}
 	}
 
 	// Category, save path and content layout are set on filter actions in
@@ -219,7 +223,13 @@ func (s *autobrrSync) downloadClient(ctx context.Context, dc automationv1alpha1.
 
 	return s.upsert("download client", dc.Name, existing, obj,
 		s.created("downloadClients", dc.Name, func() error { return s.ac.CreateDownloadClient(ctx, obj) }),
-		func(id int) error { return s.ac.UpdateDownloadClient(ctx, id, obj) })
+		func(id int, current map[string]any) error {
+			body, err := mergedOver(current, obj)
+			if err != nil {
+				return err
+			}
+			return s.ac.UpdateDownloadClient(ctx, id, body)
+		})
 }
 
 func (s *autobrrSync) indexer(ctx context.Context, idx automationv1alpha1.AutobrrIndexer) error {
@@ -227,29 +237,108 @@ func (s *autobrrSync) indexer(ctx context.Context, idx automationv1alpha1.Autobr
 	if err != nil {
 		return fmt.Errorf("listing indexers: %w", err)
 	}
+	def, err := s.definition(ctx, idx.Identifier)
+	if err != nil {
+		return err
+	}
+	implementation, _ := def["implementation"].(string)
+	if implementation == "" {
+		implementation = autobrrclient.ImplementationIRC
+	}
+	settings, err := s.indexerSettings(ctx, idx)
+	if err != nil {
+		return err
+	}
 
 	obj := map[string]any{
 		"name":           idx.Name,
 		"enabled":        idx.Enable == nil || *idx.Enable,
-		"implementation": idx.Implementation,
+		"implementation": implementation,
 	}
-	if idx.BaseURL != "" {
+	if len(settings) > 0 {
+		obj["settings"] = settings
+	}
+	// Autobrr names a feed indexer itself, as <implementation>-<name>, so only an
+	// IRC indexer's identifier can be compared.
+	if implementation == autobrrclient.ImplementationIRC {
+		obj["identifier"] = idx.Identifier
 		obj["base_url"] = idx.BaseURL
-	}
-	if idx.FeedURL != "" {
-		obj["feed_url"] = idx.FeedURL
-	}
-	if idx.APIKeySecretRef != nil {
-		val, err := reconciler.ResolveSecretKeyRef(ctx, s.c, s.namespace, *idx.APIKeySecretRef)
-		if err != nil {
-			return fmt.Errorf("resolving API key: %w", err)
+		if idx.BaseURL == "" {
+			urls, _ := def["urls"].([]any)
+			if len(urls) > 0 {
+				obj["base_url"] = urls[0]
+			}
 		}
-		obj["api_key"] = val
 	}
 
-	return s.upsert("indexer", idx.Name, existing, obj,
-		s.created("indexers", idx.Name, func() error { return s.ac.CreateIndexer(ctx, obj) }),
-		func(id int) error { return s.ac.UpdateIndexer(ctx, id, obj) })
+	for _, e := range existing {
+		if e["name"] != idx.Name {
+			continue
+		}
+		id, ok := e["id"].(float64)
+		if !ok {
+			return fmt.Errorf("indexer %q has no valid id", idx.Name)
+		}
+		current, err := s.ac.GetIndexer(ctx, int(id))
+		if err != nil {
+			return fmt.Errorf("reading indexer %q: %w", idx.Name, err)
+		}
+		desired, err := jsonValue(obj)
+		if err != nil {
+			return err
+		}
+		if reconciler.Covers(current, desired) {
+			return nil
+		}
+		// An update must carry every stored secret setting, redacted or not.
+		body, err := mergedOver(current, obj)
+		if err != nil {
+			return err
+		}
+		return s.Apply("indexer", idx.Name, func() error { return s.ac.UpdateIndexer(ctx, int(id), body) })
+	}
+	return s.Apply("indexer", idx.Name, s.created("indexers", idx.Name, func() error {
+		body := maps.Clone(obj)
+		body["identifier"] = idx.Identifier
+		return s.ac.CreateIndexer(ctx, body)
+	}))
+}
+
+// definition returns the Autobrr indexer definition with the given identifier.
+func (s *autobrrSync) definition(ctx context.Context, identifier string) (map[string]any, error) {
+	if s.definitions == nil {
+		defs, err := s.ac.IndexerDefinitions(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing indexer definitions: %w", err)
+		}
+		s.definitions = defs
+	}
+	for _, d := range s.definitions {
+		if d["identifier"] == identifier {
+			return d, nil
+		}
+	}
+	return nil, fmt.Errorf("autobrr has no indexer definition %q", identifier)
+}
+
+func (s *autobrrSync) indexerSettings(ctx context.Context, idx automationv1alpha1.AutobrrIndexer) (map[string]any, error) {
+	fields, err := ctrlcommon.ResolveConfigFields(ctx, s.c, s.namespace, "indexer "+idx.Name, idx.Settings)
+	if err != nil {
+		return nil, err
+	}
+	settings := make(map[string]any, len(fields))
+	for _, f := range fields {
+		if f.Value == nil {
+			continue
+		}
+		value := f.Value.ToInterface()
+		if text, ok := value.(string); ok {
+			settings[f.Name] = text
+		} else {
+			settings[f.Name] = fmt.Sprint(value)
+		}
+	}
+	return settings, nil
 }
 
 func (s *autobrrSync) ircNetwork(ctx context.Context, irc automationv1alpha1.AutobrrIRCNetwork) error {
@@ -314,7 +403,7 @@ func (s *autobrrSync) ircNetwork(ctx context.Context, irc automationv1alpha1.Aut
 
 	return s.upsert("IRC network", irc.Name, existing, obj,
 		s.created("ircNetworks", irc.Name, func() error { return s.ac.CreateIRCNetwork(ctx, obj) }),
-		func(id int) error { return s.ac.UpdateIRCNetwork(ctx, id, obj) })
+		func(id int, _ map[string]any) error { return s.ac.UpdateIRCNetwork(ctx, id, obj) })
 }
 
 func (s *autobrrSync) feed(ctx context.Context, feed automationv1alpha1.AutobrrFeed) error {
@@ -322,18 +411,28 @@ func (s *autobrrSync) feed(ctx context.Context, feed automationv1alpha1.AutobrrF
 	if err != nil {
 		return fmt.Errorf("listing feeds: %w", err)
 	}
+	indexerIDs, err := s.indexerIDs(ctx)
+	if err != nil {
+		return err
+	}
+	indexerID, ok := indexerIDs[feed.IndexerRef]
+	switch {
+	case !ok && s.Observe && len(s.Drift()) > 0:
+		s.RecordDrift("feed", feed.Name)
+		return nil
+	case !ok:
+		return fmt.Errorf("references indexer %q, which does not exist", feed.IndexerRef)
+	}
 
 	obj := map[string]any{
 		"name":    feed.Name,
 		"enabled": feed.Enable == nil || *feed.Enable,
-		"type":    feed.Type,
+		"type":    strings.ToUpper(feed.Type),
 		"url":     feed.URL,
+		"indexer": map[string]any{"id": indexerID},
 	}
 	if feed.Interval != nil {
 		obj["interval"] = *feed.Interval
-	}
-	if feed.IndexerRef != "" {
-		obj["indexer"] = feed.IndexerRef
 	}
 	if feed.APIKeySecretRef != nil {
 		val, err := reconciler.ResolveSecretKeyRef(ctx, s.c, s.namespace, *feed.APIKeySecretRef)
@@ -342,10 +441,43 @@ func (s *autobrrSync) feed(ctx context.Context, feed automationv1alpha1.AutobrrF
 		}
 		obj["api_key"] = val
 	}
+	// Autobrr links a feed to its indexer by indexer_id and reads it back as an
+	// indexer object.
+	withIndexer := func(body map[string]any) map[string]any {
+		delete(body, "indexer")
+		body["indexer_id"] = indexerID
+		return body
+	}
 
 	return s.upsert("feed", feed.Name, existing, obj,
-		s.created("feeds", feed.Name, func() error { return s.ac.CreateFeed(ctx, obj) }),
-		func(id int) error { return s.ac.UpdateFeed(ctx, id, obj) })
+		s.created("feeds", feed.Name, func() error {
+			body := withIndexer(maps.Clone(obj))
+			body["timeout"] = defaultFeedTimeout
+			return s.ac.CreateFeed(ctx, body)
+		}),
+		func(id int, current map[string]any) error {
+			body, err := mergedOver(current, obj)
+			if err != nil {
+				return err
+			}
+			return s.ac.UpdateFeed(ctx, id, withIndexer(body))
+		})
+}
+
+// indexerIDs maps each Autobrr indexer's name to its id.
+func (s *autobrrSync) indexerIDs(ctx context.Context) (map[string]int, error) {
+	indexers, err := s.ac.ListIndexers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing indexers: %w", err)
+	}
+	ids := map[string]int{}
+	for _, i := range indexers {
+		name, _ := i["name"].(string)
+		if id, ok := i["id"].(float64); ok && name != "" {
+			ids[name] = int(id)
+		}
+	}
+	return ids, nil
 }
 
 func (s *autobrrSync) filter(ctx context.Context, filter automationv1alpha1.AutobrrFilter) error {
@@ -404,10 +536,20 @@ func (s *autobrrSync) filter(ctx context.Context, filter automationv1alpha1.Auto
 		obj["use_regex"] = *filter.UseRegex
 	}
 	if len(filter.Tags) > 0 {
-		obj["tags"] = filter.Tags
+		obj["tags"] = strings.Join(filter.Tags, ",")
 	}
 	if len(filter.Indexers) > 0 {
-		obj["indexers"] = filter.Indexers
+		indexers, missing, err := s.filterIndexers(ctx, filter.Indexers)
+		switch {
+		case err != nil:
+			return err
+		case missing != "" && s.Observe && len(s.Drift()) > 0:
+			s.RecordDrift("filter", filter.Name)
+			return nil
+		case missing != "":
+			return fmt.Errorf("references indexer %q, which does not exist", missing)
+		}
+		obj["indexers"] = indexers
 	}
 
 	// A new filter must carry these lists; Autobrr's columns reject null.
@@ -421,6 +563,30 @@ func (s *autobrrSync) filter(ctx context.Context, filter automationv1alpha1.Auto
 		return nil
 	}
 	return s.actions(ctx, filterID, filter, clientIDs)
+}
+
+// filterIndexers resolves indexer names to the objects Autobrr links a filter
+// to, ordered by id as Autobrr returns them. It returns the first name with no
+// indexer.
+func (s *autobrrSync) filterIndexers(ctx context.Context, names []string) ([]any, string, error) {
+	ids, err := s.indexerIDs(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	resolved := make([]int, 0, len(names))
+	for _, name := range names {
+		id, ok := ids[name]
+		if !ok {
+			return nil, name, nil
+		}
+		resolved = append(resolved, id)
+	}
+	slices.Sort(resolved)
+	out := make([]any, 0, len(resolved))
+	for _, id := range resolved {
+		out = append(out, map[string]any{"id": id})
+	}
+	return out, "", nil
 }
 
 // actions creates or updates a filter's actions by name.
@@ -466,7 +632,7 @@ func (s *autobrrSync) actions(
 		}
 		if err := s.upsert("action", a.Name, existing, aObj,
 			s.created(actionsKind, filter.Name+"/"+a.Name, func() error { return s.ac.CreateAction(ctx, withFilter()) }),
-			func(id int) error { return s.ac.UpdateAction(ctx, id, withFilter()) }); err != nil {
+			func(id int, _ map[string]any) error { return s.ac.UpdateAction(ctx, id, withFilter()) }); err != nil {
 			return fmt.Errorf("action %q: %w", a.Name, err)
 		}
 	}
@@ -492,7 +658,7 @@ func autobrrType(name string) string {
 // upsert updates an existing resource only when Autobrr does not already hold
 // every declared value; writing on every pass rewrote each one each time.
 func (s *autobrrSync) upsert(kind, name string, existing []map[string]any, obj map[string]any,
-	create func() error, update func(id int) error,
+	create func() error, update func(id int, current map[string]any) error,
 ) error {
 	for _, e := range existing {
 		if n, _ := e["name"].(string); n != name {
@@ -510,7 +676,7 @@ func (s *autobrrSync) upsert(kind, name string, existing []map[string]any, obj m
 		if reconciler.Covers(e, desired) {
 			return nil
 		}
-		return s.Apply(kind, name, func() error { return update(int(id)) })
+		return s.Apply(kind, name, func() error { return update(int(id), e) })
 	}
 	return s.Apply(kind, name, create)
 }
@@ -539,6 +705,7 @@ func (s *autobrrSync) upsertFilter(
 		if err != nil {
 			return 0, err
 		}
+		sortByID(full["indexers"])
 		if reconciler.Covers(full, desired) {
 			return id, nil
 		}
@@ -559,7 +726,21 @@ func (s *autobrrSync) upsertFilter(
 		raw, _ := created["id"].(float64)
 		id = int(raw)
 		s.owned.Created("filters", name)
-		return nil
+		// Autobrr links a filter to its indexers only on update.
+		if _, ok := obj["indexers"]; !ok {
+			return nil
+		}
+		full, err := s.ac.GetFilter(ctx, id)
+		if err != nil {
+			return fmt.Errorf("reading the new filter: %w", err)
+		}
+		linked, err := mergedOver(full, obj)
+		if err != nil {
+			return err
+		}
+		delete(linked, "actions")
+		addRequiredFilterLists(linked)
+		return s.ac.UpdateFilter(ctx, id, linked)
 	})
 	return id, err
 }
@@ -588,4 +769,24 @@ func autobrrIRCAuth(mechanism string) string {
 		return m
 	}
 	return mechanism
+}
+
+// defaultFeedTimeout is the request timeout, in seconds, Autobrr's web UI gives a new feed.
+const defaultFeedTimeout = 60
+
+// mergedOver returns the stored object with the declared values over it, so an
+// update keeps what the resource doesn't manage. Autobrr keeps a stored secret
+// sent back redacted.
+func mergedOver(current, obj map[string]any) (map[string]any, error) {
+	merged, _, err := reconciler.MergeDesiredOverCurrent(current, obj)
+	return merged, err
+}
+
+func sortByID(list any) {
+	items, _ := list.([]any)
+	slices.SortFunc(items, func(a, b any) int {
+		ai, _ := a.(map[string]any)["id"].(float64)
+		bi, _ := b.(map[string]any)["id"].(float64)
+		return int(ai - bi)
+	})
 }

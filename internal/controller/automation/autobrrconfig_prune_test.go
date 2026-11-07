@@ -28,12 +28,12 @@ func autobrrManaged(t *testing.T, cfg *automationv1alpha1.AutobrrConfig, withSec
 }
 
 func TestAutobrrPrunesOnlyFeedsItCreated(t *testing.T) {
-	app := &fakeAutobrr{existing: map[string][]map[string]any{"feeds": {
+	app := &fakeAutobrr{existing: map[string][]map[string]any{"indexer": genericIndexer, "feeds": {
 		{"id": float64(5), "name": "old"}, {"id": float64(6), "name": "hand-made"}, {"id": float64(7), "name": "kept"},
 	}}}
 	cfg := autobrrConfig(app.serve(t))
 	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{Prune: new(true)}
-	cfg.Spec.Feeds = []automationv1alpha1.AutobrrFeed{{Name: "kept", Type: "RSS", URL: "http://feed"}}
+	cfg.Spec.Feeds = []automationv1alpha1.AutobrrFeed{{Name: "kept", Type: "RSS", URL: "http://feed", IndexerRef: "Generic"}}
 	cfg.Status.ManagedResources = map[string][]string{"feeds": {"old", "kept"}}
 
 	managed := autobrrManaged(t, cfg, true)
@@ -45,9 +45,9 @@ func TestAutobrrPrunesOnlyFeedsItCreated(t *testing.T) {
 }
 
 func TestAutobrrRecordsWhatItCreates(t *testing.T) {
-	app := &fakeAutobrr{}
+	app := &fakeAutobrr{existing: map[string][]map[string]any{"indexer": genericIndexer}}
 	cfg := autobrrConfig(app.serve(t))
-	cfg.Spec.Feeds = []automationv1alpha1.AutobrrFeed{{Name: "feed", Type: "RSS", URL: "http://feed"}}
+	cfg.Spec.Feeds = []automationv1alpha1.AutobrrFeed{{Name: "feed", Type: "RSS", URL: "http://feed", IndexerRef: "Generic"}}
 	cfg.Spec.Filters = []automationv1alpha1.AutobrrFilter{{
 		Name:    "TV",
 		Actions: []automationv1alpha1.AutobrrFilterAction{{Name: "notify", Type: "Webhook", WebhookURL: "http://hook"}},
@@ -83,13 +83,13 @@ func TestAutobrrDeletionPolicyRemovesWhatItCreated(t *testing.T) {
 }
 
 func TestAutobrrObserveReportsWhatPruneWouldDelete(t *testing.T) {
-	app := &fakeAutobrr{existing: map[string][]map[string]any{"feeds": {
+	app := &fakeAutobrr{existing: map[string][]map[string]any{"indexer": genericIndexer, "feeds": {
 		{"id": float64(5), "name": "observe-old"}, {"id": float64(7), "name": "kept"},
 	}}}
 	cfg := autobrrConfig(app.serve(t))
 	observe := "observe"
 	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{Prune: new(true), DriftPolicy: &observe}
-	cfg.Spec.Feeds = []automationv1alpha1.AutobrrFeed{{Name: "kept", Type: "RSS", URL: "http://feed"}}
+	cfg.Spec.Feeds = []automationv1alpha1.AutobrrFeed{{Name: "kept", Type: "RSS", URL: "http://feed", IndexerRef: "Generic"}}
 	cfg.Status.ManagedResources = map[string][]string{"feeds": {"observe-old", "kept"}}
 	observed := metrics.DriftObservedTotal.WithLabelValues("autobrr", "feeds", "observe-old")
 	before := testutil.ToFloat64(observed)
@@ -100,3 +100,5 @@ func TestAutobrrObserveReportsWhatPruneWouldDelete(t *testing.T) {
 	assert.Equal(t, before+1, testutil.ToFloat64(observed))
 	assert.Equal(t, []string{"observe-old", "kept"}, managed["feeds"])
 }
+
+var genericIndexer = []map[string]any{{"id": float64(9), "name": "Generic", "implementation": "rss"}}

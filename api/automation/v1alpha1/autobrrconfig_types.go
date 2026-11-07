@@ -88,7 +88,8 @@ type AutobrrDownloadClient struct {
 	// +optional
 	PasswordSecretRef *commonv1alpha1.SecretKeyRef `json:"passwordSecretRef,omitempty"`
 
-	// apiKeySecretRef references a Secret containing the API key (for *arr apps, SABnzbd).
+	// apiKeySecretRef references a Secret containing the API key, for Sonarr, Radarr, Lidarr,
+	// Readarr and SABnzbd clients.
 	// +optional
 	APIKeySecretRef *commonv1alpha1.SecretKeyRef `json:"apiKeySecretRef,omitempty"`
 
@@ -128,22 +129,18 @@ type AutobrrIndexer struct {
 	// +kubebuilder:default=true
 	Enable *bool `json:"enable,omitempty"`
 
-	// implementation is the indexer implementation name (e.g., "ipt", "btn", "ptp").
-	// This must match a known Autobrr indexer definition.
+	// identifier is the Autobrr indexer definition, such as "ipt" or "btn", or
+	// "torznab", "newznab" or "rss" for an indexer that a feed reads from.
 	// +required
-	Implementation string `json:"implementation"`
+	Identifier string `json:"identifier"`
 
-	// baseURL is the indexer's base URL.
+	// baseURL is the tracker's site URL. It defaults to the definition's first URL.
 	// +optional
 	BaseURL string `json:"baseURL,omitempty"`
 
-	// apiKeySecretRef references a Secret containing the indexer API key or passkey.
+	// settings are the definition's settings, such as passkey or rsskey.
 	// +optional
-	APIKeySecretRef *commonv1alpha1.SecretKeyRef `json:"apiKeySecretRef,omitempty"`
-
-	// feedURL is the RSS/Torznab feed URL for this indexer.
-	// +optional
-	FeedURL string `json:"feedURL,omitempty"`
+	Settings []commonv1alpha1.ConfigField `json:"settings,omitempty"`
 }
 
 // AutobrrIRCNetwork defines an IRC network connection for announce monitoring.
@@ -236,9 +233,10 @@ type AutobrrFeed struct {
 	// +kubebuilder:default=15
 	Interval *int `json:"interval,omitempty"`
 
-	// indexerRef is the name of the indexer this feed belongs to.
-	// +optional
-	IndexerRef string `json:"indexerRef,omitempty"`
+	// indexerRef is the name of the indexer this feed belongs to: a torznab,
+	// newznab or rss indexer declared under indexers.
+	// +required
+	IndexerRef string `json:"indexerRef"`
 }
 
 // AutobrrFilter defines a release filter with match criteria and actions.
@@ -300,7 +298,8 @@ type AutobrrFilter struct {
 	// +optional
 	Tags []string `json:"tags,omitempty"`
 
-	// indexers is a list of indexer names this filter applies to. Empty means all.
+	// indexers lists the indexers, by name, whose releases this filter checks.
+	// Autobrr checks a filter only against the indexers it lists.
 	// +optional
 	Indexers []string `json:"indexers,omitempty"`
 

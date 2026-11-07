@@ -440,10 +440,12 @@ func (in *AutobrrIndexer) DeepCopyInto(out *AutobrrIndexer) {
 		*out = new(bool)
 		**out = **in
 	}
-	if in.APIKeySecretRef != nil {
-		in, out := &in.APIKeySecretRef, &out.APIKeySecretRef
-		*out = new(commonv1alpha1.SecretKeyRef)
-		**out = **in
+	if in.Settings != nil {
+		in, out := &in.Settings, &out.Settings
+		*out = make([]commonv1alpha1.ConfigField, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
 	}
 }
 

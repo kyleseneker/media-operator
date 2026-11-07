@@ -113,8 +113,9 @@ spec:
                     in Autobrr.
                   properties:
                     apiKeySecretRef:
-                      description: apiKeySecretRef references a Secret containing
-                        the API key (for *arr apps, SABnzbd).
+                      description: |-
+                        apiKeySecretRef references a Secret containing the API key, for Sonarr, Radarr, Lidarr,
+                        Readarr and SABnzbd clients.
                       properties:
                         key:
                           description: key is the key within the Secret.
@@ -236,8 +237,9 @@ spec:
                       description: enable controls whether this feed is active.
                       type: boolean
                     indexerRef:
-                      description: indexerRef is the name of the indexer this feed
-                        belongs to.
+                      description: |-
+                        indexerRef is the name of the indexer this feed belongs to: a torznab,
+                        newznab or rss indexer declared under indexers.
                       type: string
                     interval:
                       default: 15
@@ -257,6 +259,7 @@ spec:
                       description: url is the feed URL.
                       type: string
                   required:
+                  - indexerRef
                   - name
                   - type
                   - url
@@ -352,8 +355,9 @@ spec:
                         name patterns to exclude.
                       type: string
                     indexers:
-                      description: indexers is a list of indexer names this filter
-                        applies to. Empty means all.
+                      description: |-
+                        indexers lists the indexers, by name, whose releases this filter checks.
+                        Autobrr checks a filter only against the indexers it lists.
                       items:
                         type: string
                       type: array
@@ -408,40 +412,56 @@ spec:
                   description: AutobrrIndexer defines an indexer/tracker connection
                     in Autobrr.
                   properties:
-                    apiKeySecretRef:
-                      description: apiKeySecretRef references a Secret containing
-                        the indexer API key or passkey.
-                      properties:
-                        key:
-                          description: key is the key within the Secret.
-                          type: string
-                        name:
-                          description: name is the name of the Secret.
-                          type: string
-                      required:
-                      - key
-                      - name
-                      type: object
                     baseURL:
-                      description: baseURL is the indexer's base URL.
+                      description: baseURL is the tracker's site URL. It defaults
+                        to the definition's first URL.
                       type: string
                     enable:
                       default: true
                       description: enable controls whether this indexer is active.
                       type: boolean
-                    feedURL:
-                      description: feedURL is the RSS/Torznab feed URL for this indexer.
-                      type: string
-                    implementation:
+                    identifier:
                       description: |-
-                        implementation is the indexer implementation name (e.g., "ipt", "btn", "ptp").
-                        This must match a known Autobrr indexer definition.
+                        identifier is the Autobrr indexer definition, such as "ipt" or "btn", or
+                        "torznab", "newznab" or "rss" for an indexer that a feed reads from.
                       type: string
                     name:
                       description: name is the display name of the indexer.
                       type: string
+                    settings:
+                      description: settings are the definition's settings, such as
+                        passkey or rsskey.
+                      items:
+                        description: ConfigField represents a key-value field in a
+                          download client configuration.
+                        properties:
+                          name:
+                            description: name is the field name.
+                            type: string
+                          value:
+                            description: value is the field value. Can be a string,
+                              number, or boolean.
+                            x-kubernetes-preserve-unknown-fields: true
+                          valueFrom:
+                            description: valueFrom sources the field value from a
+                              Secret. Mutually exclusive with value.
+                            properties:
+                              key:
+                                description: key is the key within the Secret.
+                                type: string
+                              name:
+                                description: name is the name of the Secret.
+                                type: string
+                            required:
+                            - key
+                            - name
+                            type: object
+                        required:
+                        - name
+                        type: object
+                      type: array
                   required:
-                  - implementation
+                  - identifier
                   - name
                   type: object
                 type: array

@@ -40,6 +40,7 @@ func TestAutobrr(t *testing.T) {
 		},
 		secrets: map[string]string{
 			"api-key": key, "qbittorrent-username": qbittorrentUser, "qbittorrent-password": qbitPassword,
+			"sonarr-api-key": randomKey(), "ipt-passkey": randomKey(), "torznab-api-key": randomKey(),
 		},
 		newObj: func() ctrlcommon.ConfigResource { return &automationv1alpha1.AutobrrConfig{} },
 		reconciler: func(c client.Client) reconcile.Reconciler {
@@ -52,8 +53,25 @@ func TestAutobrr(t *testing.T) {
 			ctx := context.Background()
 			downloaders, err := hc.GetJSONList(ctx, "/api/downloaders")
 			require.NoError(t, err)
-			require.Len(t, downloaders, 1)
-			assert.Equal(t, "QBITTORRENT", downloaders[0]["type"])
+			require.Len(t, downloaders, 2)
+			assert.Equal(t, "QBITTORRENT", named(downloaders, "qBittorrent")["type"])
+			sonarr, _ := named(downloaders, "Sonarr")["settings"].(map[string]any)
+			assert.Equal(t, "<redacted>", sonarr["apikey"], "the Sonarr client has no API key")
+			indexers, err := hc.GetJSONList(ctx, "/api/indexer")
+			require.NoError(t, err)
+			require.Len(t, indexers, 2)
+			ipt, err := hc.GetJSON(ctx, fmt.Sprintf("/api/indexer/%.0f", named(indexers, "IPTorrents")["id"]))
+			require.NoError(t, err)
+			assert.Equal(t, "ipt", ipt["identifier"])
+			assert.Equal(t, "https://iptorrents.com/", ipt["base_url"])
+			iptSettings, _ := ipt["settings"].(map[string]any)
+			assert.Equal(t, "<redacted>", iptSettings["passkey"], "the passkey did not reach Autobrr")
+			assert.Equal(t, "torznab", named(indexers, "Compat Torznab")["implementation"])
+			feeds, err := hc.GetJSONList(ctx, "/api/feeds")
+			require.NoError(t, err)
+			require.Len(t, feeds, 1)
+			feedIndexer, _ := feeds[0]["indexer"].(map[string]any)
+			assert.Equal(t, "Compat Torznab", feedIndexer["name"])
 			networks, err := hc.GetJSONList(ctx, "/api/irc")
 			require.NoError(t, err)
 			require.Len(t, networks, 1)
@@ -61,14 +79,19 @@ func TestAutobrr(t *testing.T) {
 			filters, err := hc.GetJSONList(ctx, "/api/filters")
 			require.NoError(t, err)
 			require.Len(t, filters, 1)
+			filter, err := hc.GetJSON(ctx, fmt.Sprintf("/api/filters/%.0f", filters[0]["id"]))
+			require.NoError(t, err)
+			assert.Equal(t, "tv,hd", filter["tags"])
+			filterIndexers, _ := filter["indexers"].([]any)
+			require.Len(t, filterIndexers, 1, "the filter is not linked to its indexer")
 			actions, err := hc.GetJSONList(ctx, fmt.Sprintf("/api/actions?filter_id=%.0f", filters[0]["id"]))
 			require.NoError(t, err)
 			require.Len(t, actions, 1, "the filter's action was not created")
-			assert.Equal(t, downloaders[0]["id"], actions[0]["client_id"])
+			assert.Equal(t, named(downloaders, "qBittorrent")["id"], actions[0]["client_id"])
 		},
 		cleanup: func(t *testing.T, _ map[string][]string) {
 			hc := autobrrClient(t, ab.url(), key)
-			for _, path := range []string{"/api/downloaders", "/api/irc", "/api/filters"} {
+			for _, path := range []string{"/api/downloaders", "/api/indexer", "/api/feeds", "/api/irc", "/api/filters"} {
 				items, err := hc.GetJSONList(context.Background(), path)
 				require.NoError(t, err)
 				assert.Empty(t, items, "%s still has what the operator created", path)
@@ -118,4 +141,13 @@ func autobrrAPIKey(t *testing.T, base string) string {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
 	require.NotEmpty(t, created.Key)
 	return created.Key
+}
+
+func named(items []map[string]any, name string) map[string]any {
+	for _, item := range items {
+		if item["name"] == name {
+			return item
+		}
+	}
+	return nil
 }

@@ -23,9 +23,19 @@ spec:
       passwordSecretRef:
         name: qbittorrent-secrets
         key: password
+  indexers:
+    - name: IPTorrents
+      identifier: ipt
+      settings:
+        - name: passkey
+          valueFrom:
+            name: autobrr-secrets
+            key: ipt-passkey
   filters:
     - name: "TV Shows - 1080p"
       priority: 1
+      indexers:
+        - IPTorrents
       resolutions:
         - "1080p"
       sources:
