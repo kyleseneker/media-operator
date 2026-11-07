@@ -48,3 +48,12 @@ func TestSeerrObserveRejectedBeforeApplicationAccess(t *testing.T) {
 		return condition.Type == "Synced" && condition.Reason == "InvalidConfig" && condition.Status == metav1.ConditionFalse
 	}), "expected explicit unsupported-policy status, got %+v", cfg.Status.Conditions)
 }
+
+// Seerr returns its whole settings document; only declared values decide
+// whether a save is needed.
+func TestSeerrChangedComparesOnlyDeclaredSettings(t *testing.T) {
+	current := map[string]any{"applicationTitle": "Seerr", "apiKey": "x", "defaultPermissions": float64(32)}
+	assert.False(t, seerrChanged("settings", "main", current, map[string]any{"applicationTitle": "Seerr", "defaultPermissions": 32}))
+	assert.True(t, seerrChanged("settings", "main", current, map[string]any{"applicationTitle": "Requests"}))
+	assert.True(t, seerrChanged("notifications", "discord", nil, map[string]any{"enabled": true}), "nothing stored yet")
+}

@@ -54,12 +54,45 @@ func TestAuthenticatePlex(t *testing.T) {
 	assert.NoError(t, c.AuthenticatePlex(context.Background(), "plex-token"))
 }
 
+// The first sign-in configures Jellyfin; repeating the server on a later one
+// is rejected with "Jellyfin hostname already configured".
 func TestAuthenticateJellyfin(t *testing.T) {
-	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/v1/auth/jellyfin", r.URL.Path)
-		w.WriteHeader(http.StatusOK)
-	})
-	assert.NoError(t, c.AuthenticateJellyfin(context.Background(), "admin", "pass", "jf.local", 8096, "", false))
+	for _, tt := range []struct {
+		name       string
+		configured bool
+		wantServer bool
+	}{
+		{"first sign-in carries the server", false, true},
+		{"later sign-ins carry only credentials", true, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var body map[string]any
+			c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "/api/v1/auth/jellyfin", r.URL.Path)
+				assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+				w.WriteHeader(http.StatusOK)
+			})
+			require.NoError(t, c.AuthenticateJellyfin(context.Background(), "admin", "pass", "jf.local", 8096, "", false, tt.configured))
+			assert.Equal(t, "admin", body["username"])
+			if tt.wantServer {
+				assert.Equal(t, "jf.local", body["hostname"])
+			} else {
+				assert.NotContains(t, body, "hostname")
+				assert.NotContains(t, body, "serverType")
+			}
+		})
+	}
+}
+
+func TestMediaServerConfigured(t *testing.T) {
+	for raw, want := range map[string]bool{`{"mediaServerType":4}`: false, `{"mediaServerType":2}`: true, `{}`: false} {
+		c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(raw))
+		})
+		got, err := c.MediaServerConfigured(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, want, got, raw)
+	}
 }
 
 func TestGetAPIKey(t *testing.T) {
@@ -126,7 +159,7 @@ func TestAuthenticateJellyfinPayload(t *testing.T) {
 		_, _ = w.Write([]byte(`{"id":1}`))
 	})
 
-	require.NoError(t, c.AuthenticateJellyfin(context.Background(), "admin", "pw", "jf.svc", 8096, "", false))
+	require.NoError(t, c.AuthenticateJellyfin(context.Background(), "admin", "pw", "jf.svc", 8096, "", false, false))
 
 	assert.Equal(t, "admin", body["username"])
 	assert.Equal(t, "jf.svc", body["hostname"])

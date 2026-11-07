@@ -2,6 +2,7 @@ package requests
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	seerrclient "github.com/kyleseneker/media-operator/internal/client/seerr"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/engine"
+	"github.com/kyleseneker/media-operator/internal/metrics"
 	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
 
@@ -208,6 +210,9 @@ func (r *SeerrConfigReconciler) reconcileSonarrConnection(ctx context.Context, s
 			if !ok {
 				continue
 			}
+			if !seerrChanged("sonarr", name, e, payload) {
+				return nil
+			}
 			return sc.Put(ctx, fmt.Sprintf("/api/v1/settings/sonarr/%d", int(id)), payload)
 		}
 	}
@@ -245,6 +250,9 @@ func (r *SeerrConfigReconciler) reconcileRadarrConnection(ctx context.Context, s
 			id, ok := e["id"].(float64)
 			if !ok {
 				continue
+			}
+			if !seerrChanged("radarr", name, e, payload) {
+				return nil
 			}
 			return sc.Put(ctx, fmt.Sprintf("/api/v1/settings/radarr/%d", int(id)), payload)
 		}
@@ -334,7 +342,14 @@ func reconcileSeerrMainSettings(ctx context.Context, sc *seerrclient.Client, mai
 		return nil
 	}
 
-	_, err := sc.Post(ctx, "/api/v1/settings/main", payload)
+	current, err := sc.Get(ctx, "/api/v1/settings/main")
+	if err != nil {
+		return fmt.Errorf("reading main settings: %w", err)
+	}
+	if !seerrChanged("settings", "main", current, payload) {
+		return nil
+	}
+	_, err = sc.Post(ctx, "/api/v1/settings/main", payload)
 	return err
 }
 
@@ -354,8 +369,35 @@ func reconcileSeerrNotificationAgent(ctx context.Context, sc *seerrclient.Client
 		payload["options"] = opts
 	}
 
-	_, err := sc.Post(ctx, fmt.Sprintf("/api/v1/settings/notifications/%s", agent.Agent), payload)
+	path := fmt.Sprintf("/api/v1/settings/notifications/%s", agent.Agent)
+	current, err := sc.Get(ctx, path)
+	if err != nil {
+		return fmt.Errorf("reading %s notifications: %w", agent.Agent, err)
+	}
+	if !seerrChanged("notifications", agent.Agent, current, payload) {
+		return nil
+	}
+	_, err = sc.Post(ctx, path, payload)
 	return err
+}
+
+// seerrChanged reports whether Seerr's stored settings lack any declared value,
+// counting the correction when they do. Writing every section on every pass made
+// each reconcile a burst of settings saves.
+func seerrChanged(kind, name string, current, payload map[string]any) bool {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return true
+	}
+	var desired any
+	if err := json.Unmarshal(raw, &desired); err != nil {
+		return true
+	}
+	if reconciler.Covers(current, desired) {
+		return false
+	}
+	metrics.DriftCorrectedTotal.WithLabelValues("seerr", kind, name).Inc()
+	return true
 }
 
 // seerrReferencesSecret returns true if the SeerrConfig references the named secret.
@@ -477,7 +519,12 @@ func (r *SeerrConfigReconciler) authenticate(ctx context.Context, sc *seerrclien
 			jfPort = *config.Spec.JellyfinAuth.Port
 		}
 		useSsl := config.Spec.JellyfinAuth.UseSsl != nil && *config.Spec.JellyfinAuth.UseSsl
-		return sc.AuthenticateJellyfin(ctx, jfUsername, jfPassword, config.Spec.JellyfinAuth.Hostname, jfPort, config.Spec.JellyfinAuth.UrlBase, useSsl)
+		configured, err := sc.MediaServerConfigured(ctx)
+		if err != nil {
+			return fmt.Errorf("reading media server state: %w", err)
+		}
+		return sc.AuthenticateJellyfin(ctx, jfUsername, jfPassword, config.Spec.JellyfinAuth.Hostname, jfPort,
+			config.Spec.JellyfinAuth.UrlBase, useSsl, configured)
 	}
 	return fmt.Errorf("either jellyfinAuth or plexAuth must be configured")
 }

@@ -48,17 +48,40 @@ func (c *Client) AuthenticatePlex(ctx context.Context, plexToken string) error {
 	return err
 }
 
+// mediaServerTypeNotConfigured is what Seerr reports before its first sign-in.
+const mediaServerTypeNotConfigured = 4
+
+// MediaServerConfigured reports whether Seerr already has a media server. The
+// first sign-in configures one, before setup as a whole is complete.
+func (c *Client) MediaServerConfigured(ctx context.Context) (bool, error) {
+	data, err := c.hc.Do(ctx, http.MethodGet, "/api/v1/settings/public", nil)
+	if err != nil {
+		return false, err
+	}
+	var result struct {
+		MediaServerType *int `json:"mediaServerType"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return false, fmt.Errorf("unmarshaling public settings: %w", err)
+	}
+	return result.MediaServerType != nil && *result.MediaServerType != mediaServerTypeNotConfigured, nil
+}
+
 // AuthenticateJellyfin logs in via the Jellyfin auth provider.
-// The session cookie is stored in the engine client's cookie jar.
-func (c *Client) AuthenticateJellyfin(ctx context.Context, username, password, jellyfinHost string, jellyfinPort int, urlBase string, useSsl bool) error {
+// The session cookie is stored in the engine client's cookie jar. Only the
+// first sign-in carries the server: once one is configured, Seerr rejects a
+// sign-in that names it again ("Jellyfin hostname already configured").
+func (c *Client) AuthenticateJellyfin(ctx context.Context, username, password, jellyfinHost string, jellyfinPort int, urlBase string, useSsl, configured bool) error {
 	payload := map[string]any{
-		"username":   username,
-		"password":   password,
-		"hostname":   jellyfinHost,
-		"port":       jellyfinPort,
-		"urlBase":    urlBase,
-		"useSsl":     useSsl,
-		"serverType": mediaServerTypeJellyfin,
+		"username": username,
+		"password": password,
+	}
+	if !configured {
+		payload["hostname"] = jellyfinHost
+		payload["port"] = jellyfinPort
+		payload["urlBase"] = urlBase
+		payload["useSsl"] = useSsl
+		payload["serverType"] = mediaServerTypeJellyfin
 	}
 	_, err := c.hc.Do(ctx, http.MethodPost, "/api/v1/auth/jellyfin", payload)
 	return err
