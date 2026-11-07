@@ -3,6 +3,7 @@ package downloads
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"maps"
 	"net"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"net/url"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,6 +25,7 @@ import (
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	downloadsv1alpha1 "github.com/kyleseneker/media-operator/api/downloads/v1alpha1"
+	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/controller/internal/contract"
 	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
@@ -30,8 +33,20 @@ import (
 // fakeSabnzbd records the form parameters of every /api call. SABnzbd drives
 // everything through one endpoint keyed by a "mode" parameter.
 type fakeSabnzbd struct {
-	mu    sync.Mutex
-	calls []url.Values
+	mu     sync.Mutex
+	calls  []url.Values
+	config map[string]any
+}
+
+func (f *fakeSabnzbd) deleted(keyword string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, c := range f.calls {
+		if c.Get("mode") == "del_config" && c.Get("keyword") == keyword {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *fakeSabnzbd) sawMode(mode string) bool {
@@ -60,7 +75,11 @@ func (f *fakeSabnzbd) serve(t *testing.T) string {
 		f.mu.Unlock()
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status": true, "config": {}}`))
+		config := f.config
+		if config == nil {
+			config = map[string]any{}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": true, "config": config})
 	}))
 	_ = srv.Listener.Close()
 	srv.Listener = ln
@@ -256,4 +275,74 @@ func TestSabnzbdGeneralValuesCoversEveryField(t *testing.T) {
 
 func TestSabnzbdFolderValuesCoversEveryField(t *testing.T) {
 	contract.AssertEveryFieldEmitted(t, &downloadsv1alpha1.SabnzbdFolders{}, buildSabnzbdFolderValues)
+}
+
+func runSabnzbdConfig(t *testing.T, cfg *downloadsv1alpha1.SabnzbdConfig) map[string][]string {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, downloadsv1alpha1.AddToScheme(scheme))
+	c := fake.NewClientBuilder().WithScheme(scheme).
+		WithStatusSubresource(&downloadsv1alpha1.SabnzbdConfig{}).WithObjects(cfg, sabnzbdSecret()).Build()
+	r := &SabnzbdConfigReconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(50)}
+	_, err := r.Reconcile(context.Background(), ctrl.Request{Name: "sabnzbd", Namespace: "media"})
+	require.NoError(t, err)
+	var got downloadsv1alpha1.SabnzbdConfig
+	if err := c.Get(context.Background(), ctrl.Request{Name: "sabnzbd", Namespace: "media"}.NamespacedName, &got); err != nil {
+		return nil
+	}
+	return got.Status.ManagedResources
+}
+
+func sabnzbdEntries(names ...string) []any {
+	out := make([]any, 0, len(names))
+	for _, n := range names {
+		out = append(out, map[string]any{"name": n})
+	}
+	return out
+}
+
+func TestSabnzbdPrunesOnlyServersItCreated(t *testing.T) {
+	app := &fakeSabnzbd{config: map[string]any{"servers": sabnzbdEntries("old", "kept", "hand-made")}}
+	cfg := sabnzbdConfig(app.serve(t))
+	cfg.Spec.Servers = []downloadsv1alpha1.SabnzbdServer{{Name: "kept", Host: "news", Port: 563}}
+	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{Prune: new(true)}
+	cfg.Status.ManagedResources = map[string][]string{"servers": {"old", "kept"}}
+
+	managed := runSabnzbdConfig(t, cfg)
+
+	assert.True(t, app.deleted("old"), "an owned server left the spec and was not deleted")
+	assert.False(t, app.deleted("hand-made"), "deleted a server the operator did not create")
+	assert.False(t, app.deleted("kept"), "deleted a declared server")
+	assert.Equal(t, []string{"kept"}, managed["servers"])
+}
+
+func TestSabnzbdRecordsTheServersItCreates(t *testing.T) {
+	app := &fakeSabnzbd{}
+	cfg := sabnzbdConfig(app.serve(t))
+	cfg.Spec.Servers = []downloadsv1alpha1.SabnzbdServer{{Name: "Primary", Host: "news", Port: 563}}
+
+	managed := runSabnzbdConfig(t, cfg)
+
+	assert.Equal(t, []string{"Primary"}, managed["servers"])
+}
+
+func TestSabnzbdDeletionPolicyRemovesWhatItCreated(t *testing.T) {
+	app := &fakeSabnzbd{config: map[string]any{
+		"servers": sabnzbdEntries("old", "hand-made"), "categories": sabnzbdEntries("*", "tv", "movies"),
+	}}
+	cfg := sabnzbdConfig(app.serve(t))
+	policy := ctrlcommon.DeletionPolicyDelete
+	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DeletionPolicy: &policy}
+	cfg.Status.ManagedResources = map[string][]string{"servers": {"old"}, "categories": {"tv"}}
+	now := metav1.NewTime(time.Now())
+	cfg.DeletionTimestamp = &now
+	cfg.Finalizers = []string{ctrlcommon.Finalizer}
+
+	runSabnzbdConfig(t, cfg)
+
+	assert.True(t, app.deleted("old"))
+	assert.True(t, app.deleted("tv"))
+	assert.False(t, app.deleted("hand-made"), "deleted a server the operator did not create")
+	assert.False(t, app.deleted("movies"), "deleted a category the operator did not create")
 }

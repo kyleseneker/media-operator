@@ -63,27 +63,42 @@ func TestSabnzbd(t *testing.T) {
 		},
 		observe: true,
 		verify: func(t *testing.T) {
-			raw, err := sabnzbdGet(sab.url(), key, "get_config")
-			require.NoError(t, err)
-			var cfg struct {
-				Config struct {
-					Misc       map[string]any   `json:"misc"`
-					Servers    []map[string]any `json:"servers"`
-					Categories []map[string]any `json:"categories"`
-				} `json:"config"`
-			}
-			require.NoError(t, json.Unmarshal(raw, &cfg))
-			assert.Equal(t, "/downloads/complete", cfg.Config.Misc["complete_dir"])
-			assert.Equal(t, "50M", cfg.Config.Misc["bandwidth_max"])
-			require.Len(t, cfg.Config.Servers, 1)
-			assert.Equal(t, "news.example.com", cfg.Config.Servers[0]["host"])
-			names := make([]any, 0, len(cfg.Config.Categories))
-			for _, c := range cfg.Config.Categories {
+			cfg := sabnzbdConfigOf(t, sab.url(), key)
+			assert.Equal(t, "/downloads/complete", cfg.Misc["complete_dir"])
+			assert.Equal(t, "50M", cfg.Misc["bandwidth_max"])
+			require.Len(t, cfg.Servers, 1)
+			assert.Equal(t, "news.example.com", cfg.Servers[0]["host"])
+			names := make([]any, 0, len(cfg.Categories))
+			for _, c := range cfg.Categories {
 				names = append(names, c["name"])
 			}
 			assert.Subset(t, names, []any{"tv", "movies"})
 		},
+		cleanup: func(t *testing.T) {
+			cfg := sabnzbdConfigOf(t, sab.url(), key)
+			assert.Empty(t, cfg.Servers, "servers the operator created are still there")
+			for _, c := range cfg.Categories {
+				assert.NotContains(t, []any{"tv", "movies"}, c["name"], "a category the operator created is still there")
+			}
+		},
 	})
+}
+
+type sabnzbdSections struct {
+	Misc       map[string]any   `json:"misc"`
+	Servers    []map[string]any `json:"servers"`
+	Categories []map[string]any `json:"categories"`
+}
+
+func sabnzbdConfigOf(t *testing.T, base, key string) sabnzbdSections {
+	t.Helper()
+	raw, err := sabnzbdGet(base, key, "get_config")
+	require.NoError(t, err)
+	var out struct {
+		Config sabnzbdSections `json:"config"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &out))
+	return out.Config
 }
 
 // sabnzbdGet calls the API directly, outside the operator.

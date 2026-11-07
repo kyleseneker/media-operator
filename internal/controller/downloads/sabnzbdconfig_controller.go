@@ -44,29 +44,20 @@ func (r *SabnzbdConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, ctrlcommon.Lifecycle{}); done {
+	lifecycle := ctrlcommon.Lifecycle{Remove: func(ctx context.Context) error { return r.cleanup(ctx, &config) }, Prune: true}
+	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, lifecycle); done {
 		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
-	apiKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.APIKeySecretRef)
+	sc, reason, err := r.sabnzbdClient(ctx, &config)
 	if err != nil {
-		logger.Error(err, "failed to resolve API key")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
+		logger.Error(err, "failed to build the SABnzbd client")
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, reason, err.Error())
+		if reason == engine.ReasonInvalidConfig {
+			return ctrl.Result{}, nil
+		}
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
-
-	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
-	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-	}
-
-	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthNone, engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("sabnzbd"))
-	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonInvalidConfig, err.Error())
-		return ctrl.Result{}, nil
-	}
-	sc := sabnzbdclient.NewClient(hc, apiKey)
 
 	if err := sc.Ping(ctx); err != nil {
 		logger.Error(err, "SABnzbd unreachable")
@@ -90,17 +81,23 @@ func (r *SabnzbdConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
 
-	syncErrors = append(syncErrors, applySabnzbd(ctx, sc, writes)...)
+	owned := engine.NewOwnership("sabnzbd", config.Status.ManagedResources)
+	syncErrors = append(syncErrors, applySabnzbd(ctx, sc, writes, owned)...)
 	// A fresh SABnzbd creates its default categories on the first category
 	// write and discards that write, so check once more after writing.
 	if len(writes) > 0 && len(syncErrors) == 0 {
 		if current, err = sc.GetConfig(ctx); err != nil {
 			syncErrors = append(syncErrors, fmt.Sprintf("re-reading config: %v", err))
 		} else {
-			syncErrors = append(syncErrors, applySabnzbd(ctx, sc, planSabnzbd(current, config.Spec, servers, string(config.UID)))...)
+			syncErrors = append(syncErrors, applySabnzbd(ctx, sc, planSabnzbd(current, config.Spec, servers, string(config.UID)), owned)...)
 		}
 	}
+	if ctrlcommon.PruneEnabled(config.Spec.Reconcile) && len(syncErrors) == 0 {
+		syncErrors = append(syncErrors, pruneSabnzbd(ctx, sc, config.Spec, owned)...)
+	}
 
+	ctrlcommon.UpdateStatusManaged(&config, owned.Managed())
+	ctrlcommon.EmitPruneEvents(r.Recorder, &config, owned.Pruned())
 	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, false, false, syncErrors)
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
@@ -178,7 +175,7 @@ func sabnzbdServerValues(srv downloadsv1alpha1.SabnzbdServer) map[string]string 
 }
 
 // applySabnzbd performs the planned writes and returns the failures.
-func applySabnzbd(ctx context.Context, sc *sabnzbdclient.Client, writes []sabWrite) []string {
+func applySabnzbd(ctx context.Context, sc *sabnzbdclient.Client, writes []sabWrite, owned *engine.Ownership) []string {
 	var problems []string
 	for _, w := range writes {
 		metrics.DriftCorrectedTotal.WithLabelValues("sabnzbd", w.resourceType, w.name).Inc()
@@ -194,14 +191,97 @@ func applySabnzbd(ctx context.Context, sc *sabnzbdclient.Client, writes []sabWri
 			continue
 		}
 		reconciler.RecordSecrets(w.secretKey, w.secretDigest)
+		if w.create {
+			owned.Created(w.section, w.name)
+		}
 	}
 	return problems
+}
+
+// sabnzbdClient builds the client for a config, or returns the status reason it
+// can't.
+func (r *SabnzbdConfigReconciler) sabnzbdClient(ctx context.Context, config *downloadsv1alpha1.SabnzbdConfig) (*sabnzbdclient.Client, string, error) {
+	apiKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.APIKeySecretRef)
+	if err != nil {
+		return nil, engine.ReasonSecretNotFound, err
+	}
+	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
+	if err != nil {
+		return nil, engine.ReasonSecretNotFound, err
+	}
+	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthNone, engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("sabnzbd"))
+	if err != nil {
+		return nil, engine.ReasonInvalidConfig, err
+	}
+	return sabnzbdclient.NewClient(hc, apiKey), "", nil
+}
+
+// pruneSabnzbd deletes the servers and categories the operator created that the
+// spec no longer declares.
+func pruneSabnzbd(ctx context.Context, sc *sabnzbdclient.Client, spec downloadsv1alpha1.SabnzbdConfigSpec, owned *engine.Ownership) []string {
+	current, err := sc.GetConfig(ctx)
+	if err != nil {
+		return []string{fmt.Sprintf("reading config to prune: %v", err)}
+	}
+	declared := map[string][]string{}
+	for _, s := range spec.Servers {
+		declared["servers"] = append(declared["servers"], s.Name)
+	}
+	for _, c := range spec.Categories {
+		declared["categories"] = append(declared["categories"], c.Name)
+	}
+	var problems []string
+	for _, section := range []string{"servers", "categories"} {
+		err := owned.Prune(section, declared[section], sabnzbdNames(current, section), func(name string) error {
+			return sc.DeleteNamed(ctx, section, name)
+		})
+		if err != nil {
+			problems = append(problems, fmt.Sprintf("%s(prune): %v", section, err))
+		}
+	}
+	return problems
+}
+
+// cleanup deletes the servers and categories the operator created, for
+// deletionPolicy delete.
+func (r *SabnzbdConfigReconciler) cleanup(ctx context.Context, config *downloadsv1alpha1.SabnzbdConfig) error {
+	sc, _, err := r.sabnzbdClient(ctx, config)
+	if err != nil {
+		return err
+	}
+	current, err := sc.GetConfig(ctx)
+	if err != nil {
+		return err
+	}
+	owned := engine.NewOwnership("sabnzbd", config.Status.ManagedResources)
+	for _, section := range []string{"servers", "categories"} {
+		err := owned.Cleanup(section, sabnzbdNames(current, section), func(name string) error {
+			return sc.DeleteNamed(ctx, section, name)
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func sabnzbdNames(current map[string]any, section string) []string {
+	entries, _ := current[section].([]any)
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		entry, _ := e.(map[string]any)
+		if name, _ := entry["name"].(string); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 // sabWrite is one set_config call the reconcile needs.
 type sabWrite struct {
 	section      string // misc, servers or categories
 	name         string // the misc keyword, or the server or category name
+	create       bool
 	values       map[string]string
 	resourceType string
 	secretKey    string
@@ -309,6 +389,7 @@ func planNamed(current map[string]any, section, name string, vals map[string]str
 		w.secretDigest = out.SecretDigest
 		return w, out.Changed || reconciler.SecretsDiffer(secretKey, out.SecretDigest, observe)
 	}
+	w.create = true
 	// A new entry reads back with its password masked; remember what is
 	// written now, or the next pass rewrites it once.
 	if password, ok := vals["password"]; ok {

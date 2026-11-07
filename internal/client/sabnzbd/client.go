@@ -107,3 +107,11 @@ func (c *Client) SetConfigMulti(ctx context.Context, section string, values map[
 	}
 	return nil
 }
+
+// DeleteNamed removes a server or category by name.
+func (c *Client) DeleteNamed(ctx context.Context, section, name string) error {
+	params := c.apiParams("del_config", "")
+	params.Set("section", section)
+	params.Set("keyword", name)
+	return c.write(ctx, params)
+}
