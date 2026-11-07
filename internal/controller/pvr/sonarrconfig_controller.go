@@ -96,6 +96,7 @@ func (r *SonarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		DownloadClients:    config.Spec.DownloadClients,
 		DCSecrets:          dcSecrets,
 		CategoryField:      "tvCategory",
+		ImportListFields:   pvrclient.ImportListFields{AutomaticAdd: "enableAutomaticAdd", Monitor: "shouldMonitor", MonitorAll: "all"},
 		QualityProfiles:    config.Spec.QualityProfiles,
 		CustomFormats:      config.Spec.CustomFormats,
 		Tags:               config.Spec.Tags,

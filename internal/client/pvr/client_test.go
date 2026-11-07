@@ -238,7 +238,7 @@ func TestBuildIndexerPayload(t *testing.T) {
 				Name: "NZBgeek", Protocol: "usenet", Implementation: "Newznab",
 			},
 			check: func(t *testing.T, p map[string]any) {
-				assert.Equal(t, true, p["enable"])
+				assert.NotContains(t, p, "enable", "indexers have no enable property; sending one is permanent drift")
 				assert.Equal(t, true, p["enableRss"])
 				assert.Equal(t, true, p["enableAutomaticSearch"])
 				assert.Equal(t, true, p["enableInteractiveSearch"])
@@ -259,12 +259,23 @@ func TestBuildIndexerPayload(t *testing.T) {
 				},
 			},
 			check: func(t *testing.T, p map[string]any) {
-				assert.Equal(t, false, p["enable"])
 				assert.Equal(t, false, p["enableRss"])
 				assert.Equal(t, "CustomContract", p["configContract"])
 				assert.Equal(t, 10, p["priority"])
 				tags := p["tags"].([]any)
 				assert.Len(t, tags, 1)
+			},
+		},
+		{
+			name: "enable false turns off every use",
+			idx: commonv1alpha1.Indexer{
+				Name: "Off", Protocol: "torrent", Implementation: "Torznab",
+				Enable: new(false), EnableRss: new(true), EnableAutomaticSearch: new(true), EnableInteractiveSearch: new(true),
+			},
+			check: func(t *testing.T, p map[string]any) {
+				assert.Equal(t, false, p["enableRss"])
+				assert.Equal(t, false, p["enableAutomaticSearch"])
+				assert.Equal(t, false, p["enableInteractiveSearch"])
 			},
 		},
 	}
@@ -317,18 +328,40 @@ func TestBuildNotificationPayload(t *testing.T) {
 }
 
 func TestBuildImportListPayload(t *testing.T) {
+	sonarr := ImportListFields{AutomaticAdd: "enableAutomaticAdd", Monitor: "shouldMonitor", MonitorAll: "all"}
+	radarr := ImportListFields{Enable: "enabled", AutomaticAdd: "enableAuto", Monitor: "monitor", MonitorAll: "movieOnly"}
 	tests := []struct {
-		name  string
-		il    commonv1alpha1.ImportList
-		qpIDs map[string]int
-		check func(t *testing.T, p map[string]any)
+		name    string
+		il      commonv1alpha1.ImportList
+		qpIDs   map[string]int
+		monitor ImportListFields
+		check   func(t *testing.T, p map[string]any)
 	}{
 		{
 			name: "minimal",
 			il:   commonv1alpha1.ImportList{Name: "Trakt", Implementation: "TraktListImport"},
 			check: func(t *testing.T, p map[string]any) {
-				assert.Equal(t, true, p["enable"])
+				assert.NotContains(t, p, "enable")
 				assert.Equal(t, "TraktListImportSettings", p["configContract"])
+			},
+		},
+		{
+			name:    "sonarr has no enable property",
+			il:      commonv1alpha1.ImportList{Name: "List", Implementation: "CustomImport", EnableAutomaticAdd: new(true)},
+			monitor: sonarr,
+			check: func(t *testing.T, p map[string]any) {
+				assert.NotContains(t, p, "enable", "Sonarr drops it, so it reads back missing and is rewritten forever")
+				assert.Equal(t, true, p["enableAutomaticAdd"])
+			},
+		},
+		{
+			name:    "radarr names enable and automatic add differently",
+			il:      commonv1alpha1.ImportList{Name: "List", Implementation: "RadarrListImport", Enable: new(false), EnableAutomaticAdd: new(true)},
+			monitor: radarr,
+			check: func(t *testing.T, p map[string]any) {
+				assert.Equal(t, false, p["enabled"])
+				assert.Equal(t, true, p["enableAuto"])
+				assert.NotContains(t, p, "enableAutomaticAdd")
 			},
 		},
 		{
@@ -338,12 +371,49 @@ func TestBuildImportListPayload(t *testing.T) {
 				QualityProfileName: "HD-1080p", RootFolderPath: "/tv",
 				Monitor: "all", ListOrder: new(1),
 			},
-			qpIDs: map[string]int{"HD-1080p": 5},
+			qpIDs:   map[string]int{"HD-1080p": 5},
+			monitor: sonarr,
 			check: func(t *testing.T, p map[string]any) {
 				assert.Equal(t, 5, p["qualityProfileId"])
 				assert.Equal(t, "/tv", p["rootFolderPath"])
-				assert.Equal(t, "all", p["monitor"])
+				assert.Equal(t, "all", p["shouldMonitor"], "Sonarr reads the monitor enum from shouldMonitor")
+				assert.NotContains(t, p, "monitor")
 				assert.Equal(t, 1, p["listOrder"])
+			},
+		},
+		{
+			name:    "radarr names the monitor enum monitor",
+			il:      commonv1alpha1.ImportList{Name: "List", Implementation: "RadarrListImport", Monitor: "movieAndCollection"},
+			monitor: radarr,
+			check: func(t *testing.T, p map[string]any) {
+				assert.Equal(t, "movieAndCollection", p["monitor"])
+				assert.NotContains(t, p, "shouldMonitor")
+			},
+		},
+		{
+			name:    "legacy shouldMonitor true monitors everything",
+			il:      commonv1alpha1.ImportList{Name: "List", Implementation: "CustomImport", ShouldMonitor: new(true)},
+			monitor: sonarr,
+			check: func(t *testing.T, p map[string]any) {
+				assert.Equal(t, "all", p["shouldMonitor"], "a bool is rejected by Sonarr 4")
+			},
+		},
+		{
+			name:    "legacy shouldMonitor false monitors nothing",
+			il:      commonv1alpha1.ImportList{Name: "List", Implementation: "RadarrListImport", ShouldMonitor: new(false)},
+			monitor: radarr,
+			check: func(t *testing.T, p map[string]any) {
+				assert.Equal(t, "none", p["monitor"])
+			},
+		},
+		{
+			name: "monitor wins over legacy shouldMonitor",
+			il: commonv1alpha1.ImportList{
+				Name: "List", Implementation: "CustomImport", Monitor: "future", ShouldMonitor: new(true),
+			},
+			monitor: sonarr,
+			check: func(t *testing.T, p map[string]any) {
+				assert.Equal(t, "future", p["shouldMonitor"])
 			},
 		},
 		{
@@ -365,7 +435,7 @@ func TestBuildImportListPayload(t *testing.T) {
 			if qpIDs == nil {
 				qpIDs = map[string]int{}
 			}
-			p := BuildImportListPayload(tt.il, qpIDs)
+			p := BuildImportListPayload(tt.il, qpIDs, tt.monitor)
 			tt.check(t, p)
 		})
 	}
@@ -609,6 +679,38 @@ func TestFindCutoffID(t *testing.T) {
 	}
 }
 
+func TestCompleteQualityItemsAddsUndeclaredQualitiesAsDisallowed(t *testing.T) {
+	definition := func(id int, name string) map[string]any {
+		return map[string]any{"quality": map[string]any{"id": float64(id), "name": name, "source": "web", "resolution": float64(1080)}}
+	}
+	definitions := []map[string]any{
+		definition(0, "Unknown"), definition(1, "SDTV"), definition(3, "WEBDL-1080p"),
+		definition(15, "WEBRip-1080p"), definition(7, "Bluray-1080p"),
+	}
+	declared := []commonv1alpha1.QualityProfileItem{
+		{Name: "WEB 1080p", Items: []commonv1alpha1.QualityProfileGroupItem{
+			{Quality: commonv1alpha1.QualityReference{ID: 3, Name: "WEBDL-1080p"}},
+			{Quality: commonv1alpha1.QualityReference{ID: 15, Name: "WEBRip-1080p"}},
+		}},
+		{Quality: &commonv1alpha1.QualityReference{ID: 7, Name: "Bluray-1080p"}},
+	}
+
+	items := CompleteQualityItems(BuildQualityItems(declared), declared, definitions)
+
+	require.Len(t, items, 4, "Unknown and SDTV are added; grouped and listed qualities are not repeated")
+	for i, name := range []string{"Unknown", "SDTV"} {
+		quality := items[i]["quality"].(map[string]any)
+		assert.Equal(t, name, quality["name"])
+		assert.Equal(t, false, items[i]["allowed"], "an undeclared quality must not become allowed")
+	}
+	assert.Equal(t, "WEB 1080p", items[2]["name"], "declared items keep their order after the added ones")
+	bluray := items[3]["quality"].(map[string]any)
+	assert.Equal(t, float64(7), bluray["id"], "Bluray-1080p stays last")
+	assert.Equal(t, "web", bluray["source"], "qualities carry the app's own keys, or every write strips them")
+	child := items[2]["items"].([]map[string]any)[0]["quality"].(map[string]any)
+	assert.Equal(t, float64(1080), child["resolution"], "grouped qualities are resolved too")
+}
+
 func TestBuildQualityItems(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -642,7 +744,8 @@ func TestBuildQualityItems(t *testing.T) {
 			},
 			check: func(t *testing.T, result []map[string]any) {
 				require.Len(t, result, 1)
-				assert.Nil(t, result[0]["quality"])
+				assert.NotContains(t, result[0], "quality", "the apps omit quality on a group; null reads back as a change")
+				assert.Equal(t, 1000, result[0]["id"], "the PVR apps treat an item without a group id as a single quality")
 				assert.Equal(t, "HD Group", result[0]["name"])
 				children := result[0]["items"].([]map[string]any)
 				require.Len(t, children, 1)

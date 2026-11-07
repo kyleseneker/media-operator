@@ -572,8 +572,9 @@ type ImportList struct {
 	ConfigContract string `json:"configContract,omitempty"`
 
 	// monitor controls how imported items are monitored.
-	// Values vary by app (Sonarr: all, future, missing, existing, firstSeason, latestSeason, pilot, none;
-	// Radarr: movieOnly, movieAndCollection, none).
+	// Values vary by app (Sonarr: all, future, missing, existing, firstSeason, lastSeason, latestSeason,
+	// pilot, recent, monitorSpecials, unmonitorSpecials, none; Radarr: movieOnly, movieAndCollection, none;
+	// Lidarr: entireArtist, specificAlbum, none; Readarr: entireAuthor, specificBook, none).
 	// +optional
 	Monitor string `json:"monitor,omitempty"`
 
@@ -586,7 +587,9 @@ type ImportList struct {
 	// +optional
 	RootFolderPath string `json:"rootFolderPath,omitempty"`
 
-	// shouldMonitor controls whether imported items are monitored (Sonarr).
+	// shouldMonitor is deprecated; use monitor. It predates the per-app values: true
+	// monitors everything (Sonarr all, Radarr movieOnly, Lidarr entireArtist, Readarr
+	// entireAuthor) and false monitors nothing. Ignored when monitor is set.
 	// +optional
 	ShouldMonitor *bool `json:"shouldMonitor,omitempty"`
 

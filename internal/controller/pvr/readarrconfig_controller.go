@@ -96,6 +96,7 @@ func (r *ReadarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		DownloadClients:    config.Spec.DownloadClients,
 		DCSecrets:          dcSecrets,
 		CategoryField:      "bookCategory",
+		ImportListFields:   pvrclient.ImportListFields{AutomaticAdd: "enableAutomaticAdd", Monitor: "shouldMonitor", MonitorAll: "entireAuthor"},
 		QualityProfiles:    config.Spec.QualityProfiles,
 		CustomFormats:      config.Spec.CustomFormats,
 		Tags:               config.Spec.Tags,

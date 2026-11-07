@@ -96,6 +96,7 @@ func (r *RadarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		DownloadClients:    config.Spec.DownloadClients,
 		DCSecrets:          dcSecrets,
 		CategoryField:      "movieCategory",
+		ImportListFields:   pvrclient.ImportListFields{Enable: "enabled", AutomaticAdd: "enableAuto", Monitor: "monitor", MonitorAll: "movieOnly"},
 		QualityProfiles:    config.Spec.QualityProfiles,
 		CustomFormats:      config.Spec.CustomFormats,
 		Tags:               config.Spec.Tags,

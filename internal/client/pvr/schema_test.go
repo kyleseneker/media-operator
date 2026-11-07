@@ -60,3 +60,19 @@ func TestValidateFieldNamesSkipsWhenSchemaUnknown(t *testing.T) {
 		t.Errorf("absent schema should skip validation, got: %v", err)
 	}
 }
+
+func TestSchemaConfigContractComesFromTheAppSchema(t *testing.T) {
+	schema := []map[string]any{
+		{"implementation": "CustomImport", "configContract": "CustomSettings"},
+		{"implementation": "TraktPopularImport", "configContract": "TraktPopularSettings"},
+	}
+	if got := SchemaConfigContract(schema, "customimport", ""); got != "CustomSettings" {
+		t.Errorf("got %q; the implementation+Settings guess is not what the app expects", got)
+	}
+	if got := SchemaConfigContract(schema, "CustomImport", "Declared"); got != "Declared" {
+		t.Errorf("a declared contract must win, got %q", got)
+	}
+	if got := SchemaConfigContract(nil, "CustomImport", ""); got != "" {
+		t.Errorf("an unreadable schema must leave the builder's fallback, got %q", got)
+	}
+}

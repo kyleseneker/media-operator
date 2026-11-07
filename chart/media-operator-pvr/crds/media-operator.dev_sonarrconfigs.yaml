@@ -436,8 +436,9 @@ spec:
                     monitor:
                       description: |-
                         monitor controls how imported items are monitored.
-                        Values vary by app (Sonarr: all, future, missing, existing, firstSeason, latestSeason, pilot, none;
-                        Radarr: movieOnly, movieAndCollection, none).
+                        Values vary by app (Sonarr: all, future, missing, existing, firstSeason, lastSeason, latestSeason,
+                        pilot, recent, monitorSpecials, unmonitorSpecials, none; Radarr: movieOnly, movieAndCollection, none;
+                        Lidarr: entireArtist, specificAlbum, none; Readarr: entireAuthor, specificBook, none).
                       type: string
                     name:
                       description: name is the display name of the import list.
@@ -464,8 +465,10 @@ spec:
                         (Sonarr: standard, daily, anime).'
                       type: string
                     shouldMonitor:
-                      description: shouldMonitor controls whether imported items are
-                        monitored (Sonarr).
+                      description: |-
+                        shouldMonitor is deprecated; use monitor. It predates the per-app values: true
+                        monitors everything (Sonarr all, Radarr movieOnly, Lidarr entireArtist, Readarr
+                        entireAuthor) and false monitors nothing. Ignored when monitor is set.
                       type: boolean
                     tagLabels:
                       description: |-

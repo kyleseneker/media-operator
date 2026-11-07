@@ -38,6 +38,25 @@ func SchemaFieldNames(schema []map[string]any, implementation string) (map[strin
 	return nil, false
 }
 
+// SchemaConfigContract keeps a declared contract, otherwise takes the one the
+// app's schema lists for the implementation. Contracts follow no single naming
+// rule (Sonarr's CustomImport takes CustomSettings), so a guessed name fails the
+// write. An empty result leaves the payload builders' guess in place.
+func SchemaConfigContract(schema []map[string]any, implementation, declared string) string {
+	if declared != "" {
+		return declared
+	}
+	for _, def := range schema {
+		impl, _ := def["implementation"].(string)
+		if !strings.EqualFold(impl, implementation) {
+			continue
+		}
+		contract, _ := def["configContract"].(string)
+		return contract
+	}
+	return ""
+}
+
 // ValidateFieldNames reports field names the implementation does not accept. These
 // apps store an unknown field and answer 2xx, so an unvalidated typo is inert
 // rather than an error.
@@ -98,23 +117,46 @@ func ValidateOptionFields(ctx context.Context, client *engine.HTTPClient, apiVer
 	}
 
 	if len(opts.DownloadClients) > 0 {
-		schema := FetchSchema(ctx, client, apiVersion, "downloadclient")
+		schema := opts.schema(ctx, client, apiVersion, "downloadclient")
 		for _, dc := range opts.DownloadClients {
 			check("downloadClient", dc.Name, dc.Implementation, dc.Fields, schema)
 		}
 	}
 	if len(opts.Indexers) > 0 {
-		schema := FetchSchema(ctx, client, apiVersion, "indexer")
+		schema := opts.schema(ctx, client, apiVersion, "indexer")
 		for _, idx := range opts.Indexers {
 			check("indexer", idx.Name, idx.Implementation, idx.Fields, schema)
 		}
 	}
 	if len(opts.Notifications) > 0 {
-		schema := FetchSchema(ctx, client, apiVersion, "notification")
+		schema := opts.schema(ctx, client, apiVersion, "notification")
 		for _, n := range opts.Notifications {
 			check("notification", n.Name, n.Implementation, n.Fields, schema)
 		}
 	}
+	if len(opts.ImportLists) > 0 {
+		schema := opts.schema(ctx, client, apiVersion, "importlist")
+		for _, il := range opts.ImportLists {
+			check("importList", il.Name, il.Implementation, il.Fields, schema)
+		}
+	}
 
 	return problems
+}
+
+// withSchemas reads each provider kind's schema once, so validation and every
+// reconcile stage share it.
+func withSchemas(ctx context.Context, client *engine.HTTPClient, apiVersion string, opts Options) Options {
+	opts.schemas = map[string][]map[string]any{}
+	for kind, used := range map[string]bool{
+		"downloadclient": len(opts.DownloadClients) > 0,
+		"indexer":        len(opts.Indexers) > 0,
+		"notification":   len(opts.Notifications) > 0,
+		"importlist":     len(opts.ImportLists) > 0,
+	} {
+		if used {
+			opts.schemas[kind] = FetchSchema(ctx, client, apiVersion, kind)
+		}
+	}
+	return opts
 }

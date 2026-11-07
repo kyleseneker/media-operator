@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
@@ -84,12 +85,24 @@ type Options struct {
 	DownloadClients    []commonv1alpha1.DownloadClient
 	DCSecrets          map[string]DownloadClientResolvedSecrets
 	CategoryField      string
+	ImportListFields   ImportListFields
 	QualityProfiles    []commonv1alpha1.QualityProfile
 	CustomFormats      []commonv1alpha1.CustomFormat
 	Tags               []commonv1alpha1.Tag
 	Indexers           []commonv1alpha1.Indexer
 	Notifications      []commonv1alpha1.Notification
 	ImportLists        []commonv1alpha1.ImportList
+
+	// schemas caches each provider kind's /schema listing for one reconcile.
+	schemas map[string][]map[string]any
+}
+
+// schema returns the cached listing for a provider kind, reading it when absent.
+func (o Options) schema(ctx context.Context, client *engine.HTTPClient, apiVersion, kind string) []map[string]any {
+	if s, ok := o.schemas[kind]; ok {
+		return s
+	}
+	return FetchSchema(ctx, client, apiVersion, kind)
 }
 
 // Resources builds the resources map from the options.
@@ -129,6 +142,7 @@ func Resources(ctx context.Context, client *engine.HTTPClient, apiVersion string
 	}
 
 	if len(opts.DownloadClients) > 0 {
+		schema := opts.schema(ctx, client, apiVersion, "downloadclient")
 		dcs := make([]map[string]any, 0, len(opts.DownloadClients))
 		for _, dc := range opts.DownloadClients {
 			resolvedTags, err := tagIDs.ResolveTags(dc.TagLabels, dc.Tags)
@@ -136,6 +150,7 @@ func Resources(ctx context.Context, client *engine.HTTPClient, apiVersion string
 				return nil, fmt.Errorf("downloadClients(%s): %w", dc.Name, err)
 			}
 			dc.Tags = resolvedTags
+			dc.ConfigContract = SchemaConfigContract(schema, dc.Implementation, dc.ConfigContract)
 			secrets := opts.DCSecrets[dc.Name]
 			dcs = append(dcs, BuildDownloadClientPayload(dc, secrets, opts.CategoryField))
 		}
@@ -143,6 +158,7 @@ func Resources(ctx context.Context, client *engine.HTTPClient, apiVersion string
 	}
 
 	if len(opts.Indexers) > 0 {
+		schema := opts.schema(ctx, client, apiVersion, "indexer")
 		idxs := make([]map[string]any, 0, len(opts.Indexers))
 		for _, idx := range opts.Indexers {
 			resolvedTags, err := tagIDs.ResolveTags(idx.TagLabels, idx.Tags)
@@ -150,6 +166,7 @@ func Resources(ctx context.Context, client *engine.HTTPClient, apiVersion string
 				return nil, fmt.Errorf("indexers(%s): %w", idx.Name, err)
 			}
 			idx.Tags = resolvedTags
+			idx.ConfigContract = SchemaConfigContract(schema, idx.Implementation, idx.ConfigContract)
 			idxs = append(idxs, BuildIndexerPayload(idx))
 		}
 		resources["indexers"] = idxs
@@ -172,6 +189,7 @@ func Resources(ctx context.Context, client *engine.HTTPClient, apiVersion string
 	}
 
 	if len(opts.Notifications) > 0 {
+		schema := opts.schema(ctx, client, apiVersion, "notification")
 		var notifs []map[string]any
 		for _, n := range opts.Notifications {
 			resolvedTags, err := tagIDs.ResolveTags(n.TagLabels, n.Tags)
@@ -179,6 +197,7 @@ func Resources(ctx context.Context, client *engine.HTTPClient, apiVersion string
 				return nil, fmt.Errorf("notifications(%s): %w", n.Name, err)
 			}
 			n.Tags = resolvedTags
+			n.ConfigContract = SchemaConfigContract(schema, n.Implementation, n.ConfigContract)
 			notifs = append(notifs, BuildNotificationPayload(n))
 		}
 		resources["notifications"] = notifs
@@ -190,6 +209,7 @@ func Resources(ctx context.Context, client *engine.HTTPClient, apiVersion string
 		if err != nil {
 			return nil, err
 		}
+		schema := opts.schema(ctx, client, apiVersion, "importlist")
 		var ils []map[string]any
 		for _, il := range opts.ImportLists {
 			resolvedTags, err := tagIDs.ResolveTags(il.TagLabels, il.Tags)
@@ -197,6 +217,7 @@ func Resources(ctx context.Context, client *engine.HTTPClient, apiVersion string
 				return nil, fmt.Errorf("importLists(%s): %w", il.Name, err)
 			}
 			il.Tags = resolvedTags
+			il.ConfigContract = SchemaConfigContract(schema, il.Implementation, il.ConfigContract)
 			qpIDs := map[string]int{}
 			if il.QualityProfileName != "" {
 				id, err := profiles.Resolve(il.QualityProfileName)
@@ -205,7 +226,7 @@ func Resources(ctx context.Context, client *engine.HTTPClient, apiVersion string
 				}
 				qpIDs[il.QualityProfileName] = id
 			}
-			ils = append(ils, BuildImportListPayload(il, qpIDs))
+			ils = append(ils, BuildImportListPayload(il, qpIDs, opts.ImportListFields))
 		}
 		resources["importLists"] = ils
 	}
@@ -304,10 +325,12 @@ func BuildDownloadClientPayload(dc commonv1alpha1.DownloadClient, secrets Downlo
 
 // BuildIndexerPayload builds the API payload for an indexer.
 func BuildIndexerPayload(idx commonv1alpha1.Indexer) map[string]any {
+	// The apps have no on/off switch for an indexer, only the three uses of it,
+	// so enable gates those instead of being sent and dropped as drift.
 	enable := idx.Enable == nil || *idx.Enable
-	enableRss := idx.EnableRss == nil || *idx.EnableRss
-	enableAutoSearch := idx.EnableAutomaticSearch == nil || *idx.EnableAutomaticSearch
-	enableInteractive := idx.EnableInteractiveSearch == nil || *idx.EnableInteractiveSearch
+	enableRss := enable && (idx.EnableRss == nil || *idx.EnableRss)
+	enableAutoSearch := enable && (idx.EnableAutomaticSearch == nil || *idx.EnableAutomaticSearch)
+	enableInteractive := enable && (idx.EnableInteractiveSearch == nil || *idx.EnableInteractiveSearch)
 
 	configContract := idx.Implementation + "Settings"
 	if idx.ConfigContract != "" {
@@ -319,7 +342,6 @@ func BuildIndexerPayload(idx commonv1alpha1.Indexer) map[string]any {
 
 	payload := map[string]any{
 		"name":                    idx.Name,
-		"enable":                  enable,
 		"protocol":                idx.Protocol,
 		"implementation":          idx.Implementation,
 		"configContract":          configContract,
@@ -379,9 +401,23 @@ func BuildNotificationPayload(n commonv1alpha1.Notification) map[string]any {
 	return payload
 }
 
+// ImportListFields names an app's import list properties, which the PVR apps
+// spell differently. An empty name means the app has no such property, so it is
+// not sent: a property the app drops reads back missing and is rewritten forever.
+type ImportListFields struct {
+	// Enable switches the list on (Radarr: enabled).
+	Enable string
+	// AutomaticAdd adds found items without review (Radarr: enableAuto).
+	AutomaticAdd string
+	// Monitor takes the app's monitor enum (Radarr: monitor; others: shouldMonitor).
+	Monitor string
+	// MonitorAll is the value the legacy shouldMonitor: true stands for.
+	MonitorAll string
+}
+
 // BuildImportListPayload builds the API payload for an import list.
 // qpIDs maps quality profile names to their IDs.
-func BuildImportListPayload(il commonv1alpha1.ImportList, qpIDs map[string]int) map[string]any {
+func BuildImportListPayload(il commonv1alpha1.ImportList, qpIDs map[string]int, names ImportListFields) map[string]any {
 	enable := il.Enable == nil || *il.Enable
 
 	configContract := il.Implementation + "Settings"
@@ -394,20 +430,23 @@ func BuildImportListPayload(il commonv1alpha1.ImportList, qpIDs map[string]int) 
 
 	payload := map[string]any{
 		"name":           il.Name,
-		"enable":         enable,
 		"implementation": il.Implementation,
 		"configContract": configContract,
 		"fields":         fields,
 		"tags":           tags,
 	}
 
-	SetOptionalBool(payload, "enableAutomaticAdd", il.EnableAutomaticAdd)
-	SetOptionalBool(payload, "shouldMonitor", il.ShouldMonitor)
+	if names.Enable != "" {
+		payload[names.Enable] = enable
+	}
+	if names.AutomaticAdd != "" {
+		SetOptionalBool(payload, names.AutomaticAdd, il.EnableAutomaticAdd)
+	}
 	SetOptionalBool(payload, "seasonFolder", il.SeasonFolder)
 	SetOptionalBool(payload, "searchOnAdd", il.SearchOnAdd)
 
-	if il.Monitor != "" {
-		payload["monitor"] = il.Monitor
+	if value := importListMonitorValue(il, names); value != "" && names.Monitor != "" {
+		payload[names.Monitor] = value
 	}
 	if il.RootFolderPath != "" {
 		payload["rootFolderPath"] = il.RootFolderPath
@@ -430,6 +469,21 @@ func BuildImportListPayload(il commonv1alpha1.ImportList, qpIDs map[string]int) 
 	}
 
 	return payload
+}
+
+// importListMonitorValue prefers monitor; the deprecated shouldMonitor bool
+// predates the enum and translates to monitoring everything or nothing.
+func importListMonitorValue(il commonv1alpha1.ImportList, names ImportListFields) string {
+	switch {
+	case il.Monitor != "":
+		return il.Monitor
+	case il.ShouldMonitor == nil:
+		return ""
+	case *il.ShouldMonitor:
+		return names.MonitorAll
+	default:
+		return "none"
+	}
 }
 
 // BuildFieldsPayload converts ConfigField slice to API fields format.
@@ -573,9 +627,11 @@ func BuildQualityItems(items []commonv1alpha1.QualityProfileItem) []map[string]a
 			}
 			m["items"] = []any{}
 		} else {
-			// Quality group
+			// Quality group. The PVR apps treat an item without a positive id as a
+			// single quality, so a group must carry its 1000+index id; FindCutoffID
+			// resolves a group cutoff to the same id.
+			m["id"] = 1000 + i
 			m["name"] = item.Name
-			m["quality"] = nil
 			children := make([]map[string]any, len(item.Items))
 			for j, child := range item.Items {
 				childAllowed := child.Allowed == nil || *child.Allowed
@@ -629,6 +685,7 @@ func Reconcile(ctx context.Context, client *engine.HTTPClient, apiVersion string
 	// quality profiles by ID. Those IDs only exist once the referenced resources
 	// have been written, so each dependent stage resolves after the prior apply
 	// rather than all at once up front.
+	opts = withSchemas(ctx, client, apiVersion, opts)
 	fieldProblems := ValidateOptionFields(ctx, client, apiVersion, opts)
 
 	result := engine.ReconcileResult{Managed: managed}
@@ -660,7 +717,7 @@ func Reconcile(ctx context.Context, client *engine.HTTPClient, apiVersion string
 	}
 
 	if len(opts.ImportLists) > 0 {
-		stage := Options{ImportLists: opts.ImportLists}
+		stage := Options{ImportLists: opts.ImportLists, ImportListFields: opts.ImportListFields, schemas: opts.schemas}
 		ilRes, ierr := Resources(ctx, client, apiVersion, stage)
 		if ierr != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("importLists: %v", ierr))
@@ -709,6 +766,10 @@ func qualityProfileResources(ctx context.Context, client *engine.HTTPClient, api
 	if err != nil {
 		return nil, err
 	}
+	definitions, err := client.GetJSONList(ctx, fmt.Sprintf("/api/%s/qualitydefinition", apiVersion))
+	if err != nil {
+		return nil, err
+	}
 	var qps []map[string]any
 	for _, qp := range profiles {
 		cfIDs := map[string]int{}
@@ -719,9 +780,71 @@ func qualityProfileResources(ctx context.Context, client *engine.HTTPClient, api
 			}
 			cfIDs[format.Name] = id
 		}
-		qps = append(qps, BuildQualityProfilePayload(qp, cfIDs))
+		payload := BuildQualityProfilePayload(qp, cfIDs)
+		if items, ok := payload["items"].([]map[string]any); ok {
+			payload["items"] = CompleteQualityItems(items, qp.Items, definitions)
+		}
+		qps = append(qps, payload)
 	}
 	return qps, nil
+}
+
+// CompleteQualityItems sends each quality as the app defines it, and adds every
+// quality the profile does not mention as a disallowed item ahead of the
+// declared ones. The PVR apps reject a profile that omits any quality, and read
+// qualities back with app-specific keys (source, resolution, modifier) that a
+// bare id and name would strip on every write.
+func CompleteQualityItems(items []map[string]any, declared []commonv1alpha1.QualityProfileItem, definitions []map[string]any) []map[string]any {
+	byID := map[int]map[string]any{}
+	var order []int
+	for _, definition := range definitions {
+		quality, _ := definition["quality"].(map[string]any)
+		raw, ok := quality["id"].(float64)
+		if !ok {
+			continue
+		}
+		byID[int(raw)] = quality
+		order = append(order, int(raw))
+	}
+	var resolve func(item map[string]any)
+	resolve = func(item map[string]any) {
+		if quality, ok := item["quality"].(map[string]any); ok {
+			if id, ok := quality["id"].(int); ok && byID[id] != nil {
+				item["quality"] = maps.Clone(byID[id])
+			}
+		}
+		if children, ok := item["items"].([]map[string]any); ok {
+			for _, child := range children {
+				resolve(child)
+			}
+		}
+	}
+	for _, item := range items {
+		resolve(item)
+	}
+
+	mentioned := map[int]bool{}
+	for _, item := range declared {
+		if item.Quality != nil {
+			mentioned[item.Quality.ID] = true
+		}
+		for _, child := range item.Items {
+			mentioned[child.Quality.ID] = true
+		}
+	}
+	var missing []map[string]any
+	for _, id := range order {
+		if mentioned[id] {
+			continue
+		}
+		mentioned[id] = true
+		missing = append(missing, map[string]any{
+			"quality": maps.Clone(byID[id]),
+			"items":   []any{},
+			"allowed": false,
+		})
+	}
+	return append(missing, items...)
 }
 
 func remotePathMappingResources(mappings []commonv1alpha1.RemotePathMapping) ([]map[string]any, error) {
