@@ -43,10 +43,11 @@ type SabnzbdGeneral struct {
 	PauseOnPostProcessing *bool `json:"pauseOnPostProcessing,omitempty"`
 
 	// scriptDir is the path to the scripts directory.
+	// Deprecated: use folders.scriptDir, which takes precedence when both are set.
 	// +optional
 	ScriptDir string `json:"scriptDir,omitempty"`
 
-	// autoSort enables automatic sorting of downloads.
+	// autoSort sorts the queue by age whenever an NZB is added.
 	// +optional
 	AutoSort *bool `json:"autoSort,omitempty"`
 

@@ -366,3 +366,24 @@ func TestSabnzbdObserveReportsWhatPruneWouldDelete(t *testing.T) {
 	assert.Equal(t, before+1, testutil.ToFloat64(observed))
 	assert.Equal(t, []string{"observe-old"}, managed["servers"])
 }
+
+// Since SABnzbd 4, auto_sort holds a field and direction; the old "1" sorted nothing.
+func TestSabnzbdAutoSortWritesASortOrder(t *testing.T) {
+	assert.Equal(t, sabnzbdAgeSort, buildSabnzbdGeneralValues(&downloadsv1alpha1.SabnzbdGeneral{AutoSort: new(true)})["auto_sort"])
+	assert.Empty(t, buildSabnzbdGeneralValues(&downloadsv1alpha1.SabnzbdGeneral{AutoSort: new(false)})["auto_sort"])
+
+	spec := downloadsv1alpha1.SabnzbdConfigSpec{General: &downloadsv1alpha1.SabnzbdGeneral{AutoSort: new(true)}}
+	assert.Empty(t, planSabnzbd(map[string]any{"misc": map[string]any{"auto_sort": "avg_age asc"}}, spec, nil, "sort"))
+	assert.Len(t, planSabnzbd(map[string]any{"misc": map[string]any{"auto_sort": "1"}}, spec, nil, "sort"), 1,
+		"the value earlier versions wrote must be corrected")
+}
+
+func TestSabnzbdFolderScriptDirWinsOverTheDeprecatedGeneralOne(t *testing.T) {
+	spec := downloadsv1alpha1.SabnzbdConfigSpec{
+		General: &downloadsv1alpha1.SabnzbdGeneral{ScriptDir: "/general"},
+		Folders: &downloadsv1alpha1.SabnzbdFolders{ScriptDir: "/folders"},
+	}
+	writes := planSabnzbd(map[string]any{"misc": map[string]any{}}, spec, nil, "dirs")
+	require.Len(t, writes, 1)
+	assert.Equal(t, "/folders", writes[0].values["value"])
+}

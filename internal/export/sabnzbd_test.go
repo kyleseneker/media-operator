@@ -21,7 +21,7 @@ func TestSabnzbdExportsMiscServersAndCategories(t *testing.T) {
 		}
 		_, _ = w.Write([]byte(`{"config":{
 			"misc":{"complete_dir":"/done","download_dir":"/incomplete","tmp_dir":"","script_dir":"/scripts",
-				"bandwidth_max":"50M","pre_check":1,"pause_on_post_processing":false,"auto_sort":true},
+				"bandwidth_max":"50M","pre_check":1,"pause_on_post_processing":false,"auto_sort":"avg_age asc"},
 			"servers":[{"name":"Primary","host":"news","port":563,"ssl":1,"connections":20,"priority":0,"retention":3000,
 				"enable":1,"username":"me","password":"**********"}],
 			"categories":[{"name":"*","dir":"","script":"None","priority":0},{"name":"tv","dir":"tv","script":"","priority":-100}]}}`))

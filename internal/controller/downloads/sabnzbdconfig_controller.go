@@ -139,6 +139,10 @@ func buildSabnzbdFolderValues(f *downloadsv1alpha1.SabnzbdFolders) map[string]st
 	return vals
 }
 
+// sabnzbdAgeSort is the queue order SABnzbd 4 and later use for the old
+// auto_sort on setting; auto_sort now holds a field and a direction.
+const sabnzbdAgeSort = "avg_age asc"
+
 func buildSabnzbdGeneralValues(g *downloadsv1alpha1.SabnzbdGeneral) map[string]string {
 	vals := make(map[string]string)
 	if g.DownloadSpeedLimit != "" {
@@ -151,7 +155,10 @@ func buildSabnzbdGeneralValues(g *downloadsv1alpha1.SabnzbdGeneral) map[string]s
 		vals["pause_on_post_processing"] = ctrlcommon.BoolTo01(*g.PauseOnPostProcessing)
 	}
 	if g.AutoSort != nil {
-		vals["auto_sort"] = ctrlcommon.BoolTo01(*g.AutoSort)
+		vals["auto_sort"] = ""
+		if *g.AutoSort {
+			vals["auto_sort"] = sabnzbdAgeSort
+		}
 	}
 	if g.ScriptDir != "" {
 		vals["script_dir"] = g.ScriptDir
@@ -335,11 +342,11 @@ func planSabnzbd(
 	observe := ctrlcommon.ObserveOnly(spec.Reconcile)
 
 	misc := map[string]string{}
-	if spec.Folders != nil {
-		maps.Copy(misc, buildSabnzbdFolderValues(spec.Folders))
-	}
 	if spec.General != nil {
 		maps.Copy(misc, buildSabnzbdGeneralValues(spec.General))
+	}
+	if spec.Folders != nil {
+		maps.Copy(misc, buildSabnzbdFolderValues(spec.Folders))
 	}
 	currentMisc, _ := current["misc"].(map[string]any)
 	for _, key := range slices.Sorted(maps.Keys(misc)) {

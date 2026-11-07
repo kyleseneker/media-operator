@@ -14,7 +14,7 @@ var sabnzbdFolders = map[string]string{
 }
 
 var sabnzbdSwitches = map[string]string{
-	"preCheck": "pre_check", "pauseOnPostProcessing": "pause_on_post_processing", "autoSort": "auto_sort",
+	"preCheck": "pre_check", "pauseOnPostProcessing": "pause_on_post_processing",
 }
 
 func exportSabnzbd(r *reader) (map[string]any, error) {
@@ -43,6 +43,14 @@ func exportSabnzbd(r *reader) (map[string]any, error) {
 		if v, ok := misc[key]; ok {
 			general[field] = sabSwitch(v)
 		}
+	}
+	switch sort := sabText(misc["auto_sort"]); sort {
+	case "", "0":
+		general["autoSort"] = false
+	case "1", "avg_age asc":
+		general["autoSort"] = true
+	default:
+		r.warn("SabnzbdConfig can't express the queue sort %q; autoSort is left out", sort)
 	}
 	if len(general) > 0 {
 		spec["general"] = general

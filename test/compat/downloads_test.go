@@ -66,6 +66,7 @@ func TestSabnzbd(t *testing.T) {
 			cfg := sabnzbdConfigOf(t, sab.url(), key)
 			assert.Equal(t, "/downloads/complete", cfg.Misc["complete_dir"])
 			assert.Equal(t, "50M", cfg.Misc["bandwidth_max"])
+			assert.Equal(t, "avg_age asc", cfg.Misc["auto_sort"], "autoSort did not set a sort order SABnzbd uses")
 			require.Len(t, cfg.Servers, 1)
 			assert.Equal(t, "news.example.com", cfg.Servers[0]["host"])
 			names := make([]any, 0, len(cfg.Categories))
