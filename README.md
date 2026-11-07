@@ -125,18 +125,23 @@ doesn't matter, the operator just reads them and re-reconciles when they change.
 - **Self-signed certs work.** `connection.tls.caSecretRef` for a private CA, or
   `insecureSkipVerify` if you don't care.
 
-`spec.reconcile.driftPolicy: observe` supports Sonarr, Radarr, Lidarr, Readarr,
-Prowlarr, qBittorrent, SABnzbd, Bazarr, Jellyfin, and FlareSolverr. It reads configuration without
-changing it; qBittorrent and Jellyfin may authenticate to read protected settings.
-A fresh Jellyfin is reported as needing initialization without running its wizard.
-Create-only resources are compared by existence. Masked credentials cannot be
-verified by reading the application.
+Every operator supports `spec.reconcile.driftPolicy: observe`. It reads the app's
+configuration, compares it with the CR and changes nothing. Differences set
+`Synced=False` with reason `DriftDetected` and increment
+`media_operator_drift_observed_total` rather than
+`media_operator_drift_corrected_total`; a match sets reason `Observed`. Some
+things can't be compared by reading:
 
-Other integrations reject `observe` with `InvalidConfig` before making application
-requests. They require `enforce` (the default) until read-only comparison is
-implemented. Observe-mode differences increment `media_operator_drift_observed_total`,
-not `media_operator_drift_corrected_total`. qBittorrent, SABnzbd, Bazarr, Jellyfin, and
-FlareSolverr report `Synced=False` with reason `DriftDetected` when differences remain.
+- qBittorrent, Jellyfin and Seerr sign in to read protected settings, which
+  changes nothing.
+- A fresh Jellyfin or Seerr is reported as needing setup; observe doesn't run it.
+  A fresh Maintainerr reports rule groups as differing until the media server
+  and the Sonarr and Radarr servers they use exist.
+- Create-only resources (root folders, Jellyfin and Plex libraries) are compared
+  by existence.
+- Masked credentials can't be read back, so one counts as differing only after
+  the operator has written it and its Secret has changed since. Plex preferences
+  that Plex never lists aren't compared at all.
 
 When upgrading, existing `status.managedResources` records are retained. Older
 versions also recorded matching pre-existing resources as managed; the operator
