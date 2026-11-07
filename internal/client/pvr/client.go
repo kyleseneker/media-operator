@@ -13,6 +13,35 @@ import (
 	"github.com/kyleseneker/media-operator/internal/metrics"
 )
 
+// App holds what differs between Sonarr, Radarr, Lidarr and Readarr.
+type App struct {
+	Name             string
+	Kind             string
+	APIVersion       string
+	CategoryField    string
+	ImportListFields ImportListFields
+	MetadataProfiles bool
+}
+
+var (
+	Sonarr = App{
+		Name: "sonarr", Kind: "SonarrConfig", APIVersion: "v3", CategoryField: "tvCategory",
+		ImportListFields: ImportListFields{AutomaticAdd: "enableAutomaticAdd", Monitor: "shouldMonitor", MonitorAll: "all"},
+	}
+	Radarr = App{
+		Name: "radarr", Kind: "RadarrConfig", APIVersion: "v3", CategoryField: "movieCategory",
+		ImportListFields: ImportListFields{Enable: "enabled", AutomaticAdd: "enableAuto", Monitor: "monitor", MonitorAll: "movieOnly"},
+	}
+	Lidarr = App{
+		Name: "lidarr", Kind: "LidarrConfig", APIVersion: "v1", CategoryField: "musicCategory", MetadataProfiles: true,
+		ImportListFields: ImportListFields{AutomaticAdd: "enableAutomaticAdd", Monitor: "shouldMonitor", MonitorAll: "entireArtist"},
+	}
+	Readarr = App{
+		Name: "readarr", Kind: "ReadarrConfig", APIVersion: "v1", CategoryField: "bookCategory", MetadataProfiles: true,
+		ImportListFields: ImportListFields{AutomaticAdd: "enableAutomaticAdd", Monitor: "shouldMonitor", MonitorAll: "entireAuthor"},
+	}
+)
+
 // Definition returns the AppDefinition for Sonarr, Radarr, Lidarr or Readarr.
 // apiVersion is "v3" for Sonarr/Radarr, "v1" for Lidarr/Readarr.
 func Definition(apiVersion string) engine.AppDefinition {

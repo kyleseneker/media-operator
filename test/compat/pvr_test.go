@@ -29,6 +29,7 @@ func TestSonarr(t *testing.T) {
 
 	checkCompat(t, compatCase{
 		fixture: "sonarr.yaml",
+		export:  "sonarr",
 		vars: map[string]string{
 			"URL": proxy.url(), "HOST": hostIP, "FAKES": fakes,
 			"QBITTORRENT_PORT": strconv.Itoa(qbit.port),
@@ -69,6 +70,7 @@ func TestRadarr(t *testing.T) {
 
 	checkCompat(t, compatCase{
 		fixture: "radarr.yaml",
+		export:  "radarr",
 		vars: map[string]string{
 			"URL": proxy.url(), "HOST": hostIP, "FAKES": fakes,
 			"QBITTORRENT_PORT": strconv.Itoa(qbit.port), "RADARR_LIST": "RadarrListImport",
@@ -110,6 +112,7 @@ func TestLidarr(t *testing.T) {
 
 	checkCompat(t, compatCase{
 		fixture: "lidarr.yaml",
+		export:  "lidarr",
 		vars: map[string]string{
 			"URL": proxy.url(), "HOST": hostIP, "FAKES": fakes, "QBITTORRENT_PORT": strconv.Itoa(qbit.port),
 		},
@@ -146,6 +149,7 @@ func TestReadarr(t *testing.T) {
 
 	checkCompat(t, compatCase{
 		fixture: "readarr.yaml",
+		export:  "readarr",
 		vars:    map[string]string{"URL": proxy.url(), "HOST": hostIP, "FAKES": fakes},
 		secrets: map[string]string{"api-key": key},
 		newObj:  func() ctrlcommon.ConfigResource { return &pvrv1alpha1.ReadarrConfig{} },

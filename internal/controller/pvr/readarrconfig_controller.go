@@ -33,14 +33,11 @@ func (r *ReadarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 	s := config.Spec
 	return reconcilePVR(ctx, r.Client, r.Recorder, pvrConfig{
-		app: "readarr", apiVersion: "v1", obj: &config, spec: s, connection: s.Connection, policy: s.Reconcile,
+		app: pvrclient.Readarr, obj: &config, spec: s, connection: s.Connection, policy: s.Reconcile,
 		options: pvrclient.Options{
 			RootFolders:        s.RootFolders,
 			RemotePathMappings: s.RemotePathMappings,
 			DownloadClients:    s.DownloadClients,
-			CategoryField:      "bookCategory",
-			ImportListFields:   pvrclient.ImportListFields{AutomaticAdd: "enableAutomaticAdd", Monitor: "shouldMonitor", MonitorAll: "entireAuthor"},
-			MetadataProfiles:   true,
 			QualityProfiles:    s.QualityProfiles,
 			CustomFormats:      s.CustomFormats,
 			Tags:               s.Tags,

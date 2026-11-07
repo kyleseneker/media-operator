@@ -359,39 +359,44 @@ var secretKeyRefType = reflect.TypeFor[commonv1alpha1.SecretKeyRef]()
 // config finds new ones as fields are added rather than relying on a list kept
 // by hand.
 func ReferencesSecret(config any, name string) bool {
-	return referencesSecret(reflect.ValueOf(config), name)
+	return slices.ContainsFunc(SecretKeyRefs(config), func(ref commonv1alpha1.SecretKeyRef) bool { return ref.Name == name })
 }
 
-func referencesSecret(v reflect.Value, name string) bool {
+// SecretKeyRefs lists every SecretKeyRef in a config.
+func SecretKeyRefs(config any) []commonv1alpha1.SecretKeyRef {
+	var refs []commonv1alpha1.SecretKeyRef
+	collectSecretKeyRefs(reflect.ValueOf(config), &refs)
+	return refs
+}
+
+func collectSecretKeyRefs(v reflect.Value, refs *[]commonv1alpha1.SecretKeyRef) {
 	switch v.Kind() {
 	case reflect.Pointer, reflect.Interface:
-		return !v.IsNil() && referencesSecret(v.Elem(), name)
+		if !v.IsNil() {
+			collectSecretKeyRefs(v.Elem(), refs)
+		}
 	case reflect.Struct:
 		if v.Type() == secretKeyRefType {
-			return v.FieldByName("Name").String() == name
+			*refs = append(*refs, v.Interface().(commonv1alpha1.SecretKeyRef))
+			return
 		}
 		for i := range v.NumField() {
-			if v.Type().Field(i).IsExported() && referencesSecret(v.Field(i), name) {
-				return true
+			if v.Type().Field(i).IsExported() {
+				collectSecretKeyRefs(v.Field(i), refs)
 			}
 		}
 	case reflect.Slice, reflect.Array:
 		if v.Type().Elem().Kind() == reflect.Uint8 {
-			return false // raw JSON
+			return
 		}
 		for i := range v.Len() {
-			if referencesSecret(v.Index(i), name) {
-				return true
-			}
+			collectSecretKeyRefs(v.Index(i), refs)
 		}
 	case reflect.Map:
 		for it := v.MapRange(); it.Next(); {
-			if referencesSecret(it.Value(), name) {
-				return true
-			}
+			collectSecretKeyRefs(it.Value(), refs)
 		}
 	}
-	return false
 }
 
 // EmitPruneEvents emits a Warning event for each resource the operator deleted

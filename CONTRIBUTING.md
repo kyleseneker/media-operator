@@ -15,7 +15,7 @@ running.
 
 ```bash
 BINARY=pvr make run          # run one operator against your current kube context
-make build                   # all nine binaries
+make build                   # every operator and the CLI
 make test
 make manifests generate      # after editing anything in api/
 make sync-crds               # copy generated CRDs into the charts

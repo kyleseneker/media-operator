@@ -135,11 +135,11 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 
 ##@ Build
 
-BINARIES = pvr indexers subtitles curation downloads mediaservers requests transcode automation
+BINARIES = pvr indexers subtitles curation downloads mediaservers requests transcode automation cli
 BINARY ?= pvr
 
 .PHONY: build
-build: manifests generate fmt vet ## Build all manager binaries.
+build: manifests generate fmt vet ## Build every binary.
 	$(foreach bin,$(BINARIES),go build -o bin/media-operator-$(bin) ./cmd/$(bin)/;)
 
 .PHONY: run

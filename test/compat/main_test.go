@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/yaml"
 
@@ -46,6 +47,7 @@ import (
 	transcodev1alpha1 "github.com/kyleseneker/media-operator/api/transcode/v1alpha1"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/engine"
+	"github.com/kyleseneker/media-operator/internal/export"
 )
 
 var (
@@ -130,6 +132,9 @@ type compatCase struct {
 	observe bool
 	// verify reads the application directly after the first reconcile.
 	verify func(t *testing.T)
+	// export names the app for media-operator export, whose output must then
+	// describe the application exactly: observe mode finds nothing different.
+	export string
 }
 
 func checkCompat(t *testing.T, tc compatCase) {
@@ -180,6 +185,39 @@ func checkCompat(t *testing.T, tc compatCase) {
 	requireSynced(t, reconcileUntilCurrent(t, r, key, tc.newObj), "observe reconcile")
 	writes = tc.proxy.writes(read)
 	assert.Empty(t, writes, "observe mode wrote to the application:\n%s", formatRequests(writes))
+
+	if tc.export != "" {
+		checkExport(t, tc, r, ns.Name, read)
+	}
+}
+
+func checkExport(t *testing.T, tc compatCase, r reconcile.Reconciler, namespace string, read isRead) {
+	t.Helper()
+	ctx := context.Background()
+	res, err := export.Run(ctx, export.Options{
+		App: tc.export, URL: tc.proxy.url(), APIKey: tc.secrets["api-key"], Name: "exported", Namespace: namespace,
+	})
+	require.NoError(t, err, "exporting %s", tc.export)
+	out, err := res.YAML()
+	require.NoError(t, err)
+	for _, key := range res.Unfilled {
+		res.Secret.StringData[key] = "unreadable"
+	}
+	require.NoError(t, k8s.Create(ctx, res.Secret), "creating the exported Secret")
+	obj, ok := res.Config.(ctrlcommon.ConfigResource)
+	require.True(t, ok)
+	require.NoError(t, k8s.Create(ctx, obj), "creating the exported config:\n%s", out)
+	patch := client.RawPatch(types.MergePatchType, []byte(`{"spec":{"reconcile":{"driftPolicy":"observe"}}}`))
+	require.NoError(t, k8s.Patch(ctx, obj, patch), "switching the exported config to observe")
+
+	tc.proxy.reset()
+	exported := reconcileUntilCurrent(t, r, types.NamespacedName{Namespace: namespace, Name: obj.GetName()}, tc.newObj)
+	if !isSynced(exported) {
+		t.Logf("exported config:\n%s\nobserved differences: %v", out, observedDrift(t, tc.export))
+	}
+	requireSynced(t, exported, "exported config")
+	writes := tc.proxy.writes(read)
+	assert.Empty(t, writes, "reconciling the exported config wrote to the application:\n%s", formatRequests(writes))
 }
 
 // reconcileUntilCurrent reconciles until status describes the current generation;
@@ -261,4 +299,26 @@ func waitFor(t *testing.T, what string, timeout time.Duration, ready func() erro
 		time.Sleep(time.Second)
 	}
 	require.NoError(t, err, "%s not ready after %s", what, timeout)
+}
+
+func observedDrift(t *testing.T, app string) []string {
+	t.Helper()
+	families, err := ctrlmetrics.Registry.Gather()
+	require.NoError(t, err)
+	var drift []string
+	for _, family := range families {
+		if family.GetName() != "media_operator_drift_observed_total" {
+			continue
+		}
+		for _, m := range family.GetMetric() {
+			labels := map[string]string{}
+			for _, l := range m.GetLabel() {
+				labels[l.GetName()] = l.GetValue()
+			}
+			if labels["app"] == app {
+				drift = append(drift, labels["resource_type"]+"/"+labels["name"])
+			}
+		}
+	}
+	return drift
 }

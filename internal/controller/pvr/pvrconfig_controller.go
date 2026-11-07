@@ -15,26 +15,20 @@ import (
 	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
 
-// pvrConfig is what reconciling Sonarr, Radarr, Lidarr or Readarr reads from
-// the app's config resource. The four apps share one API shape, so everything
-// else about reconciling them is the same.
 type pvrConfig struct {
-	app        string // the app's metrics label and cleanup name
-	apiVersion string
+	app        pvrclient.App
 	obj        ctrlcommon.ConfigResource
-	spec       any // the whole spec, for its settings sections
+	spec       any
 	connection commonv1alpha1.AppConnection
 	policy     *commonv1alpha1.ReconcileConfig
-	// options holds the spec's resources, before their secrets are resolved,
-	// and the app's field names.
-	options pvrclient.Options
+	options    pvrclient.Options
 }
 
 func reconcilePVR(ctx context.Context, c client.Client, recorder events.EventRecorder, cfg pvrConfig) (ctrl.Result, error) {
 	obj, conn, namespace := cfg.obj, cfg.connection, cfg.obj.GetNamespace()
 
 	cleanup := func(ctx context.Context) error {
-		return ctrlcommon.CleanupApp(ctx, c, recorder, obj, conn, pvrclient.Definition(cfg.apiVersion), cfg.app)
+		return ctrlcommon.CleanupApp(ctx, c, recorder, obj, conn, pvrclient.Definition(cfg.app.APIVersion), cfg.app.Name)
 	}
 	if done, after := ctrlcommon.HandleLifecycle(ctx, c, recorder, obj, ctrlcommon.Lifecycle{Remove: cleanup, Prune: true}); done {
 		return ctrl.Result{RequeueAfter: after}, nil
@@ -50,6 +44,9 @@ func reconcilePVR(ctx context.Context, c client.Client, recorder events.EventRec
 		return missingSecret(err)
 	}
 	opts := cfg.options
+	opts.CategoryField = cfg.app.CategoryField
+	opts.ImportListFields = cfg.app.ImportListFields
+	opts.MetadataProfiles = cfg.app.MetadataProfiles
 	if opts.DCSecrets, err = ctrlcommon.ResolveDownloadClientSecrets(ctx, c, namespace, opts.DownloadClients); err != nil {
 		return missingSecret(err)
 	}
@@ -60,12 +57,12 @@ func reconcilePVR(ctx context.Context, c client.Client, recorder events.EventRec
 
 	hc, err := engine.NewHTTPClient(conn.URL, engine.AuthAPIKey,
 		engine.WithOwner(namespace+"/"+obj.GetName()+"/"+string(obj.GetUID())),
-		engine.WithAPIKey(apiKey), engine.WithTLSConfig(tlsCfg), engine.WithAppLabel(cfg.app))
+		engine.WithAPIKey(apiKey), engine.WithTLSConfig(tlsCfg), engine.WithAppLabel(cfg.app.Name))
 	if err != nil {
 		ctrlcommon.UpdateStatusUnreachable(ctx, c, obj, engine.ReasonInvalidConfig, err.Error())
 		return ctrl.Result{}, nil
 	}
-	if err := hc.Ping(ctx, "/api/"+cfg.apiVersion+"/system/status"); err != nil {
+	if err := hc.Ping(ctx, "/api/"+cfg.app.APIVersion+"/system/status"); err != nil {
 		ctrlcommon.UpdateStatusUnreachable(ctx, c, obj, engine.ReasonAppUnreachable, err.Error())
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
@@ -80,7 +77,7 @@ func reconcilePVR(ctx context.Context, c client.Client, recorder events.EventRec
 		return missingSecret(err)
 	}
 
-	result, err := pvrclient.Reconcile(ctx, hc, cfg.apiVersion, cfg.spec, opts, ctrlcommon.Policy(cfg.policy), *obj.GetManagedResources())
+	result, err := pvrclient.Reconcile(ctx, hc, cfg.app.APIVersion, cfg.spec, opts, ctrlcommon.Policy(cfg.policy), *obj.GetManagedResources())
 	if err != nil {
 		ctrlcommon.UpdateStatus(ctx, c, obj, false, engine.ReasonSyncFailed, err.Error())
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(cfg.policy)}, nil

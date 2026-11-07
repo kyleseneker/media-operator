@@ -33,14 +33,11 @@ func (r *LidarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 	s := config.Spec
 	return reconcilePVR(ctx, r.Client, r.Recorder, pvrConfig{
-		app: "lidarr", apiVersion: "v1", obj: &config, spec: s, connection: s.Connection, policy: s.Reconcile,
+		app: pvrclient.Lidarr, obj: &config, spec: s, connection: s.Connection, policy: s.Reconcile,
 		options: pvrclient.Options{
 			RootFolders:        s.RootFolders,
 			RemotePathMappings: s.RemotePathMappings,
 			DownloadClients:    s.DownloadClients,
-			CategoryField:      "musicCategory",
-			ImportListFields:   pvrclient.ImportListFields{AutomaticAdd: "enableAutomaticAdd", Monitor: "shouldMonitor", MonitorAll: "entireArtist"},
-			MetadataProfiles:   true,
 			QualityProfiles:    s.QualityProfiles,
 			CustomFormats:      s.CustomFormats,
 			Tags:               s.Tags,

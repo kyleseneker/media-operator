@@ -33,13 +33,11 @@ func (r *RadarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 	s := config.Spec
 	return reconcilePVR(ctx, r.Client, r.Recorder, pvrConfig{
-		app: "radarr", apiVersion: "v3", obj: &config, spec: s, connection: s.Connection, policy: s.Reconcile,
+		app: pvrclient.Radarr, obj: &config, spec: s, connection: s.Connection, policy: s.Reconcile,
 		options: pvrclient.Options{
 			RootFolders:        s.RootFolders,
 			RemotePathMappings: s.RemotePathMappings,
 			DownloadClients:    s.DownloadClients,
-			CategoryField:      "movieCategory",
-			ImportListFields:   pvrclient.ImportListFields{Enable: "enabled", AutomaticAdd: "enableAuto", Monitor: "monitor", MonitorAll: "movieOnly"},
 			QualityProfiles:    s.QualityProfiles,
 			CustomFormats:      s.CustomFormats,
 			Tags:               s.Tags,

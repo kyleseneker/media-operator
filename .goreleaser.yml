@@ -64,6 +64,13 @@ builds:
     goos: [linux]
     goarch: [amd64, arm64]
     ldflags: ["-s -w -X main.version={{.Version}} -X main.commit={{.Commit}}"]
+  - id: media-operator-cli
+    main: ./cmd/cli
+    binary: media-operator
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags: ["-s -w -X main.version={{.Version}} -X main.commit={{.Commit}}"]
 
 dockers_v2:
   - id: media-operator-pvr
@@ -171,13 +178,34 @@ dockers_v2:
     annotations:
       <<: *image-annotations
       "org.opencontainers.image.description": Manages Autobrr configuration as Kubernetes resources
+  - id: media-operator-cli
+    ids: [media-operator-cli]
+    images: [ghcr.io/kyleseneker/media-operator-cli]
+    tags: ["{{ .Version }}", latest]
+    platforms: [linux/amd64, linux/arm64]
+    sbom: "{{ not .IsSnapshot }}"
+    build_args:
+      BINARY: media-operator
+    annotations:
+      <<: *image-annotations
+      "org.opencontainers.image.description": media-operator's command line tool, which exports an app's configuration as a config resource
 
 docker_signs:
   - cmd: cosign
     args: ["sign", "--yes", "${artifact}@${digest}"]
 
 archives:
-  - formats: ['tar.gz']
+  - id: operators
+    ids: [media-operator-pvr, media-operator-indexers, media-operator-subtitles, media-operator-curation, media-operator-downloads,
+          media-operator-mediaservers, media-operator-requests, media-operator-transcode, media-operator-automation]
+    formats: ['tar.gz']
+  - id: cli
+    ids: [media-operator-cli]
+    name_template: "media-operator-cli_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: ['tar.gz']
+    format_overrides:
+      - goos: windows
+        formats: ['zip']
 
 changelog:
   sort: asc
@@ -224,6 +252,7 @@ release:
 
     - Charts: `oci://ghcr.io/kyleseneker/media-operator/media-operator-<operator>`, version `{{ .Version }}`
     - Images: `ghcr.io/kyleseneker/media-operator-<operator>:{{ .Version }}`
+    - CLI: the `media-operator-cli` archives below, or `ghcr.io/kyleseneker/media-operator-cli:{{ .Version }}`
     - Tested app versions: [compatibility table](https://github.com/kyleseneker/media-operator/blob/{{ .Tag }}/README.md#compatibility)
   extra_files:
     - glob: config/crd/bases/*.yaml
