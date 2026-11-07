@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	transcodev1alpha1 "github.com/kyleseneker/media-operator/api/transcode/v1alpha1"
 )
 
@@ -56,14 +58,11 @@ func TestEveryLibraryFieldReachesTdarr(t *testing.T) {
 	for field := range declared.Fields() {
 		name := field.Name
 		keys, mapped := specFieldToDocKeys[name]
-		if !mapped {
-			t.Errorf("spec field %s has no documented Tdarr key; Tdarr will accept the payload and ignore it", name)
+		if !assert.True(t, mapped, "spec field %s has no documented Tdarr key; Tdarr will accept the payload and ignore it", name) {
 			continue
 		}
 		for _, k := range keys {
-			if _, ok := doc[k]; !ok {
-				t.Errorf("spec field %s should emit key %q, but the document has no such key", name, k)
-			}
+			assert.Contains(t, doc, k, "spec field %s should emit key %q, but the document has no such key", name, k)
 		}
 	}
 }
@@ -79,9 +78,7 @@ func TestUnsetLibraryFieldsAreOmitted(t *testing.T) {
 			if alwaysEmitted[k] {
 				continue
 			}
-			if _, present := doc[k]; present {
-				t.Errorf("field %s emitted key %q despite being unset", field, k)
-			}
+			assert.NotContains(t, doc, k, "field %s emitted key %q despite being unset", field, k)
 		}
 	}
 }

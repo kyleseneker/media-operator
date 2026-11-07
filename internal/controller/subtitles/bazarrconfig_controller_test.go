@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -142,12 +144,8 @@ func bazarrConfig(addr string) *subtitlesv1alpha1.BazarrConfig {
 func runBazarr(t *testing.T, cfg *subtitlesv1alpha1.BazarrConfig, objs ...client.Object) client.Client {
 	t.Helper()
 	scheme := runtime.NewScheme()
-	if err := clientgoscheme.AddToScheme(scheme); err != nil {
-		t.Fatalf("adding client-go scheme: %v", err)
-	}
-	if err := subtitlesv1alpha1.AddToScheme(scheme); err != nil {
-		t.Fatalf("adding subtitles scheme: %v", err)
-	}
+	require.NoError(t, clientgoscheme.AddToScheme(scheme), "adding client-go scheme")
+	require.NoError(t, subtitlesv1alpha1.AddToScheme(scheme), "adding subtitles scheme")
 	b := fake.NewClientBuilder().WithScheme(scheme).
 		WithStatusSubresource(&subtitlesv1alpha1.BazarrConfig{}).WithObjects(cfg)
 	for _, o := range objs {
@@ -155,20 +153,17 @@ func runBazarr(t *testing.T, cfg *subtitlesv1alpha1.BazarrConfig, objs ...client
 	}
 	c := b.Build()
 	r := &BazarrConfigReconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(50)}
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
 		Name: "bazarr", Namespace: "media",
-	}); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
+	})
+	require.NoError(t, err, "reconcile")
 	return c
 }
 
 func bazarrCondition(t *testing.T, c client.Client, condType string) string {
 	t.Helper()
 	var cfg subtitlesv1alpha1.BazarrConfig
-	if err := c.Get(context.Background(), types.NamespacedName{Name: "bazarr", Namespace: "media"}, &cfg); err != nil {
-		t.Fatalf("fetching config: %v", err)
-	}
+	require.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "bazarr", Namespace: "media"}, &cfg), "fetching config")
 	for _, cond := range cfg.Status.Conditions {
 		if cond.Type == condType {
 			return string(cond.Status)
@@ -195,15 +190,9 @@ func TestBazarrSubstitutesResolvedAPIKeyIntoForm(t *testing.T) {
 	runBazarr(t, cfg, bazarrSecrets())
 
 	got, ok := app.formValue("settings-sonarr-apikey")
-	if !ok {
-		t.Fatal("sonarr api key was never sent")
-	}
-	if got != "sonarr-key" {
-		t.Errorf("settings-sonarr-apikey = %q, want the resolved secret value", got)
-	}
-	if app.anyKeyContains("apiKeySecretRef") {
-		t.Error("sent the Kubernetes secret reference to Bazarr instead of the resolved value")
-	}
+	require.True(t, ok, "sonarr api key was never sent")
+	assert.Equal(t, "sonarr-key", got, "settings-sonarr-apikey is not the resolved secret value")
+	assert.False(t, app.anyKeyContains("apiKeySecretRef"), "sent the Kubernetes secret reference to Bazarr instead of the resolved value")
 }
 
 func TestBazarrSendsLanguagesAsJSON(t *testing.T) {
@@ -215,16 +204,11 @@ func TestBazarrSendsLanguagesAsJSON(t *testing.T) {
 	runBazarr(t, cfg, bazarrSecrets())
 
 	got, ok := app.formValue("settings-general-enabled_languages")
-	if !ok {
-		t.Fatal("enabled languages were never sent")
-	}
+	require.True(t, ok, "enabled languages were never sent")
 	var langs []string
-	if err := json.Unmarshal([]byte(got), &langs); err != nil {
-		t.Fatalf("enabled_languages is not JSON: %q", got)
-	}
-	if len(langs) != 2 || langs[0] != "en" {
-		t.Errorf("enabled languages = %v, want [en de]", langs)
-	}
+	require.NoError(t, json.Unmarshal([]byte(got), &langs), "enabled_languages is not JSON: %q", got)
+	require.Len(t, langs, 2, "enabled languages")
+	assert.Equal(t, "en", langs[0], "enabled languages")
 }
 
 func TestBazarrReportsSyncedOnHealthyApp(t *testing.T) {
@@ -233,12 +217,8 @@ func TestBazarrReportsSyncedOnHealthyApp(t *testing.T) {
 
 	c := runBazarr(t, bazarrConfig(addr), bazarrSecrets())
 
-	if !app.sawPath("/api/system/health") {
-		t.Error("never health-checked the app")
-	}
-	if got := bazarrCondition(t, c, "Synced"); got != conditionTrue {
-		t.Errorf("Synced = %q, want True", got)
-	}
+	assert.True(t, app.sawPath("/api/system/health"), "never health-checked the app")
+	assert.Equal(t, conditionTrue, bazarrCondition(t, c, "Synced"), "Synced")
 }
 
 func TestBazarrMissingSecretDoesNotContactApp(t *testing.T) {
@@ -247,19 +227,13 @@ func TestBazarrMissingSecretDoesNotContactApp(t *testing.T) {
 
 	c := runBazarr(t, bazarrConfig(addr)) // no Secret
 
-	if app.sawPath("/api/system/health") {
-		t.Error("contacted the app despite failing to resolve its API key")
-	}
-	if got := bazarrCondition(t, c, "Synced"); got == conditionTrue {
-		t.Error("Synced = True despite a missing secret")
-	}
+	assert.False(t, app.sawPath("/api/system/health"), "contacted the app despite failing to resolve its API key")
+	assert.NotEqual(t, conditionTrue, bazarrCondition(t, c, "Synced"), "Synced = True despite a missing secret")
 }
 
 func TestBazarrObserveRejectedBeforeApplicationAccess(t *testing.T) {
 	scheme := runtime.NewScheme()
-	if err := subtitlesv1alpha1.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, subtitlesv1alpha1.AddToScheme(scheme))
 	policy := "observe"
 	cfg := &subtitlesv1alpha1.BazarrConfig{Name: "observe", Namespace: "media"}
 	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &policy}
@@ -267,16 +241,10 @@ func TestBazarrObserveRejectedBeforeApplicationAccess(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(cfg).WithObjects(cfg).Build()
 	r := &BazarrConfigReconciler{Client: c, Scheme: scheme}
 	key := types.NamespacedName{Namespace: cfg.Namespace, Name: cfg.Name}
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
-		t.Fatal(err)
-	}
-	if err := c.Get(context.Background(), key, cfg); err != nil {
-		t.Fatal(err)
-	}
-	for _, condition := range cfg.Status.Conditions {
-		if condition.Type == "Synced" && condition.Reason == "InvalidConfig" && condition.Status == metav1.ConditionFalse {
-			return
-		}
-	}
-	t.Fatalf("expected explicit unsupported-policy status, got %+v", cfg.Status.Conditions)
+	_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
+	require.NoError(t, err)
+	require.NoError(t, c.Get(context.Background(), key, cfg))
+	require.True(t, slices.ContainsFunc(cfg.Status.Conditions, func(condition metav1.Condition) bool {
+		return condition.Type == "Synced" && condition.Reason == "InvalidConfig" && condition.Status == metav1.ConditionFalse
+	}), "expected explicit unsupported-policy status, got %+v", cfg.Status.Conditions)
 }

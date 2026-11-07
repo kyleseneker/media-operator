@@ -11,6 +11,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	indexersv1alpha1 "github.com/kyleseneker/media-operator/api/indexers/v1alpha1"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
@@ -94,21 +97,16 @@ func flareConfig(url string, prune bool, managed []string, sessions ...string) *
 func runFlare(t *testing.T, cfg *indexersv1alpha1.FlareSolverrConfig) client.Client {
 	t.Helper()
 	scheme := runtime.NewScheme()
-	if err := clientgoscheme.AddToScheme(scheme); err != nil {
-		t.Fatalf("adding client-go scheme: %v", err)
-	}
-	if err := indexersv1alpha1.AddToScheme(scheme); err != nil {
-		t.Fatalf("adding indexers scheme: %v", err)
-	}
+	require.NoError(t, clientgoscheme.AddToScheme(scheme), "adding client-go scheme")
+	require.NoError(t, indexersv1alpha1.AddToScheme(scheme), "adding indexers scheme")
 	c := fake.NewClientBuilder().WithScheme(scheme).
 		WithStatusSubresource(&indexersv1alpha1.FlareSolverrConfig{}).
 		WithObjects(cfg).Build()
 	r := &FlareSolverrConfigReconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(50)}
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
 		Name: "flaresolverr", Namespace: "media",
-	}); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
+	})
+	require.NoError(t, err, "reconcile")
 	return c
 }
 
@@ -118,16 +116,10 @@ func TestFlareSolverrCreatesDeclaredSessions(t *testing.T) {
 
 	c := runFlare(t, flareConfig(url, false, nil, "indexer-a"))
 
-	if !app.ran("sessions.create", "indexer-a") {
-		t.Error("declared session was never created")
-	}
+	assert.True(t, app.ran("sessions.create", "indexer-a"), "declared session was never created")
 	var cfg indexersv1alpha1.FlareSolverrConfig
-	if err := c.Get(context.Background(), types.NamespacedName{Name: "flaresolverr", Namespace: "media"}, &cfg); err != nil {
-		t.Fatalf("fetching config: %v", err)
-	}
-	if !slices.Contains(cfg.Status.ManagedResources["sessions"], "indexer-a") {
-		t.Errorf("session not recorded as managed: %+v", cfg.Status.ManagedResources)
-	}
+	require.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "flaresolverr", Namespace: "media"}, &cfg), "fetching config")
+	assert.Contains(t, cfg.Status.ManagedResources["sessions"], "indexer-a", "session not recorded as managed")
 }
 
 // Prowlarr opens FlareSolverr sessions on demand. Destroying one mid-request
@@ -139,12 +131,8 @@ func TestFlareSolverrLeavesForeignSessionsAlone(t *testing.T) {
 
 	runFlare(t, flareConfig(url, true, nil, "indexer-a"))
 
-	if !app.ran("sessions.create", "indexer-a") {
-		t.Fatal("reconcile never reached the app, so the destroy check is meaningless")
-	}
-	if app.ran("sessions.destroy", "opened-by-prowlarr") {
-		t.Error("destroyed a session the operator never created")
-	}
+	require.True(t, app.ran("sessions.create", "indexer-a"), "reconcile never reached the app, so the destroy check is meaningless")
+	assert.False(t, app.ran("sessions.destroy", "opened-by-prowlarr"), "destroyed a session the operator never created")
 }
 
 // Without prune, dropping a session from the spec leaves it running, matching
@@ -155,9 +143,7 @@ func TestFlareSolverrKeepsDroppedSessionWithoutPrune(t *testing.T) {
 
 	runFlare(t, flareConfig(url, false, []string{"retired"}, "indexer-a"))
 
-	if app.ran("sessions.destroy", "retired") {
-		t.Error("destroyed a session with prune disabled")
-	}
+	assert.False(t, app.ran("sessions.destroy", "retired"), "destroyed a session with prune disabled")
 }
 
 // With prune on and the session recorded as operator-created, dropping it from
@@ -168,9 +154,7 @@ func TestFlareSolverrPrunesItsOwnRetiredSession(t *testing.T) {
 
 	runFlare(t, flareConfig(url, true, []string{"retired"}, "indexer-a"))
 
-	if !app.ran("sessions.destroy", "retired") {
-		t.Error("prune did not remove a session it had previously created")
-	}
+	assert.True(t, app.ran("sessions.destroy", "retired"), "prune did not remove a session it had previously created")
 }
 
 func TestFlareSolverrObserveDoesNotCreatePruneOrClaimSessions(t *testing.T) {
@@ -179,28 +163,17 @@ func TestFlareSolverrObserveDoesNotCreatePruneOrClaimSessions(t *testing.T) {
 	policy := "observe"
 	cfg.Spec.Reconcile.DriftPolicy = &policy
 	c := runFlare(t, cfg)
-	if err := c.Get(context.Background(), types.NamespacedName{Name: cfg.Name, Namespace: cfg.Namespace}, cfg); err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Status.ActiveSessions != 2 {
-		t.Fatalf("active sessions = %d", cfg.Status.ActiveSessions)
-	}
-	if !slices.Equal(cfg.Status.ManagedResources["sessions"], []string{"owned"}) {
-		t.Fatalf("ownership changed: %v", cfg.Status.ManagedResources)
-	}
+	require.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: cfg.Name, Namespace: cfg.Namespace}, cfg))
+	require.Equal(t, 2, cfg.Status.ActiveSessions, "active sessions")
+	require.Equal(t, []string{"owned"}, cfg.Status.ManagedResources["sessions"], "ownership changed")
 	app.mu.Lock()
 	defer app.mu.Unlock()
 	for _, cmd := range app.commands {
-		if cmd != "sessions.list " {
-			t.Errorf("unexpected observe command: %s", cmd)
-		}
+		assert.Equal(t, "sessions.list ", cmd, "unexpected observe command")
 	}
-	for _, condition := range cfg.Status.Conditions {
-		if condition.Type == "Synced" && condition.Reason == "DriftDetected" {
-			return
-		}
-	}
-	t.Fatalf("drift was not reported: %+v", cfg.Status.Conditions)
+	require.True(t, slices.ContainsFunc(cfg.Status.Conditions, func(condition metav1.Condition) bool {
+		return condition.Type == "Synced" && condition.Reason == "DriftDetected"
+	}), "drift was not reported: %+v", cfg.Status.Conditions)
 }
 
 func TestFlareSolverrDeletePolicyAndOwnership(t *testing.T) {
@@ -212,24 +185,18 @@ func TestFlareSolverrDeletePolicyAndOwnership(t *testing.T) {
 	now := metav1.Now()
 	cfg.DeletionTimestamp = &now
 	c := runFlare(t, cfg)
-	if !app.ran("sessions.destroy", "owned") || app.ran("sessions.destroy", "foreign") {
-		t.Fatal("cleanup violated ownership")
-	}
-	if err := c.Get(context.Background(), client.ObjectKeyFromObject(cfg), &indexersv1alpha1.FlareSolverrConfig{}); !apierrors.IsNotFound(err) {
-		t.Fatalf("finalizer not released: %v", err)
-	}
+	require.True(t, app.ran("sessions.destroy", "owned"), "cleanup violated ownership")
+	require.False(t, app.ran("sessions.destroy", "foreign"), "cleanup violated ownership")
+	err := c.Get(context.Background(), client.ObjectKeyFromObject(cfg), &indexersv1alpha1.FlareSolverrConfig{})
+	require.True(t, apierrors.IsNotFound(err), "finalizer not released: %v", err)
 }
 
 func TestFlareSolverrDoesNotAdoptExistingSessions(t *testing.T) {
 	app := &fakeFlareSolverr{sessions: []string{"manual"}}
 	cfg := flareConfig(app.serve(t), false, nil, "manual")
 	c := runFlare(t, cfg)
-	if err := c.Get(context.Background(), client.ObjectKeyFromObject(cfg), cfg); err != nil {
-		t.Fatal(err)
-	}
-	if len(cfg.Status.ManagedResources["sessions"]) != 0 {
-		t.Fatalf("manual session adopted: %v", cfg.Status.ManagedResources)
-	}
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(cfg), cfg))
+	require.Empty(t, cfg.Status.ManagedResources["sessions"], "manual session adopted")
 }
 
 func TestFlareSolverrPruneLimitPreservesOwnership(t *testing.T) {
@@ -240,15 +207,9 @@ func TestFlareSolverrPruneLimitPreservesOwnership(t *testing.T) {
 	app := &fakeFlareSolverr{sessions: names}
 	cfg := flareConfig(app.serve(t), true, names)
 	c := runFlare(t, cfg)
-	if err := c.Get(context.Background(), client.ObjectKeyFromObject(cfg), cfg); err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(names, cfg.Status.ManagedResources["sessions"]) {
-		t.Fatal("ownership lost when pruning was refused")
-	}
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(cfg), cfg))
+	require.Equal(t, names, cfg.Status.ManagedResources["sessions"], "ownership lost when pruning was refused")
 	for _, name := range names {
-		if app.ran("sessions.destroy", name) {
-			t.Fatal("prune limit ignored")
-		}
+		require.False(t, app.ran("sessions.destroy", name), "prune limit ignored")
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -220,7 +221,7 @@ func TestControllersPersistStatusAndReleaseOnDelete(t *testing.T) {
 	url := fakeTdarrServer(t)
 	ctx := context.Background()
 
-	if err := c.Create(ctx, &corev1.Secret{
+	require.NoError(t, c.Create(ctx, &corev1.Secret{
 		ObjectMeta: meta("app-credentials"),
 		Data: map[string][]byte{
 			"api-key":  []byte("k"),
@@ -228,46 +229,32 @@ func TestControllersPersistStatusAndReleaseOnDelete(t *testing.T) {
 			"password": []byte("p"),
 			"token":    []byte("t"),
 		},
-	}); err != nil {
-		t.Fatalf("creating secret: %v", err)
-	}
+	}), "creating secret")
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cr := tc.newCR(url)
-			if err := c.Create(ctx, cr); err != nil {
-				t.Fatalf("creating CR: %v", err)
-			}
+			require.NoError(t, c.Create(ctx, cr), "creating CR")
 			key := client.ObjectKeyFromObject(cr)
 			r := tc.newRec(c, c.Scheme())
 
-			if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: key}); err != nil {
-				t.Fatalf("reconcile: %v", err)
-			}
+			_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: key})
+			require.NoError(t, err, "reconcile")
 
 			got := tc.newObj()
-			if err := c.Get(ctx, key, got); err != nil {
-				t.Fatalf("re-reading CR: %v", err)
-			}
-			if len(got.GetFinalizers()) == 0 {
-				t.Fatal("no finalizer set, so the deletion half of this test proves nothing")
-			}
+			require.NoError(t, c.Get(ctx, key, got), "re-reading CR")
+			require.NotEmpty(t, got.GetFinalizers(), "no finalizer set, so the deletion half of this test proves nothing")
 
-			if err := c.Delete(ctx, got); err != nil {
-				t.Fatalf("deleting CR: %v", err)
-			}
+			require.NoError(t, c.Delete(ctx, got), "deleting CR")
 			deadline := time.Now().Add(30 * time.Second)
 			for {
-				if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: key}); err != nil {
-					t.Fatalf("reconcile during deletion: %v", err)
-				}
-				err := c.Get(ctx, key, tc.newObj())
+				_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: key})
+				require.NoError(t, err, "reconcile during deletion")
+				err = c.Get(ctx, key, tc.newObj())
 				if apierrors.IsNotFound(err) {
 					return
 				}
-				if time.Now().After(deadline) {
-					t.Fatal("CR still present after deletion; the finalizer was never cleared")
-				}
+				require.False(t, time.Now().After(deadline), "CR still present after deletion; the finalizer was never cleared")
 				time.Sleep(200 * time.Millisecond)
 			}
 		})

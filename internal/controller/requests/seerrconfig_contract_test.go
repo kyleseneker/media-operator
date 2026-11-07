@@ -3,6 +3,8 @@ package requests
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	requestsv1alpha1 "github.com/kyleseneker/media-operator/api/requests/v1alpha1"
 	"github.com/kyleseneker/media-operator/internal/controller/internal/contract"
 )
@@ -25,11 +27,7 @@ func TestSeerrServicePayloadAlwaysSendsRequiredKeys(t *testing.T) {
 	}, "resolved-key")
 
 	for _, k := range []string{"name", "hostname", "apiKey", "port", "useSsl", "activeProfileId", "is4k", "isDefault"} {
-		if _, ok := got[k]; !ok {
-			t.Errorf("required key %q missing from a minimal service payload: %v", k, got)
-		}
+		assert.Contains(t, got, k, "required key %q missing from a minimal service payload", k)
 	}
-	if got["apiKey"] != "resolved-key" {
-		t.Errorf("apiKey = %v, want the resolved secret value", got["apiKey"])
-	}
+	assert.Equal(t, "resolved-key", got["apiKey"], "apiKey is not the resolved secret value")
 }

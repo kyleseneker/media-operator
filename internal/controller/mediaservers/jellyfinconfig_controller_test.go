@@ -11,7 +11,10 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -142,12 +145,8 @@ func jellyfinConfig(url string, libs ...mediaserversv1alpha1.JellyfinLibrary) *m
 func runJellyfin(t *testing.T, objs ...client.Object) client.Client {
 	t.Helper()
 	scheme := runtime.NewScheme()
-	if err := clientgoscheme.AddToScheme(scheme); err != nil {
-		t.Fatalf("adding client-go scheme: %v", err)
-	}
-	if err := mediaserversv1alpha1.AddToScheme(scheme); err != nil {
-		t.Fatalf("adding mediaservers scheme: %v", err)
-	}
+	require.NoError(t, clientgoscheme.AddToScheme(scheme), "adding client-go scheme")
+	require.NoError(t, mediaserversv1alpha1.AddToScheme(scheme), "adding mediaservers scheme")
 	b := fake.NewClientBuilder().WithScheme(scheme).
 		WithStatusSubresource(&mediaserversv1alpha1.JellyfinConfig{})
 	for _, o := range objs {
@@ -155,20 +154,17 @@ func runJellyfin(t *testing.T, objs ...client.Object) client.Client {
 	}
 	c := b.Build()
 	r := &JellyfinConfigReconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(50)}
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
 		Name: "jellyfin", Namespace: "media",
-	}); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
+	})
+	require.NoError(t, err, "reconcile")
 	return c
 }
 
 func jellyfinCondition(t *testing.T, c client.Client, condType string) string {
 	t.Helper()
 	var cfg mediaserversv1alpha1.JellyfinConfig
-	if err := c.Get(context.Background(), types.NamespacedName{Name: "jellyfin", Namespace: "media"}, &cfg); err != nil {
-		t.Fatalf("fetching config: %v", err)
-	}
+	require.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "jellyfin", Namespace: "media"}, &cfg), "fetching config")
 	for _, cond := range cfg.Status.Conditions {
 		if cond.Type == condType {
 			return string(cond.Status)
@@ -186,13 +182,9 @@ func TestReconcileRunsSetupWizardOnFreshInstall(t *testing.T) {
 	c := runJellyfin(t, adminSecret(), jellyfinConfig(url))
 
 	for _, step := range []string{"/Startup/User", "/Startup/Configuration", "/Startup/RemoteAccess", "/Startup/Complete"} {
-		if !app.saw("POST", step) {
-			t.Errorf("wizard step %s was never run", step)
-		}
+		assert.True(t, app.saw("POST", step), "wizard step %s was never run", step)
 	}
-	if got := jellyfinCondition(t, c, "Synced"); got != conditionTrue {
-		t.Errorf("Synced = %q, want True", got)
-	}
+	assert.Equal(t, conditionTrue, jellyfinCondition(t, c, "Synced"), "Synced")
 }
 
 // An already-configured server must not be put back through the wizard, which
@@ -203,12 +195,8 @@ func TestReconcileSkipsWizardWhenSetupComplete(t *testing.T) {
 
 	runJellyfin(t, adminSecret(), jellyfinConfig(url))
 
-	if app.saw("POST", "/Startup/User") {
-		t.Error("re-ran the setup wizard against an already-configured server")
-	}
-	if !app.saw("POST", "/Users/AuthenticateByName") {
-		t.Error("never authenticated against the configured server")
-	}
+	assert.False(t, app.saw("POST", "/Startup/User"), "re-ran the setup wizard against an already-configured server")
+	assert.True(t, app.saw("POST", "/Users/AuthenticateByName"), "never authenticated against the configured server")
 }
 
 func TestReconcileCreatesMissingLibrary(t *testing.T) {
@@ -218,9 +206,7 @@ func TestReconcileCreatesMissingLibrary(t *testing.T) {
 	runJellyfin(t, adminSecret(), jellyfinConfig(url,
 		mediaserversv1alpha1.JellyfinLibrary{Name: "Movies", CollectionType: "movies", Paths: []string{"/media/movies"}}))
 
-	if !app.saw("POST", "/Library/VirtualFolders") {
-		t.Error("declared library was never created")
-	}
+	assert.True(t, app.saw("POST", "/Library/VirtualFolders"), "declared library was never created")
 }
 
 // Libraries are create-only: an existing one by the same name is left alone
@@ -235,9 +221,7 @@ func TestReconcileLeavesExistingLibraryAlone(t *testing.T) {
 	runJellyfin(t, adminSecret(), jellyfinConfig(url,
 		mediaserversv1alpha1.JellyfinLibrary{Name: "Movies", CollectionType: "movies", Paths: []string{"/media/movies"}}))
 
-	if app.saw("POST", "/Library/VirtualFolders") {
-		t.Error("recreated a library that already existed")
-	}
+	assert.False(t, app.saw("POST", "/Library/VirtualFolders"), "recreated a library that already existed")
 }
 
 func TestReconcileMissingSecretDoesNotContactApp(t *testing.T) {
@@ -246,12 +230,8 @@ func TestReconcileMissingSecretDoesNotContactApp(t *testing.T) {
 
 	c := runJellyfin(t, jellyfinConfig(url)) // no Secret
 
-	if app.saw("GET", "/System/Info/Public") {
-		t.Error("contacted the app despite failing to resolve admin credentials")
-	}
-	if got := jellyfinCondition(t, c, "Synced"); got == conditionTrue {
-		t.Error("Synced = True despite missing credentials")
-	}
+	assert.False(t, app.saw("GET", "/System/Info/Public"), "contacted the app despite failing to resolve admin credentials")
+	assert.NotEqual(t, conditionTrue, jellyfinCondition(t, c, "Synced"), "Synced = True despite missing credentials")
 }
 
 func TestJellyfinObserveNeverRunsSetupOrWritesConfiguration(t *testing.T) {
@@ -286,25 +266,18 @@ func TestJellyfinObserveNeverRunsSetupOrWritesConfiguration(t *testing.T) {
 			policy := "observe"
 			cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &policy}
 			c := runJellyfin(t, adminSecret(), cfg)
-			if err := c.Get(context.Background(), types.NamespacedName{Name: cfg.Name, Namespace: cfg.Namespace}, cfg); err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: cfg.Name, Namespace: cfg.Namespace}, cfg))
 			app.mu.Lock()
 			defer app.mu.Unlock()
 			for _, req := range app.requests {
-				if !strings.HasPrefix(req, "GET ") && req != "POST /Users/AuthenticateByName" {
-					t.Errorf("observe wrote: %s", req)
-				}
+				assert.True(t, strings.HasPrefix(req, "GET ") || req == "POST /Users/AuthenticateByName", "observe wrote: %s", req)
 			}
-			if cfg.Status.Initialized == nil || *cfg.Status.Initialized != tt.initialized {
-				t.Errorf("initialization status changed: %v", cfg.Status.Initialized)
+			if assert.NotNil(t, cfg.Status.Initialized, "initialization status changed") {
+				assert.Equal(t, tt.initialized, *cfg.Status.Initialized, "initialization status changed")
 			}
-			for _, condition := range cfg.Status.Conditions {
-				if condition.Type == "Synced" && condition.Reason == tt.reason {
-					return
-				}
-			}
-			t.Fatalf("want %s, got %+v", tt.reason, cfg.Status.Conditions)
+			require.True(t, slices.ContainsFunc(cfg.Status.Conditions, func(condition metav1.Condition) bool {
+				return condition.Type == "Synced" && condition.Reason == tt.reason
+			}), "want %s, got %+v", tt.reason, cfg.Status.Conditions)
 		})
 	}
 }

@@ -18,6 +18,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -40,19 +42,13 @@ func TestSamplesApply(t *testing.T) {
 		ErrorIfCRDPathMissing: true,
 	}
 	cfg, err := env.Start()
-	if err != nil {
-		t.Fatalf("starting control plane: %v", err)
-	}
+	require.NoError(t, err, "starting control plane")
 	t.Cleanup(func() { _ = env.Stop() })
 
 	scheme := runtime.NewScheme()
-	if err := clientgoscheme.AddToScheme(scheme); err != nil {
-		t.Fatalf("building scheme: %v", err)
-	}
+	require.NoError(t, clientgoscheme.AddToScheme(scheme), "building scheme")
 	c, err := client.New(cfg, client.Options{Scheme: scheme})
-	if err != nil {
-		t.Fatalf("building client: %v", err)
-	}
+	require.NoError(t, err, "building client")
 
 	ctx := context.Background()
 
@@ -65,25 +61,20 @@ func TestSamplesApply(t *testing.T) {
 	applied := 0
 	for _, pattern := range patterns {
 		paths, err := filepath.Glob(pattern)
-		if err != nil {
-			t.Fatalf("globbing %s: %v", pattern, err)
-		}
+		require.NoError(t, err, "globbing %s", pattern)
 		for _, path := range paths {
 			// Each file gets its own namespace. Samples reuse names across files
 			// and span several namespaces; isolating them keeps a collision from
 			// masking a genuine schema rejection.
 			ns := namespaceFor(path)
-			if err := c.Create(ctx, &corev1.Namespace{Name: ns}); err != nil {
-				t.Fatalf("creating namespace %s: %v", ns, err)
-			}
+			require.NoError(t, c.Create(ctx, &corev1.Namespace{Name: ns}), "creating namespace %s", ns)
 			for _, obj := range decode(t, path) {
 				if obj.GetAPIVersion() != group {
 					continue
 				}
 				obj.SetNamespace(ns)
 				name := obj.GetKind() + "/" + obj.GetName()
-				if err := c.Create(ctx, obj); err != nil {
-					t.Errorf("%s: applying %s: %v", filepath.Base(path), name, err)
+				if !assert.NoError(t, c.Create(ctx, obj), "%s: applying %s", filepath.Base(path), name) {
 					continue
 				}
 				applied++
@@ -91,9 +82,7 @@ func TestSamplesApply(t *testing.T) {
 		}
 	}
 	t.Logf("applied %d resources", applied)
-	if applied == 0 {
-		t.Fatal("no resources applied; sample discovery is broken")
-	}
+	require.NotZero(t, applied, "no resources applied; sample discovery is broken")
 }
 
 // namespaceFor derives a DNS-1123 namespace name from a manifest path.
@@ -112,9 +101,7 @@ func namespaceFor(path string) string {
 func decode(t *testing.T, path string) []*unstructured.Unstructured {
 	t.Helper()
 	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("reading %s: %v", path, err)
-	}
+	require.NoError(t, err, "reading %s", path)
 	var out []*unstructured.Unstructured
 	reader := utilyaml.NewYAMLReader(bufio.NewReader(bytes.NewReader(data)))
 	for {
@@ -126,9 +113,7 @@ func decode(t *testing.T, path string) []*unstructured.Unstructured {
 			continue
 		}
 		obj := &unstructured.Unstructured{}
-		if err := yaml.Unmarshal(doc, obj); err != nil {
-			t.Fatalf("parsing %s: %v", path, err)
-		}
+		require.NoError(t, yaml.Unmarshal(doc, obj), "parsing %s", path)
 		if obj.GetKind() == "" {
 			continue
 		}

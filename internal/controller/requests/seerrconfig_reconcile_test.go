@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -181,21 +183,16 @@ func seerrConfig(addr string) *requestsv1alpha1.SeerrConfig {
 func runSeerr(t *testing.T, cfg *requestsv1alpha1.SeerrConfig) {
 	t.Helper()
 	scheme := runtime.NewScheme()
-	if err := clientgoscheme.AddToScheme(scheme); err != nil {
-		t.Fatalf("adding client-go scheme: %v", err)
-	}
-	if err := requestsv1alpha1.AddToScheme(scheme); err != nil {
-		t.Fatalf("adding requests scheme: %v", err)
-	}
+	require.NoError(t, clientgoscheme.AddToScheme(scheme), "adding client-go scheme")
+	require.NoError(t, requestsv1alpha1.AddToScheme(scheme), "adding requests scheme")
 	c := fake.NewClientBuilder().WithScheme(scheme).
 		WithStatusSubresource(&requestsv1alpha1.SeerrConfig{}).
 		WithObjects(cfg, seerrSecret()).Build()
 	r := &SeerrConfigReconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(50)}
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
 		Name: "seerr", Namespace: "media",
-	}); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
+	})
+	require.NoError(t, err, "reconcile")
 }
 
 // A supplied API key is used directly. Logging in anyway would be pointless and,
@@ -208,12 +205,9 @@ func TestSeerrSuppliedAPIKeySkipsLogin(t *testing.T) {
 	cfg.Spec.Connection.APIKeySecretRef = &commonv1alpha1.SecretKeyRef{Name: "seerr-secrets", Key: "api-key"}
 	runSeerr(t, cfg)
 
-	if app.saw("POST", "/api/v1/auth/jellyfin") || app.saw("POST", "/api/v1/auth/plex") {
-		t.Error("logged in despite being given an API key")
-	}
-	if !app.saw("GET", "/api/v1/settings/public") {
-		t.Fatal("reconcile never reached the app, so the login check is meaningless")
-	}
+	assert.False(t, app.saw("POST", "/api/v1/auth/jellyfin"), "logged in despite being given an API key")
+	assert.False(t, app.saw("POST", "/api/v1/auth/plex"), "logged in despite being given an API key")
+	require.True(t, app.saw("GET", "/api/v1/settings/public"), "reconcile never reached the app, so the login check is meaningless")
 }
 
 // Without an API key the operator logs in and then reads the generated key back
@@ -233,12 +227,8 @@ func TestSeerrWithoutAPIKeyLogsInAndFetchesKey(t *testing.T) {
 	}
 	runSeerr(t, cfg)
 
-	if !app.saw("POST", "/api/v1/auth/jellyfin") {
-		t.Fatal("never logged in")
-	}
-	if !app.saw("GET", "/api/v1/settings/main") {
-		t.Error("never read the API key back after logging in")
-	}
+	require.True(t, app.saw("POST", "/api/v1/auth/jellyfin"), "never logged in")
+	assert.True(t, app.saw("GET", "/api/v1/settings/main"), "never read the API key back after logging in")
 }
 
 // Seerr routes the login by serverType and builds the target URL from urlBase.
@@ -260,18 +250,10 @@ func TestSeerrJellyfinLoginCarriesServerTypeAndURLBase(t *testing.T) {
 	runSeerr(t, cfg)
 
 	body := app.authBody("/api/v1/auth/jellyfin")
-	if body == nil {
-		t.Fatal("no jellyfin login body captured")
-	}
-	if body["serverType"] == nil {
-		t.Error("login payload omits serverType")
-	}
-	if body["urlBase"] != "/jf" {
-		t.Errorf("urlBase = %v, want /jf", body["urlBase"])
-	}
-	if body["username"] != "admin" {
-		t.Errorf("username = %v, want the resolved secret value", body["username"])
-	}
+	require.NotNil(t, body, "no jellyfin login body captured")
+	assert.NotNil(t, body["serverType"], "login payload omits serverType")
+	assert.Equal(t, "/jf", body["urlBase"], "urlBase")
+	assert.Equal(t, "admin", body["username"], "username is not the resolved secret value")
 }
 
 func TestSeerrPlexLoginSendsToken(t *testing.T) {
@@ -286,12 +268,8 @@ func TestSeerrPlexLoginSendsToken(t *testing.T) {
 	runSeerr(t, cfg)
 
 	body := app.authBody("/api/v1/auth/plex")
-	if body == nil {
-		t.Fatal("no plex login body captured")
-	}
-	if body["authToken"] != "plex-token" {
-		t.Errorf("authToken = %v, want the resolved secret value", body["authToken"])
-	}
+	require.NotNil(t, body, "no plex login body captured")
+	assert.Equal(t, "plex-token", body["authToken"], "authToken is not the resolved secret value")
 }
 
 func firstRunJellyfinConfig(addr string) *requestsv1alpha1.SeerrConfig {
@@ -320,21 +298,14 @@ func TestSeerrFirstRunEnablesJellyfinLibraries(t *testing.T) {
 
 	runSeerr(t, firstRunJellyfinConfig(addr))
 
-	if len(app.rejected) > 0 {
-		t.Fatalf("sent query parameters Seerr does not declare: %v", app.rejected)
-	}
+	require.Empty(t, app.rejected, "sent query parameters Seerr does not declare")
 	for _, id := range []string{"movies", "shows"} {
-		if !app.libraryEnabled(id) {
-			t.Errorf("library %s was not enabled", id)
-		}
+		assert.True(t, app.libraryEnabled(id), "library %s was not enabled", id)
 	}
 	initialize := app.order("POST", "/api/v1/settings/initialize")
-	if initialize < 0 {
-		t.Fatal("setup never completed initialization")
-	}
-	if last := app.order("PUT", "/api/v1/settings/jellyfin/library/shows"); last > initialize {
-		t.Error("initialized before every library was enabled")
-	}
+	require.GreaterOrEqual(t, initialize, 0, "setup never completed initialization")
+	assert.LessOrEqual(t, app.order("PUT", "/api/v1/settings/jellyfin/library/shows"), initialize,
+		"initialized before every library was enabled")
 }
 
 // Seerr's library sync answers 404 while Jellyfin has no libraries yet, as on a
@@ -346,10 +317,6 @@ func TestSeerrFirstRunWaitsForJellyfinLibraries(t *testing.T) {
 
 	runSeerr(t, firstRunJellyfinConfig(addr))
 
-	if !app.saw("POST", "/api/v1/settings/jellyfin/library/sync") {
-		t.Fatal("never asked Seerr to sync the Jellyfin libraries")
-	}
-	if app.saw("POST", "/api/v1/settings/initialize") {
-		t.Error("completed initialization with no libraries to enable")
-	}
+	require.True(t, app.saw("POST", "/api/v1/settings/jellyfin/library/sync"), "never asked Seerr to sync the Jellyfin libraries")
+	assert.False(t, app.saw("POST", "/api/v1/settings/initialize"), "completed initialization with no libraries to enable")
 }

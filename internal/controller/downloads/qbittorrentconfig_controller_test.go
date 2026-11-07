@@ -5,22 +5,23 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
-	downloadsv1alpha1 "github.com/kyleseneker/media-operator/api/downloads/v1alpha1"
-	"github.com/kyleseneker/media-operator/internal/controller/internal/contract"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
+	downloadsv1alpha1 "github.com/kyleseneker/media-operator/api/downloads/v1alpha1"
+	"github.com/kyleseneker/media-operator/internal/controller/internal/contract"
 )
 
 func TestQBPreferencePayloadUsesAPIKeyNames(t *testing.T) {
@@ -46,9 +47,7 @@ func TestQBPreferencePayloadUsesAPIKeyNames(t *testing.T) {
 	}
 
 	got, err := qbPreferencePayload(prefs)
-	if err != nil {
-		t.Fatalf("qbPreferencePayload: %v", err)
-	}
+	require.NoError(t, err, "qbPreferencePayload")
 
 	want := map[string]any{
 		"save_path":                "/data/torrents",
@@ -71,18 +70,14 @@ func TestQBPreferencePayloadUsesAPIKeyNames(t *testing.T) {
 		"web_ui_port":              8080,
 	}
 
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("payload mismatch\ngot:  %#v\nwant: %#v", got, want)
-	}
+	assert.Equal(t, want, got, "payload mismatch")
 }
 
 func TestQBPreferencePayloadCoversEverySpecField(t *testing.T) {
 	contract.AssertEveryFieldEmitted(t, &downloadsv1alpha1.QBittorrentPreferences{},
 		func(p *downloadsv1alpha1.QBittorrentPreferences) map[string]any {
 			out, err := qbPreferencePayload(p)
-			if err != nil {
-				t.Fatalf("qbPreferencePayload: %v", err)
-			}
+			require.NoError(t, err, "qbPreferencePayload")
 			return out
 		},
 		func(p *downloadsv1alpha1.QBittorrentPreferences) {
@@ -92,22 +87,16 @@ func TestQBPreferencePayloadCoversEverySpecField(t *testing.T) {
 }
 
 func TestQBPreferencePayloadRejectsBadValues(t *testing.T) {
-	if _, err := qbPreferencePayload(&downloadsv1alpha1.QBittorrentPreferences{MaxRatio: new("abc")}); err == nil {
-		t.Error("expected error for unparseable maxRatio")
-	}
-	if _, err := qbPreferencePayload(&downloadsv1alpha1.QBittorrentPreferences{MaxRatioAction: new("nope")}); err == nil {
-		t.Error("expected error for unknown maxRatioAction")
-	}
+	_, err := qbPreferencePayload(&downloadsv1alpha1.QBittorrentPreferences{MaxRatio: new("abc")})
+	assert.Error(t, err, "expected error for unparseable maxRatio")
+	_, err = qbPreferencePayload(&downloadsv1alpha1.QBittorrentPreferences{MaxRatioAction: new("nope")})
+	assert.Error(t, err, "expected error for unknown maxRatioAction")
 }
 
 func TestQBPreferencePayloadOmitsUnsetFields(t *testing.T) {
 	got, err := qbPreferencePayload(&downloadsv1alpha1.QBittorrentPreferences{MaxRatioAction: new("removeWithContent")})
-	if err != nil {
-		t.Fatalf("qbPreferencePayload: %v", err)
-	}
-	if len(got) != 1 || got["max_ratio_act"] != 3 {
-		t.Errorf("expected only max_ratio_act=3, got %#v", got)
-	}
+	require.NoError(t, err, "qbPreferencePayload")
+	assert.Equal(t, map[string]any{"max_ratio_act": 3}, got, "expected only max_ratio_act=3")
 }
 
 func TestQBObserveReadsWithoutChangingPreferencesOrCategories(t *testing.T) {
@@ -124,9 +113,7 @@ func TestQBObserveReadsWithoutChangingPreferencesOrCategories(t *testing.T) {
 			var requests []string
 			var mu sync.Mutex
 			ln, err := net.Listen("tcp", net.JoinHostPort(routableAddr(t), "0"))
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				mu.Lock()
 				requests = append(requests, r.Method+" "+r.URL.Path)
@@ -146,7 +133,7 @@ func TestQBObserveReadsWithoutChangingPreferencesOrCategories(t *testing.T) {
 				case "/api/v2/torrents/categories":
 					_, _ = w.Write([]byte(`{"tv":{"savePath":"/existing"}}`))
 				default:
-					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+					assert.Failf(t, "unexpected request", "%s %s", r.Method, r.URL.Path)
 					w.WriteHeader(500)
 				}
 			}))
@@ -155,12 +142,8 @@ func TestQBObserveReadsWithoutChangingPreferencesOrCategories(t *testing.T) {
 			srv.Start()
 			defer srv.Close()
 			scheme := runtime.NewScheme()
-			if err := downloadsv1alpha1.AddToScheme(scheme); err != nil {
-				t.Fatal(err)
-			}
-			if err := corev1.AddToScheme(scheme); err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, downloadsv1alpha1.AddToScheme(scheme))
+			require.NoError(t, corev1.AddToScheme(scheme))
 			policy := "observe"
 			cfg := &downloadsv1alpha1.QBittorrentConfig{Name: "qbit", Namespace: "media"}
 			cfg.Spec.Connection = downloadsv1alpha1.QBittorrentConnection{URL: srv.URL,
@@ -185,25 +168,17 @@ func TestQBObserveReadsWithoutChangingPreferencesOrCategories(t *testing.T) {
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(cfg).WithObjects(cfg, secret).Build()
 			rec := &QBittorrentConfigReconciler{Client: c, Scheme: scheme}
 			key := types.NamespacedName{Name: cfg.Name, Namespace: cfg.Namespace}
-			if _, err := rec.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
-				t.Fatal(err)
-			}
-			if err := c.Get(context.Background(), key, cfg); err != nil {
-				t.Fatal(err)
-			}
+			_, err = rec.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
+			require.NoError(t, err)
+			require.NoError(t, c.Get(context.Background(), key, cfg))
 			mu.Lock()
 			defer mu.Unlock()
 			for _, req := range requests {
-				if strings.HasPrefix(req, "POST ") && req != "POST /api/v2/auth/login" {
-					t.Errorf("observe wrote: %s", req)
-				}
+				assert.False(t, strings.HasPrefix(req, "POST ") && req != "POST /api/v2/auth/login", "observe wrote: %s", req)
 			}
-			for _, condition := range cfg.Status.Conditions {
-				if condition.Type == "Synced" && condition.Reason == tt.reason {
-					return
-				}
-			}
-			t.Fatalf("want %s, got %+v", tt.reason, cfg.Status.Conditions)
+			require.True(t, slices.ContainsFunc(cfg.Status.Conditions, func(condition metav1.Condition) bool {
+				return condition.Type == "Synced" && condition.Reason == tt.reason
+			}), "want %s, got %+v", tt.reason, cfg.Status.Conditions)
 		})
 	}
 }

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -28,19 +30,11 @@ func TestResolveConfigFieldsFromSecret(t *testing.T) {
 		{Name: "apiKey", ValueFrom: &commonv1alpha1.SecretKeyRef{Name: "tracker", Key: "passkey"}},
 	}
 	out, err := ResolveConfigFields(context.Background(), c, "arr", "indexer x", fields)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if out[0].ValueFrom != nil {
-		t.Error("valueFrom should be cleared after resolution")
-	}
+	require.NoError(t, err)
+	assert.Nil(t, out[0].ValueFrom, "valueFrom should be cleared after resolution")
 	b, _ := json.Marshal(out[0].Value)
-	if string(b) != `"s3cr3t"` {
-		t.Errorf("expected quoted secret value, got %s", string(b))
-	}
-	if fields[0].Value != nil {
-		t.Error("input slice was mutated")
-	}
+	assert.Equal(t, `"s3cr3t"`, string(b), "expected quoted secret value")
+	assert.Nil(t, fields[0].Value, "input slice was mutated")
 }
 
 func TestResolveConfigFieldsRejectsBothValueAndValueFrom(t *testing.T) {
@@ -51,9 +45,8 @@ func TestResolveConfigFieldsRejectsBothValueAndValueFrom(t *testing.T) {
 		Value:     &commonv1alpha1.FieldValue{Raw: raw},
 		ValueFrom: &commonv1alpha1.SecretKeyRef{Name: "tracker", Key: "passkey"},
 	}}
-	if _, err := ResolveConfigFields(context.Background(), c, "arr", "indexer x", fields); err == nil {
-		t.Fatal("expected an error when both value and valueFrom are set")
-	}
+	_, err := ResolveConfigFields(context.Background(), c, "arr", "indexer x", fields)
+	require.Error(t, err, "expected an error when both value and valueFrom are set")
 }
 
 func TestResolveConfigFieldsMissingSecret(t *testing.T) {
@@ -61,9 +54,8 @@ func TestResolveConfigFieldsMissingSecret(t *testing.T) {
 	fields := []commonv1alpha1.ConfigField{
 		{Name: "apiKey", ValueFrom: &commonv1alpha1.SecretKeyRef{Name: "nope", Key: "passkey"}},
 	}
-	if _, err := ResolveConfigFields(context.Background(), c, "arr", "indexer x", fields); err == nil {
-		t.Fatal("expected an error for a missing secret")
-	}
+	_, err := ResolveConfigFields(context.Background(), c, "arr", "indexer x", fields)
+	require.Error(t, err, "expected an error for a missing secret")
 }
 
 func TestListsReferenceSecret(t *testing.T) {
@@ -71,12 +63,8 @@ func TestListsReferenceSecret(t *testing.T) {
 		Name:   "tl",
 		Fields: []commonv1alpha1.ConfigField{{Name: "apiKey", ValueFrom: &commonv1alpha1.SecretKeyRef{Name: "tracker", Key: "passkey"}}},
 	}}
-	if !ListsReferenceSecret(idx, nil, nil, "tracker") {
-		t.Error("should match the referenced secret")
-	}
-	if ListsReferenceSecret(idx, nil, nil, "other") {
-		t.Error("should not match an unrelated secret")
-	}
+	assert.True(t, ListsReferenceSecret(idx, nil, nil, "tracker"), "should match the referenced secret")
+	assert.False(t, ListsReferenceSecret(idx, nil, nil, "other"), "should not match an unrelated secret")
 }
 
 func TestConfigSyncedGaugeTracksOutcome(t *testing.T) {
@@ -89,12 +77,10 @@ func TestConfigSyncedGaugeTracksOutcome(t *testing.T) {
 		WithObjects(c).WithStatusSubresource(c).Build()
 
 	UpdateStatus(context.Background(), cl.Status(), c, true, "Synced", "ok")
-	if v := testutil.ToFloat64(metrics.ConfigSynced.WithLabelValues("SonarrConfig", "arr", "s")); v != 1 {
-		t.Errorf("expected gauge 1 after a successful sync, got %v", v)
-	}
+	assert.Equal(t, 1.0, testutil.ToFloat64(metrics.ConfigSynced.WithLabelValues("SonarrConfig", "arr", "s")),
+		"expected gauge 1 after a successful sync")
 
 	UpdateStatusUnreachable(context.Background(), cl.Status(), c, "AppUnreachable", "boom")
-	if v := testutil.ToFloat64(metrics.ConfigSynced.WithLabelValues("SonarrConfig", "arr", "s")); v != 0 {
-		t.Errorf("expected gauge 0 after failure, got %v", v)
-	}
+	assert.Equal(t, 0.0, testutil.ToFloat64(metrics.ConfigSynced.WithLabelValues("SonarrConfig", "arr", "s")),
+		"expected gauge 0 after failure")
 }

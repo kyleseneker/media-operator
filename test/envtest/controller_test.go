@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -43,24 +45,16 @@ func startAPIServerWith(t *testing.T, adders ...func(*runtime.Scheme) error) cli
 		ErrorIfCRDPathMissing: true,
 	}
 	cfg, err := env.Start()
-	if err != nil {
-		t.Fatalf("starting control plane: %v", err)
-	}
+	require.NoError(t, err, "starting control plane")
 	t.Cleanup(func() { _ = env.Stop() })
 
 	scheme := runtime.NewScheme()
-	if err := clientgoscheme.AddToScheme(scheme); err != nil {
-		t.Fatalf("client-go scheme: %v", err)
-	}
+	require.NoError(t, clientgoscheme.AddToScheme(scheme), "client-go scheme")
 	for _, add := range adders {
-		if err := add(scheme); err != nil {
-			t.Fatalf("registering scheme: %v", err)
-		}
+		require.NoError(t, add(scheme), "registering scheme")
 	}
 	c, err := client.New(cfg, client.Options{Scheme: scheme})
-	if err != nil {
-		t.Fatalf("building client: %v", err)
-	}
+	require.NoError(t, err, "building client")
 	return c
 }
 
@@ -75,22 +69,14 @@ func startAPIServer(t *testing.T) client.Client {
 		ErrorIfCRDPathMissing: true,
 	}
 	cfg, err := env.Start()
-	if err != nil {
-		t.Fatalf("starting control plane: %v", err)
-	}
+	require.NoError(t, err, "starting control plane")
 	t.Cleanup(func() { _ = env.Stop() })
 
 	scheme := runtime.NewScheme()
-	if err := clientgoscheme.AddToScheme(scheme); err != nil {
-		t.Fatalf("client-go scheme: %v", err)
-	}
-	if err := transcodev1alpha1.AddToScheme(scheme); err != nil {
-		t.Fatalf("transcode scheme: %v", err)
-	}
+	require.NoError(t, clientgoscheme.AddToScheme(scheme), "client-go scheme")
+	require.NoError(t, transcodev1alpha1.AddToScheme(scheme), "transcode scheme")
 	c, err := client.New(cfg, client.Options{Scheme: scheme})
-	if err != nil {
-		t.Fatalf("building client: %v", err)
-	}
+	require.NoError(t, err, "building client")
 	return c
 }
 
@@ -153,32 +139,21 @@ func TestReconcilePersistsStatusThroughSubresource(t *testing.T) {
 	ctx := context.Background()
 	url := fakeTdarrServer(t)
 
-	if err := c.Create(ctx, &corev1.Secret{
+	require.NoError(t, c.Create(ctx, &corev1.Secret{
 		Name: "tdarr-credentials", Namespace: "default",
 		Data: map[string][]byte{"api-key": []byte("k")},
-	}); err != nil {
-		t.Fatalf("creating secret: %v", err)
-	}
-	if err := c.Create(ctx, tdarrCR(url)); err != nil {
-		t.Fatalf("creating CR: %v", err)
-	}
+	}), "creating secret")
+	require.NoError(t, c.Create(ctx, tdarrCR(url)), "creating CR")
 
 	r := &transcode.TdarrConfigReconciler{Client: c, Scheme: c.Scheme(), Recorder: events.NewFakeRecorder(50)}
 	key := types.NamespacedName{Name: "tdarr", Namespace: "default"}
-	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: key}); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
+	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: key})
+	require.NoError(t, err, "reconcile")
 
 	var got transcodev1alpha1.TdarrConfig
-	if err := c.Get(ctx, key, &got); err != nil {
-		t.Fatalf("re-reading CR: %v", err)
-	}
-	if len(got.Status.Conditions) == 0 {
-		t.Fatal("no conditions persisted; the status subresource write did not land")
-	}
-	if got.Status.LastSyncTime == nil {
-		t.Error("lastSyncTime not persisted")
-	}
+	require.NoError(t, c.Get(ctx, key, &got), "re-reading CR")
+	require.NotEmpty(t, got.Status.Conditions, "no conditions persisted; the status subresource write did not land")
+	assert.NotNil(t, got.Status.LastSyncTime, "lastSyncTime not persisted")
 }
 
 // A finalizer genuinely blocks deletion here, so an orphan policy that fails to
@@ -188,47 +163,33 @@ func TestDeleteWithOrphanPolicyReleasesTheObject(t *testing.T) {
 	ctx := context.Background()
 	url := fakeTdarrServer(t)
 
-	if err := c.Create(ctx, &corev1.Secret{
+	require.NoError(t, c.Create(ctx, &corev1.Secret{
 		Name: "tdarr-credentials", Namespace: "default",
 		Data: map[string][]byte{"api-key": []byte("k")},
-	}); err != nil {
-		t.Fatalf("creating secret: %v", err)
-	}
-	if err := c.Create(ctx, tdarrCR(url)); err != nil {
-		t.Fatalf("creating CR: %v", err)
-	}
+	}), "creating secret")
+	require.NoError(t, c.Create(ctx, tdarrCR(url)), "creating CR")
 
 	r := &transcode.TdarrConfigReconciler{Client: c, Scheme: c.Scheme(), Recorder: events.NewFakeRecorder(50)}
 	key := types.NamespacedName{Name: "tdarr", Namespace: "default"}
 	req := ctrl.Request{NamespacedName: key}
 
-	if _, err := r.Reconcile(ctx, req); err != nil {
-		t.Fatalf("first reconcile: %v", err)
-	}
+	_, err := r.Reconcile(ctx, req)
+	require.NoError(t, err, "first reconcile")
 
 	var cr transcodev1alpha1.TdarrConfig
-	if err := c.Get(ctx, key, &cr); err != nil {
-		t.Fatalf("re-reading CR: %v", err)
-	}
-	if len(cr.Finalizers) == 0 {
-		t.Fatal("no finalizer was set, so this test would pass without exercising deletion")
-	}
-	if err := c.Delete(ctx, &cr); err != nil {
-		t.Fatalf("deleting CR: %v", err)
-	}
+	require.NoError(t, c.Get(ctx, key, &cr), "re-reading CR")
+	require.NotEmpty(t, cr.Finalizers, "no finalizer was set, so this test would pass without exercising deletion")
+	require.NoError(t, c.Delete(ctx, &cr), "deleting CR")
 
 	deadline := time.Now().Add(30 * time.Second)
 	for {
-		if _, err := r.Reconcile(ctx, req); err != nil {
-			t.Fatalf("reconcile during deletion: %v", err)
-		}
-		err := c.Get(ctx, key, &cr)
+		_, err := r.Reconcile(ctx, req)
+		require.NoError(t, err, "reconcile during deletion")
+		err = c.Get(ctx, key, &cr)
 		if apierrors.IsNotFound(err) {
 			return
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("CR still present after deletion; finalizers: %v", cr.Finalizers)
-		}
+		require.False(t, time.Now().After(deadline), "CR still present after deletion; finalizers: %v", cr.Finalizers)
 		time.Sleep(200 * time.Millisecond)
 	}
 }

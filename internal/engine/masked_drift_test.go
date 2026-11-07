@@ -7,6 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/kyleseneker/media-operator/internal/metrics"
 )
 
@@ -35,9 +38,7 @@ func maskingServer(t *testing.T, name string, writes *[]string) *HTTPClient {
 	hc, err := NewHTTPClient(srv.URL, AuthAPIKey, WithAPIKey("k"),
 		WithAPIKeyHeader("X-Api-Key"), WithAppLabel("sonarr"),
 		WithTransport(&http.Transport{}))
-	if err != nil {
-		t.Fatalf("building client: %v", err)
-	}
+	require.NoError(t, err, "building client")
 	return hc
 }
 
@@ -61,14 +62,10 @@ func TestMaskedSecretSettlesAfterOneWrite(t *testing.T) {
 	ep := ResourceEndpoint{Name: "downloadClients", Path: "/api/v3/downloadclient", MatchField: "name", Policy: CreateOrUpdate}
 
 	for i := range 5 {
-		if err := reconcileResource(context.Background(), hc, ep, desiredWithPassword("settles", "pw-v1"), false); err != nil {
-			t.Fatalf("reconcile %d: %v", i, err)
-		}
+		require.NoError(t, reconcileResource(context.Background(), hc, ep, desiredWithPassword("settles", "pw-v1"), false), "reconcile %d", i)
 	}
 
-	if len(writes) != 1 {
-		t.Errorf("wrote %d times, want 1 — the masked secret is still looping: %v", len(writes), writes)
-	}
+	assert.Len(t, writes, 1, "the masked secret is still looping")
 }
 
 // A rotated secret is invisible in the fetched state, so it has to be pushed
@@ -81,22 +78,14 @@ func TestRotatedSecretIsWritten(t *testing.T) {
 
 	ctx := context.Background()
 	for range 3 {
-		if err := reconcileResource(ctx, hc, ep, desiredWithPassword("rotates", "pw-v1"), false); err != nil {
-			t.Fatalf("reconcile: %v", err)
-		}
+		require.NoError(t, reconcileResource(ctx, hc, ep, desiredWithPassword("rotates", "pw-v1"), false), "reconcile")
 	}
-	if len(writes) != 1 {
-		t.Fatalf("before rotation: wrote %d times, want 1", len(writes))
-	}
+	require.Len(t, writes, 1, "before rotation")
 
 	for range 3 {
-		if err := reconcileResource(ctx, hc, ep, desiredWithPassword("rotates", "pw-v2"), false); err != nil {
-			t.Fatalf("reconcile after rotation: %v", err)
-		}
+		require.NoError(t, reconcileResource(ctx, hc, ep, desiredWithPassword("rotates", "pw-v2"), false), "reconcile after rotation")
 	}
-	if len(writes) != 2 {
-		t.Errorf("after rotation: wrote %d times, want 2", len(writes))
-	}
+	assert.Len(t, writes, 2, "after rotation")
 }
 
 // Observe must not seed the secret, so a CR being measured stays read-only.
@@ -107,13 +96,9 @@ func TestObserveDoesNotRecordMaskedSecret(t *testing.T) {
 	ep := ResourceEndpoint{Name: "downloadClients", Path: "/api/v3/downloadclient", MatchField: "name", Policy: CreateOrUpdate}
 
 	for range 3 {
-		if err := reconcileResource(context.Background(), hc, ep, desiredWithPassword("observed", "pw-v1"), true); err != nil {
-			t.Fatalf("reconcile: %v", err)
-		}
+		require.NoError(t, reconcileResource(context.Background(), hc, ep, desiredWithPassword("observed", "pw-v1"), true), "reconcile")
 	}
-	if len(writes) != 0 {
-		t.Errorf("observe wrote to the app: %v", writes)
-	}
+	assert.Empty(t, writes, "observe wrote to the app")
 }
 
 // Prowlarr was the worst offender at ten writes a minute. Its applications
@@ -151,9 +136,7 @@ func TestProwlarrApplicationSettles(t *testing.T) {
 	hc, err := NewHTTPClient(srv.URL, AuthAPIKey, WithAPIKey("k"),
 		WithAPIKeyHeader("X-Api-Key"), WithAppLabel("prowlarr"),
 		WithTransport(&http.Transport{}))
-	if err != nil {
-		t.Fatalf("building client: %v", err)
-	}
+	require.NoError(t, err, "building client")
 
 	ep := ResourceEndpoint{Name: "applications", Path: "/api/v1/applications", MatchField: "name", Policy: CreateOrUpdate}
 	desired := map[string]any{
@@ -169,13 +152,9 @@ func TestProwlarrApplicationSettles(t *testing.T) {
 	}
 
 	for i := range 5 {
-		if err := reconcileResource(context.Background(), hc, ep, desired, false); err != nil {
-			t.Fatalf("reconcile %d: %v", i, err)
-		}
+		require.NoError(t, reconcileResource(context.Background(), hc, ep, desired, false), "reconcile %d", i)
 	}
-	if len(writes) != 1 {
-		t.Errorf("wrote %d times, want 1: %v", len(writes), writes)
-	}
+	assert.Len(t, writes, 1)
 }
 
 // A resource created with a secret comes back masked. Without remembering what
@@ -207,17 +186,11 @@ func TestCreatedSecretIsNotRewrittenOnTheNextPass(t *testing.T) {
 	t.Cleanup(srv.Close)
 	hc, err := NewHTTPClient(srv.URL, AuthAPIKey, WithAPIKey("k"), WithAppLabel("sonarr"),
 		WithOwner("default/created/uid"), WithTransport(&http.Transport{}))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	ep := ResourceEndpoint{Name: "downloadClients", Path: "/api/v3/downloadclient", MatchField: "name", Policy: CreateOrUpdate}
 
 	for i := range 3 {
-		if err := reconcileResource(context.Background(), hc, ep, desiredWithPassword("created", "pw"), false); err != nil {
-			t.Fatalf("reconcile %d: %v", i, err)
-		}
+		require.NoError(t, reconcileResource(context.Background(), hc, ep, desiredWithPassword("created", "pw"), false), "reconcile %d", i)
 	}
-	if len(writes) != 1 || writes[0] != http.MethodPost {
-		t.Errorf("writes = %v, want only the create", writes)
-	}
+	assert.Equal(t, []string{http.MethodPost}, writes, "want only the create")
 }

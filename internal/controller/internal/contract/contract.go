@@ -5,6 +5,8 @@ package contract
 import (
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // AssertEveryFieldEmitted fills every field of spec, runs build, and fails if the
@@ -30,9 +32,9 @@ func AssertEveryFieldEmitted[T any, V any](t *testing.T, spec *T, build func(*T)
 	}
 
 	got := build(spec)
-	if len(got) != v.NumField() {
-		t.Errorf("%T declares %d fields but the builder emitted %d keys; an unmapped field is silently dropped by the target app",
-			spec, v.NumField(), len(got))
+	if !assert.Len(t, got, v.NumField(),
+		"%T declares %d fields but the builder emitted %d keys; an unmapped field is silently dropped by the target app",
+		spec, v.NumField(), len(got)) {
 		for i := range v.NumField() {
 			t.Logf("  spec field: %s", v.Type().Field(i).Name)
 		}

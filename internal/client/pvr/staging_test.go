@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	"github.com/kyleseneker/media-operator/internal/engine"
 )
@@ -51,9 +54,7 @@ func TestQualityProfileResolvesCustomFormatsCreatedInTheSameRun(t *testing.T) {
 	defer srv.Close()
 
 	hc, err := engine.NewHTTPClient(srv.URL, engine.AuthAPIKey, engine.WithAPIKey("k"), engine.WithAppLabel("sonarr"), engine.WithTransport(&http.Transport{}))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	opts := Options{
 		CustomFormats: []commonv1alpha1.CustomFormat{{Name: "BR-DISK"}},
@@ -64,19 +65,9 @@ func TestQualityProfileResolvesCustomFormatsCreatedInTheSameRun(t *testing.T) {
 	}
 
 	res, err := Reconcile(context.Background(), hc, "v3", struct{}{}, opts, engine.SyncPolicy{}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Errors) > 0 {
-		t.Fatalf("unexpected errors: %v", res.Errors)
-	}
-	if len(customFormats) != 1 {
-		t.Fatalf("expected the custom format to be created, got %d", len(customFormats))
-	}
-	if len(qpBodies) == 0 {
-		t.Fatal("quality profile was never written")
-	}
-	if !strings.Contains(qpBodies[0], "101") {
-		t.Errorf("quality profile did not reference the newly created custom format id;\nbody: %s", qpBodies[0])
-	}
+	require.NoError(t, err)
+	require.Empty(t, res.Errors, "unexpected errors")
+	require.Len(t, customFormats, 1, "expected the custom format to be created")
+	require.NotEmpty(t, qpBodies, "quality profile was never written")
+	assert.Contains(t, qpBodies[0], "101", "quality profile did not reference the newly created custom format id")
 }

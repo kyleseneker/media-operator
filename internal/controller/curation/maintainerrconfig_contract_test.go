@@ -3,6 +3,8 @@ package curation
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	curationv1alpha1 "github.com/kyleseneker/media-operator/api/curation/v1alpha1"
 	"github.com/kyleseneker/media-operator/internal/controller/internal/contract"
 )
@@ -19,7 +21,5 @@ func TestMaintainerrSettingsFieldsAllReachThePayload(t *testing.T) {
 // An empty spec must produce no payload, so the reconcile skips the write entirely
 // rather than clearing settings the CR does not manage.
 func TestMaintainerrEmptySettingsProduceNoPayload(t *testing.T) {
-	if got := buildMaintainerrSettings(&curationv1alpha1.MaintainerrSettings{}); len(got) != 0 {
-		t.Errorf("empty settings produced a payload: %v", got)
-	}
+	assert.Empty(t, buildMaintainerrSettings(&curationv1alpha1.MaintainerrSettings{}), "empty settings produced a payload")
 }

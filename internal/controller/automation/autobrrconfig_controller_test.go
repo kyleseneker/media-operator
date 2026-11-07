@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -96,12 +98,8 @@ func autobrrConfig(url string) *automationv1alpha1.AutobrrConfig {
 func runAutobrr(t *testing.T, cfg *automationv1alpha1.AutobrrConfig, withSecret bool) client.Client {
 	t.Helper()
 	scheme := runtime.NewScheme()
-	if err := clientgoscheme.AddToScheme(scheme); err != nil {
-		t.Fatalf("adding client-go scheme: %v", err)
-	}
-	if err := automationv1alpha1.AddToScheme(scheme); err != nil {
-		t.Fatalf("adding automation scheme: %v", err)
-	}
+	require.NoError(t, clientgoscheme.AddToScheme(scheme), "adding client-go scheme")
+	require.NoError(t, automationv1alpha1.AddToScheme(scheme), "adding automation scheme")
 	b := fake.NewClientBuilder().WithScheme(scheme).
 		WithStatusSubresource(&automationv1alpha1.AutobrrConfig{}).WithObjects(cfg)
 	if withSecret {
@@ -109,20 +107,17 @@ func runAutobrr(t *testing.T, cfg *automationv1alpha1.AutobrrConfig, withSecret 
 	}
 	c := b.Build()
 	r := &AutobrrConfigReconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(50)}
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
 		Name: "autobrr", Namespace: "media",
-	}); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
+	})
+	require.NoError(t, err, "reconcile")
 	return c
 }
 
 func autobrrCondition(t *testing.T, c client.Client, condType string) string {
 	t.Helper()
 	var cfg automationv1alpha1.AutobrrConfig
-	if err := c.Get(context.Background(), types.NamespacedName{Name: "autobrr", Namespace: "media"}, &cfg); err != nil {
-		t.Fatalf("fetching config: %v", err)
-	}
+	require.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "autobrr", Namespace: "media"}, &cfg), "fetching config")
 	for _, cond := range cfg.Status.Conditions {
 		if cond.Type == condType {
 			return string(cond.Status)
@@ -139,12 +134,8 @@ func TestAutobrrCreatesDeclaredFilter(t *testing.T) {
 	cfg.Spec.Filters = []automationv1alpha1.AutobrrFilter{{Name: "1080p web-dl"}}
 	c := runAutobrr(t, cfg, true)
 
-	if !app.saw("POST", "/api/filters") {
-		t.Error("declared filter was never created")
-	}
-	if got := autobrrCondition(t, c, "Synced"); got != conditionTrue {
-		t.Errorf("Synced = %q, want True", got)
-	}
+	assert.True(t, app.saw("POST", "/api/filters"), "declared filter was never created")
+	assert.Equal(t, conditionTrue, autobrrCondition(t, c, "Synced"), "Synced")
 }
 
 // Filters are matched by name, so an existing one must not be recreated on
@@ -159,12 +150,8 @@ func TestAutobrrDoesNotDuplicateExistingFilter(t *testing.T) {
 	cfg.Spec.Filters = []automationv1alpha1.AutobrrFilter{{Name: "1080p web-dl"}}
 	runAutobrr(t, cfg, true)
 
-	if !app.saw("GET", "/api/filters") {
-		t.Fatal("reconcile never listed filters, so the duplicate check is meaningless")
-	}
-	if app.saw("POST", "/api/filters") {
-		t.Error("created a duplicate of a filter that already existed")
-	}
+	require.True(t, app.saw("GET", "/api/filters"), "reconcile never listed filters, so the duplicate check is meaningless")
+	assert.False(t, app.saw("POST", "/api/filters"), "created a duplicate of a filter that already existed")
 }
 
 func TestAutobrrMissingSecretDoesNotContactApp(t *testing.T) {
@@ -173,19 +160,13 @@ func TestAutobrrMissingSecretDoesNotContactApp(t *testing.T) {
 
 	c := runAutobrr(t, autobrrConfig(url), false)
 
-	if app.saw("GET", "/api/healthz/liveness") {
-		t.Error("contacted the app despite failing to resolve its API key")
-	}
-	if got := autobrrCondition(t, c, "Synced"); got == conditionTrue {
-		t.Error("Synced = True despite a missing secret")
-	}
+	assert.False(t, app.saw("GET", "/api/healthz/liveness"), "contacted the app despite failing to resolve its API key")
+	assert.NotEqual(t, conditionTrue, autobrrCondition(t, c, "Synced"), "Synced = True despite a missing secret")
 }
 
 func TestAutobrrObserveRejectedBeforeApplicationAccess(t *testing.T) {
 	scheme := runtime.NewScheme()
-	if err := automationv1alpha1.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, automationv1alpha1.AddToScheme(scheme))
 	policy := "observe"
 	cfg := &automationv1alpha1.AutobrrConfig{Name: "observe", Namespace: "media"}
 	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &policy}
@@ -193,16 +174,10 @@ func TestAutobrrObserveRejectedBeforeApplicationAccess(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(cfg).WithObjects(cfg).Build()
 	r := &AutobrrConfigReconciler{Client: c, Scheme: scheme}
 	key := types.NamespacedName{Namespace: cfg.Namespace, Name: cfg.Name}
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
-		t.Fatal(err)
-	}
-	if err := c.Get(context.Background(), key, cfg); err != nil {
-		t.Fatal(err)
-	}
-	for _, condition := range cfg.Status.Conditions {
-		if condition.Type == "Synced" && condition.Reason == "InvalidConfig" && condition.Status == metav1.ConditionFalse {
-			return
-		}
-	}
-	t.Fatalf("expected explicit unsupported-policy status, got %+v", cfg.Status.Conditions)
+	_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
+	require.NoError(t, err)
+	require.NoError(t, c.Get(context.Background(), key, cfg))
+	require.True(t, slices.ContainsFunc(cfg.Status.Conditions, func(condition metav1.Condition) bool {
+		return condition.Type == "Synced" && condition.Reason == "InvalidConfig" && condition.Status == metav1.ConditionFalse
+	}), "expected explicit unsupported-policy status, got %+v", cfg.Status.Conditions)
 }

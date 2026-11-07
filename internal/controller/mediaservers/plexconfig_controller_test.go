@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -88,12 +90,8 @@ func plexConfig(addr string, libs ...mediaserversv1alpha1.PlexLibrary) *mediaser
 func runPlex(t *testing.T, cfg *mediaserversv1alpha1.PlexConfig, withSecret bool) {
 	t.Helper()
 	scheme := runtime.NewScheme()
-	if err := clientgoscheme.AddToScheme(scheme); err != nil {
-		t.Fatalf("adding client-go scheme: %v", err)
-	}
-	if err := mediaserversv1alpha1.AddToScheme(scheme); err != nil {
-		t.Fatalf("adding mediaservers scheme: %v", err)
-	}
+	require.NoError(t, clientgoscheme.AddToScheme(scheme), "adding client-go scheme")
+	require.NoError(t, mediaserversv1alpha1.AddToScheme(scheme), "adding mediaservers scheme")
 	b := fake.NewClientBuilder().WithScheme(scheme).
 		WithStatusSubresource(&mediaserversv1alpha1.PlexConfig{}).WithObjects(cfg)
 	if withSecret {
@@ -101,11 +99,10 @@ func runPlex(t *testing.T, cfg *mediaserversv1alpha1.PlexConfig, withSecret bool
 	}
 	c := b.Build()
 	r := &PlexConfigReconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(50)}
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
 		Name: "plex", Namespace: "media",
-	}); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
+	})
+	require.NoError(t, err, "reconcile")
 }
 
 func TestPlexCreatesMissingLibrary(t *testing.T) {
@@ -116,9 +113,7 @@ func TestPlexCreatesMissingLibrary(t *testing.T) {
 		Name: "Movies", Type: "movie", Paths: []string{"/media/movies"},
 	}), true)
 
-	if !app.sawSections("POST") {
-		t.Error("declared library was never created")
-	}
+	assert.True(t, app.sawSections("POST"), "declared library was never created")
 }
 
 // Plex libraries are create-only: an existing section by the same name must be
@@ -131,12 +126,8 @@ func TestPlexLeavesExistingLibraryAlone(t *testing.T) {
 		Name: "Movies", Type: "movie", Paths: []string{"/media/movies"},
 	}), true)
 
-	if !app.sawSections("GET") {
-		t.Fatal("reconcile never listed sections, so the create check is meaningless")
-	}
-	if app.sawSections("POST") {
-		t.Error("recreated a library that already existed")
-	}
+	require.True(t, app.sawSections("GET"), "reconcile never listed sections, so the create check is meaningless")
+	assert.False(t, app.sawSections("POST"), "recreated a library that already existed")
 }
 
 func TestPlexMissingTokenDoesNotContactApp(t *testing.T) {
@@ -145,16 +136,12 @@ func TestPlexMissingTokenDoesNotContactApp(t *testing.T) {
 
 	runPlex(t, plexConfig(addr), false)
 
-	if app.sawSections("GET") {
-		t.Error("contacted the app despite failing to resolve its token")
-	}
+	assert.False(t, app.sawSections("GET"), "contacted the app despite failing to resolve its token")
 }
 
 func TestPlexObserveRejectedBeforeApplicationAccess(t *testing.T) {
 	scheme := runtime.NewScheme()
-	if err := mediaserversv1alpha1.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, mediaserversv1alpha1.AddToScheme(scheme))
 	policy := "observe"
 	cfg := &mediaserversv1alpha1.PlexConfig{Name: "observe", Namespace: "media"}
 	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &policy}
@@ -162,16 +149,10 @@ func TestPlexObserveRejectedBeforeApplicationAccess(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(cfg).WithObjects(cfg).Build()
 	r := &PlexConfigReconciler{Client: c, Scheme: scheme}
 	key := types.NamespacedName{Namespace: cfg.Namespace, Name: cfg.Name}
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
-		t.Fatal(err)
-	}
-	if err := c.Get(context.Background(), key, cfg); err != nil {
-		t.Fatal(err)
-	}
-	for _, condition := range cfg.Status.Conditions {
-		if condition.Type == "Synced" && condition.Reason == "InvalidConfig" && condition.Status == metav1.ConditionFalse {
-			return
-		}
-	}
-	t.Fatalf("expected explicit unsupported-policy status, got %+v", cfg.Status.Conditions)
+	_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
+	require.NoError(t, err)
+	require.NoError(t, c.Get(context.Background(), key, cfg))
+	require.True(t, slices.ContainsFunc(cfg.Status.Conditions, func(condition metav1.Condition) bool {
+		return condition.Type == "Synced" && condition.Reason == "InvalidConfig" && condition.Status == metav1.ConditionFalse
+	}), "expected explicit unsupported-policy status, got %+v", cfg.Status.Conditions)
 }

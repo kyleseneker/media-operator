@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -151,12 +153,8 @@ func tdarrConfig(url string) *transcodev1alpha1.TdarrConfig {
 func runTdarr(t *testing.T, cfg *transcodev1alpha1.TdarrConfig, withSecret bool) client.Client {
 	t.Helper()
 	scheme := runtime.NewScheme()
-	if err := clientgoscheme.AddToScheme(scheme); err != nil {
-		t.Fatalf("adding client-go scheme: %v", err)
-	}
-	if err := transcodev1alpha1.AddToScheme(scheme); err != nil {
-		t.Fatalf("adding transcode scheme: %v", err)
-	}
+	require.NoError(t, clientgoscheme.AddToScheme(scheme), "adding client-go scheme")
+	require.NoError(t, transcodev1alpha1.AddToScheme(scheme), "adding transcode scheme")
 	b := fake.NewClientBuilder().WithScheme(scheme).
 		WithStatusSubresource(&transcodev1alpha1.TdarrConfig{}).WithObjects(cfg)
 	if withSecret {
@@ -164,20 +162,17 @@ func runTdarr(t *testing.T, cfg *transcodev1alpha1.TdarrConfig, withSecret bool)
 	}
 	c := b.Build()
 	r := &TdarrConfigReconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(50)}
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
 		Name: "tdarr", Namespace: "media",
-	}); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
+	})
+	require.NoError(t, err, "reconcile")
 	return c
 }
 
 func tdarrCondition(t *testing.T, c client.Client, condType string) string {
 	t.Helper()
 	var cfg transcodev1alpha1.TdarrConfig
-	if err := c.Get(context.Background(), types.NamespacedName{Name: "tdarr", Namespace: "media"}, &cfg); err != nil {
-		t.Fatalf("fetching config: %v", err)
-	}
+	require.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "tdarr", Namespace: "media"}, &cfg), "fetching config")
 	for _, cond := range cfg.Status.Conditions {
 		if cond.Type == condType {
 			return string(cond.Status)
@@ -195,12 +190,8 @@ func TestTdarrInsertsMissingLibrary(t *testing.T) {
 	cfg.Spec.Libraries = []transcodev1alpha1.TdarrLibrary{{ID: "lib1", Name: "Movies", Folder: "/media/movies"}}
 	c := runTdarr(t, cfg, true)
 
-	if !app.ranOp("insert") {
-		t.Error("missing library was never inserted")
-	}
-	if got := tdarrCondition(t, c, "Synced"); got != conditionTrue {
-		t.Errorf("Synced = %q, want True", got)
-	}
+	assert.True(t, app.ranOp("insert"), "missing library was never inserted")
+	assert.Equal(t, conditionTrue, tdarrCondition(t, c, "Synced"), "Synced")
 }
 
 // Present means update, not a second insert that would duplicate the library.
@@ -212,12 +203,8 @@ func TestTdarrUpdatesExistingLibrary(t *testing.T) {
 	cfg.Spec.Libraries = []transcodev1alpha1.TdarrLibrary{{ID: "lib1", Name: "Movies", Folder: "/media/movies"}}
 	runTdarr(t, cfg, true)
 
-	if !app.ranOp("getById") {
-		t.Fatal("reconcile never looked the library up, so the insert check is meaningless")
-	}
-	if app.ranOp("insert") {
-		t.Error("inserted a library that already existed")
-	}
+	require.True(t, app.ranOp("getById"), "reconcile never looked the library up, so the insert check is meaningless")
+	assert.False(t, app.ranOp("insert"), "inserted a library that already existed")
 }
 
 func TestTdarrMissingSecretDoesNotContactApp(t *testing.T) {
@@ -226,12 +213,8 @@ func TestTdarrMissingSecretDoesNotContactApp(t *testing.T) {
 
 	c := runTdarr(t, tdarrConfig(url), false)
 
-	if app.ranOp("/api/v2/status") {
-		t.Error("contacted the app despite failing to resolve its API key")
-	}
-	if got := tdarrCondition(t, c, "Synced"); got == conditionTrue {
-		t.Error("Synced = True despite a missing secret")
-	}
+	assert.False(t, app.ranOp("/api/v2/status"), "contacted the app despite failing to resolve its API key")
+	assert.NotEqual(t, conditionTrue, tdarrCondition(t, c, "Synced"), "Synced = True despite a missing secret")
 }
 
 // A library with no flow attached scans and then does nothing, so flowId must
@@ -242,12 +225,8 @@ func TestLibraryDocCarriesFlowAttachment(t *testing.T) {
 		FlowID: "strip-tracks", PluginStack: []string{"Tdarr_Plugin_MC93_Migz4CleanSubs"},
 	}
 	got := buildTdarrLibraryDoc(lib)
-	if got["flowId"] != "strip-tracks" {
-		t.Errorf("flowId missing from library doc: %v", got)
-	}
-	if _, ok := got["pluginStack"]; !ok {
-		t.Errorf("pluginStack missing from library doc: %v", got)
-	}
+	assert.Equal(t, "strip-tracks", got["flowId"], "flowId missing from library doc")
+	assert.Contains(t, got, "pluginStack", "pluginStack missing from library doc")
 }
 
 // Community flows read library variables as {{{args.variables.user.<name>}}},
@@ -260,48 +239,34 @@ func TestLibraryVariablesNestUnderUser(t *testing.T) {
 	got := buildTdarrLibraryDoc(lib)
 
 	vars, ok := got["variables"].(map[string]any)
-	if !ok {
-		t.Fatalf("variables missing from library doc: %v", got)
-	}
+	require.True(t, ok, "variables missing from library doc: %v", got)
 	user, ok := vars["user"].(map[string]any)
-	if !ok {
-		t.Fatalf("variables must nest under \"user\"; flows read args.variables.user.*, got %v", vars)
-	}
-	if user["audio_language"] != "eng" || user["do_audio_clean"] != "true" {
-		t.Errorf("unexpected user variables: %v", user)
-	}
+	require.True(t, ok, "variables must nest under \"user\"; flows read args.variables.user.*, got %v", vars)
+	assert.Equal(t, "eng", user["audio_language"], "unexpected user variables")
+	assert.Equal(t, "true", user["do_audio_clean"], "unexpected user variables")
 }
 
 func TestLibraryDocAlwaysCarriesSchedule(t *testing.T) {
 	got := buildTdarrLibraryDoc(transcodev1alpha1.TdarrLibrary{ID: "movies", Name: "Movies"})
 
 	schedule, ok := got["schedule"].([]any)
-	if !ok {
-		t.Fatalf("schedule missing from library doc: %v", got)
-	}
-	if len(schedule) != scheduleHoursPerWeek {
-		t.Fatalf("schedule must cover every hour of the week, got %d slots", len(schedule))
-	}
+	require.True(t, ok, "schedule missing from library doc: %v", got)
+	require.Len(t, schedule, scheduleHoursPerWeek, "schedule must cover every hour of the week")
 	for i, slot := range schedule {
 		entry, ok := slot.(map[string]any)
-		if !ok || entry["checked"] != true {
-			t.Fatalf("slot %d must be an enabled entry, got %#v", i, slot)
-		}
+		require.True(t, ok, "slot %d must be an enabled entry, got %#v", i, slot)
+		require.Equal(t, true, entry["checked"], "slot %d must be an enabled entry", i)
 	}
 }
 
 func TestLibraryDocAlwaysCarriesFoldersToIgnoreAsString(t *testing.T) {
 	got := buildTdarrLibraryDoc(transcodev1alpha1.TdarrLibrary{ID: "movies", Name: "Movies"})
-	if v, ok := got["foldersToIgnore"].(string); !ok || v != "" {
-		t.Fatalf("foldersToIgnore must default to an empty string, got %#v", got["foldersToIgnore"])
-	}
+	require.Equal(t, "", got["foldersToIgnore"], "foldersToIgnore must default to an empty string")
 
 	got = buildTdarrLibraryDoc(transcodev1alpha1.TdarrLibrary{
 		ID: "movies", Name: "Movies", FoldersToIgnore: "extras,featurettes",
 	})
-	if got["foldersToIgnore"] != "extras,featurettes" {
-		t.Errorf("foldersToIgnore not carried through: %#v", got["foldersToIgnore"])
-	}
+	assert.Equal(t, "extras,featurettes", got["foldersToIgnore"], "foldersToIgnore not carried through")
 }
 
 // Flows read library variables as args.userVariables.library.<key>, which Tdarr
@@ -320,19 +285,12 @@ func TestLibraryVariablesSyncToVariablesCollection(t *testing.T) {
 	runTdarr(t, cfg, true)
 
 	writes := app.varWrites()
-	if len(writes) != 1 {
-		t.Fatalf("expected one variable write, got %d: %+v", len(writes), writes)
-	}
+	require.Len(t, writes, 1, "expected one variable write")
 	w := writes[0]
-	if w.mode != "insert" {
-		t.Errorf("missing variable must be inserted, got mode %q", w.mode)
-	}
-	if w.obj["key"] != "bitrate_1080p" || w.obj["value"] != "2500" {
-		t.Errorf("unexpected variable document: %v", w.obj)
-	}
-	if w.obj["type"] != "library:movies" {
-		t.Errorf("variable must be scoped to the library, got type %v", w.obj["type"])
-	}
+	assert.Equal(t, "insert", w.mode, "missing variable must be inserted")
+	assert.Equal(t, "bitrate_1080p", w.obj["key"], "unexpected variable document: %v", w.obj)
+	assert.Equal(t, "2500", w.obj["value"], "unexpected variable document: %v", w.obj)
+	assert.Equal(t, "library:movies", w.obj["type"], "variable must be scoped to the library")
 }
 
 func TestLibraryVariablesUpdateChangedValueOnly(t *testing.T) {
@@ -350,15 +308,10 @@ func TestLibraryVariablesUpdateChangedValueOnly(t *testing.T) {
 	runTdarr(t, cfg, true)
 
 	writes := app.varWrites()
-	if len(writes) != 1 {
-		t.Fatalf("only the changed variable should be written, got %d: %+v", len(writes), writes)
-	}
-	if writes[0].mode != "update" || writes[0].docID != "v2" {
-		t.Errorf("expected update of v2, got %+v", writes[0])
-	}
-	if writes[0].obj["value"] != "22" {
-		t.Errorf("new value not written: %v", writes[0].obj)
-	}
+	require.Len(t, writes, 1, "only the changed variable should be written")
+	assert.Equal(t, "update", writes[0].mode, "expected update of v2")
+	assert.Equal(t, "v2", writes[0].docID, "expected update of v2")
+	assert.Equal(t, "22", writes[0].obj["value"], "new value not written: %v", writes[0].obj)
 }
 
 // A variable dropped from the spec must disappear from Tdarr, otherwise a flow
@@ -379,12 +332,9 @@ func TestLibraryVariablesPruneUndeclared(t *testing.T) {
 	runTdarr(t, cfg, true)
 
 	writes := app.varWrites()
-	if len(writes) != 1 {
-		t.Fatalf("expected a single removal, got %d: %+v", len(writes), writes)
-	}
-	if writes[0].mode != "removeOne" || writes[0].docID != "v9" {
-		t.Errorf("expected stale_key (v9) removed, got %+v", writes[0])
-	}
+	require.Len(t, writes, 1, "expected a single removal")
+	assert.Equal(t, "removeOne", writes[0].mode, "expected stale_key (v9) removed")
+	assert.Equal(t, "v9", writes[0].docID, "expected stale_key (v9) removed")
 }
 
 func TestLibraryDocDecisionMode(t *testing.T) {
@@ -392,40 +342,31 @@ func TestLibraryDocDecisionMode(t *testing.T) {
 		ID: "movies", Name: "Movies", DecisionMode: "flows",
 	})
 	dm, ok := got["decisionMaker"].(map[string]any)
-	if !ok {
-		t.Fatalf("decisionMaker missing: %v", got)
-	}
-	if dm["settingsFlows"] != true || dm["settingsPlugin"] != false {
-		t.Errorf("flows mode not selected: %#v", dm)
-	}
+	require.True(t, ok, "decisionMaker missing: %v", got)
+	assert.Equal(t, true, dm["settingsFlows"], "flows mode not selected")
+	assert.Equal(t, false, dm["settingsPlugin"], "flows mode not selected")
 
 	got = buildTdarrLibraryDoc(transcodev1alpha1.TdarrLibrary{ID: "movies", Name: "Movies"})
-	if _, present := got["decisionMaker"]; present {
-		t.Errorf("decisionMaker must be omitted when unset: %v", got["decisionMaker"])
-	}
+	assert.NotContains(t, got, "decisionMaker", "decisionMaker must be omitted when unset")
 }
 
 func TestLibraryDocHealthCheckMode(t *testing.T) {
 	got := buildTdarrLibraryDoc(transcodev1alpha1.TdarrLibrary{
 		ID: "movies", Name: "Movies", HealthCheckMode: "thorough",
 	})
-	if got["ffmpegscan"] != true || got["handbrakescan"] != false {
-		t.Errorf("thorough must select ffmpegscan: %#v %#v", got["ffmpegscan"], got["handbrakescan"])
-	}
+	assert.Equal(t, true, got["ffmpegscan"], "thorough must select ffmpegscan")
+	assert.Equal(t, false, got["handbrakescan"], "thorough must select ffmpegscan")
 
 	got = buildTdarrLibraryDoc(transcodev1alpha1.TdarrLibrary{
 		ID: "movies", Name: "Movies", HealthCheckMode: "quick",
 	})
-	if got["handbrakescan"] != true || got["ffmpegscan"] != false {
-		t.Errorf("quick must select handbrakescan: %#v %#v", got["handbrakescan"], got["ffmpegscan"])
-	}
+	assert.Equal(t, true, got["handbrakescan"], "quick must select handbrakescan")
+	assert.Equal(t, false, got["ffmpegscan"], "quick must select handbrakescan")
 }
 
 func TestTdarrObserveRejectedBeforeApplicationAccess(t *testing.T) {
 	scheme := runtime.NewScheme()
-	if err := transcodev1alpha1.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, transcodev1alpha1.AddToScheme(scheme))
 	policy := "observe"
 	cfg := &transcodev1alpha1.TdarrConfig{Name: "observe", Namespace: "media"}
 	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &policy}
@@ -433,16 +374,10 @@ func TestTdarrObserveRejectedBeforeApplicationAccess(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(cfg).WithObjects(cfg).Build()
 	r := &TdarrConfigReconciler{Client: c, Scheme: scheme}
 	key := types.NamespacedName{Namespace: cfg.Namespace, Name: cfg.Name}
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
-		t.Fatal(err)
-	}
-	if err := c.Get(context.Background(), key, cfg); err != nil {
-		t.Fatal(err)
-	}
-	for _, condition := range cfg.Status.Conditions {
-		if condition.Type == "Synced" && condition.Reason == "InvalidConfig" && condition.Status == metav1.ConditionFalse {
-			return
-		}
-	}
-	t.Fatalf("expected explicit unsupported-policy status, got %+v", cfg.Status.Conditions)
+	_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
+	require.NoError(t, err)
+	require.NoError(t, c.Get(context.Background(), key, cfg))
+	require.True(t, slices.ContainsFunc(cfg.Status.Conditions, func(condition metav1.Condition) bool {
+		return condition.Type == "Synced" && condition.Reason == "InvalidConfig" && condition.Status == metav1.ConditionFalse
+	}), "expected explicit unsupported-policy status, got %+v", cfg.Status.Conditions)
 }

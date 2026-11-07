@@ -9,6 +9,9 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	requestsv1alpha1 "github.com/kyleseneker/media-operator/api/requests/v1alpha1"
 )
 
@@ -32,16 +35,11 @@ func TestResolveServiceProfileByName(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			ln, err := net.Listen("tcp", net.JoinHostPort(routableAddr(t), "0"))
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != "GET" || r.URL.Path != "/sonarr/api/v3/qualityprofile" {
-					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
-				}
-				if r.Header.Get("X-Api-Key") != "lab-key" {
-					t.Error("missing service authentication")
-				}
+				assert.Equal(t, "GET", r.Method, "unexpected request method")
+				assert.Equal(t, "/sonarr/api/v3/qualityprofile", r.URL.Path, "unexpected request path")
+				assert.Equal(t, "lab-key", r.Header.Get("X-Api-Key"), "missing service authentication")
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(tc.status)
 				_, _ = w.Write([]byte(tc.response))
@@ -55,18 +53,14 @@ func TestResolveServiceProfileByName(t *testing.T) {
 			oldID := 7
 			svc := &requestsv1alpha1.SeerrServiceConnection{Hostname: endpoint.Hostname(), Port: &port, BaseUrl: "/sonarr/", ActiveProfileId: &oldID, ActiveProfileName: "WEB-1080p"}
 			payload, err := resolvedServicePayload(context.Background(), svc, "lab-key")
-			if (err != nil) != tc.wantError {
-				t.Fatalf("error = %v; want error %v", err, tc.wantError)
+			if tc.wantError {
+				require.Error(t, err)
+				require.Nil(t, payload, "failed resolution returned a writable payload")
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tc.wantID, payload["activeProfileId"], "profile ID")
 			}
-			if tc.wantError && payload != nil {
-				t.Fatal("failed resolution returned a writable payload")
-			}
-			if !tc.wantError && payload["activeProfileId"] != tc.wantID {
-				t.Fatalf("profile ID = %v; want %d", payload["activeProfileId"], tc.wantID)
-			}
-			if *svc.ActiveProfileId != oldID {
-				t.Fatal("resolution mutated the custom resource")
-			}
+			require.Equal(t, oldID, *svc.ActiveProfileId, "resolution mutated the custom resource")
 		})
 	}
 }
@@ -76,7 +70,6 @@ func TestResolveServiceProfileIDOnly(t *testing.T) {
 	// Invalid hostname proves ID-only configurations do not need an API lookup.
 	svc := &requestsv1alpha1.SeerrServiceConnection{Hostname: "", ActiveProfileId: &id}
 	payload, err := resolvedServicePayload(context.Background(), svc, "lab-key")
-	if err != nil || payload["activeProfileId"] != id {
-		t.Fatalf("legacy ID-only configuration changed: %v %v", payload, err)
-	}
+	require.NoError(t, err, "legacy ID-only configuration changed")
+	require.Equal(t, id, payload["activeProfileId"], "legacy ID-only configuration changed")
 }

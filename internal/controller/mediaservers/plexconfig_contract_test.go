@@ -3,6 +3,8 @@ package mediaservers
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	mediaserversv1alpha1 "github.com/kyleseneker/media-operator/api/mediaservers/v1alpha1"
 	"github.com/kyleseneker/media-operator/internal/controller/internal/contract"
 )
@@ -33,7 +35,5 @@ func TestPlexNetworkFieldsAllMapToPreferences(t *testing.T) {
 // An empty spec must not send preferences at all, so an unset section never
 // overwrites settings the CR does not manage.
 func TestPlexEmptySpecSendsNoPreferences(t *testing.T) {
-	if got := buildPlexPreferences(mediaserversv1alpha1.PlexConfigSpec{}); len(got) != 0 {
-		t.Errorf("empty spec produced preferences: %v", got)
-	}
+	assert.Empty(t, buildPlexPreferences(mediaserversv1alpha1.PlexConfigSpec{}), "empty spec produced preferences")
 }

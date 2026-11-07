@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	"github.com/kyleseneker/media-operator/internal/engine"
 )
@@ -29,9 +32,7 @@ func schemaServer(t *testing.T) *engine.HTTPClient {
 	hc, err := engine.NewHTTPClient(srv.URL, engine.AuthAPIKey,
 		engine.WithAPIKey("k"), engine.WithAPIKeyHeader("X-Api-Key"),
 		engine.WithTransport(&http.Transport{}))
-	if err != nil {
-		t.Fatalf("building client: %v", err)
-	}
+	require.NoError(t, err, "building client")
 	return hc
 }
 
@@ -42,12 +43,9 @@ func TestValidateOptionFieldsReportsTypedFieldName(t *testing.T) {
 	}}}
 
 	problems := ValidateOptionFields(context.Background(), schemaServer(t), "v3", opts)
-	if len(problems) != 1 {
-		t.Fatalf("expected one problem, got %v", problems)
-	}
-	if !strings.Contains(problems[0], "qbit") || !strings.Contains(problems[0], "tvCatagory") {
-		t.Errorf("problem does not identify the resource and field: %s", problems[0])
-	}
+	require.Len(t, problems, 1, "expected one problem")
+	assert.Contains(t, problems[0], "qbit", "problem does not identify the resource")
+	assert.Contains(t, problems[0], "tvCatagory", "problem does not identify the field")
 }
 
 func TestValidateOptionFieldsPassesKnownFields(t *testing.T) {
@@ -56,9 +54,8 @@ func TestValidateOptionFieldsPassesKnownFields(t *testing.T) {
 		Fields: []commonv1alpha1.ConfigField{{Name: "tvCategory"}},
 	}}}
 
-	if problems := ValidateOptionFields(context.Background(), schemaServer(t), "v3", opts); len(problems) != 0 {
-		t.Errorf("valid field reported as a problem: %v", problems)
-	}
+	problems := ValidateOptionFields(context.Background(), schemaServer(t), "v3", opts)
+	assert.Empty(t, problems, "valid field reported as a problem")
 }
 
 // An app that does not serve a schema must still reconcile.
@@ -68,7 +65,6 @@ func TestValidateOptionFieldsSkipsWithoutSchema(t *testing.T) {
 		Fields: []commonv1alpha1.ConfigField{{Name: "whatever"}},
 	}}}
 
-	if problems := ValidateOptionFields(context.Background(), schemaServer(t), "v3", opts); len(problems) != 0 {
-		t.Errorf("missing schema should skip validation, got: %v", problems)
-	}
+	problems := ValidateOptionFields(context.Background(), schemaServer(t), "v3", opts)
+	assert.Empty(t, problems, "missing schema should skip validation")
 }

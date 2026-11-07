@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"sigs.k8s.io/yaml"
 )
 
@@ -33,30 +35,20 @@ type crdFile struct {
 // Only spec belongs in the root required list.
 func TestCRDRootRequiredIsSpecOnly(t *testing.T) {
 	paths, err := filepath.Glob("../../../config/crd/bases/*.yaml")
-	if err != nil {
-		t.Fatalf("globbing CRDs: %v", err)
-	}
-	if len(paths) == 0 {
-		t.Fatal("no CRDs found; run `make manifests` first")
-	}
+	require.NoError(t, err, "globbing CRDs")
+	require.NotEmpty(t, paths, "no CRDs found; run `make manifests` first")
 
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("reading %s: %v", path, err)
-		}
+		require.NoError(t, err, "reading %s", path)
 		var crd crdFile
-		if err := yaml.Unmarshal(data, &crd); err != nil {
-			t.Fatalf("parsing %s: %v", path, err)
-		}
+		require.NoError(t, yaml.Unmarshal(data, &crd), "parsing %s", path)
 
 		for _, v := range crd.Spec.Versions {
 			got := v.Schema.OpenAPIV3Schema.Required
-			if len(got) != 1 || got[0] != "spec" {
-				t.Errorf("%s/%s: root required = %v, want [spec]; "+
-					"add explicit +optional / +required markers to the %s fields",
-					crd.Spec.Names.Kind, v.Name, got, crd.Spec.Names.Kind)
-			}
+			assert.Equal(t, []string{"spec"}, got,
+				"%s/%s: root required must be [spec]; add explicit +optional / +required markers to the %s fields",
+				crd.Spec.Names.Kind, v.Name, crd.Spec.Names.Kind)
 		}
 	}
 }

@@ -89,12 +89,8 @@ func sabnzbdConfig(addr string) *downloadsv1alpha1.SabnzbdConfig {
 func runSabnzbd(t *testing.T, cfg *downloadsv1alpha1.SabnzbdConfig, withSecret bool) {
 	t.Helper()
 	scheme := runtime.NewScheme()
-	if err := clientgoscheme.AddToScheme(scheme); err != nil {
-		t.Fatalf("adding client-go scheme: %v", err)
-	}
-	if err := downloadsv1alpha1.AddToScheme(scheme); err != nil {
-		t.Fatalf("adding downloads scheme: %v", err)
-	}
+	require.NoError(t, clientgoscheme.AddToScheme(scheme), "adding client-go scheme")
+	require.NoError(t, downloadsv1alpha1.AddToScheme(scheme), "adding downloads scheme")
 	b := fake.NewClientBuilder().WithScheme(scheme).
 		WithStatusSubresource(&downloadsv1alpha1.SabnzbdConfig{}).WithObjects(cfg)
 	if withSecret {
@@ -102,11 +98,10 @@ func runSabnzbd(t *testing.T, cfg *downloadsv1alpha1.SabnzbdConfig, withSecret b
 	}
 	c := b.Build()
 	r := &SabnzbdConfigReconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(50)}
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
 		Name: "sabnzbd", Namespace: "media",
-	}); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
+	})
+	require.NoError(t, err, "reconcile")
 }
 
 func TestSabnzbdMissingSecretDoesNotContactApp(t *testing.T) {
@@ -115,9 +110,7 @@ func TestSabnzbdMissingSecretDoesNotContactApp(t *testing.T) {
 
 	runSabnzbd(t, sabnzbdConfig(addr), false)
 
-	if app.sawMode("version") {
-		t.Error("contacted the app despite failing to resolve its API key")
-	}
+	assert.False(t, app.sawMode("version"), "contacted the app despite failing to resolve its API key")
 }
 
 func sabnzbdSpec() downloadsv1alpha1.SabnzbdConfigSpec {

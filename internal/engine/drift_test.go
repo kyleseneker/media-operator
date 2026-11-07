@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/kyleseneker/media-operator/internal/metrics"
 )
@@ -30,9 +32,7 @@ func driftServer(t *testing.T, existing map[string]any, writes *[]string) *HTTPC
 	hc, err := NewHTTPClient(srv.URL, AuthAPIKey, WithAPIKey("k"),
 		WithAPIKeyHeader("X-Api-Key"), WithAppLabel("sonarr"),
 		WithTransport(&http.Transport{}))
-	if err != nil {
-		t.Fatalf("building client: %v", err)
-	}
+	require.NoError(t, err, "building client")
 	return hc
 }
 
@@ -47,12 +47,8 @@ func TestNoDriftLeavesCounterUnchanged(t *testing.T) {
 	existing := map[string]any{"id": float64(1), "name": "qbit", "enable": true}
 	hc := driftServer(t, existing, nil)
 
-	if err := reconcileResource(context.Background(), hc, endpointFor(), map[string]any{"name": "qbit", "enable": true}, false); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
-	if got := testutil.CollectAndCount(metrics.DriftCorrectedTotal); got != 0 {
-		t.Errorf("counter moved despite no drift: %d series", got)
-	}
+	require.NoError(t, reconcileResource(context.Background(), hc, endpointFor(), map[string]any{"name": "qbit", "enable": true}, false), "reconcile")
+	assert.Zero(t, testutil.CollectAndCount(metrics.DriftCorrectedTotal), "counter moved despite no drift")
 }
 
 // A resource the operator has to rewrite increments the counter, so a correction
@@ -62,12 +58,8 @@ func TestDriftCorrectionIncrementsCounter(t *testing.T) {
 	existing := map[string]any{"id": float64(1), "name": "qbit", "enable": false}
 	hc := driftServer(t, existing, nil)
 
-	if err := reconcileResource(context.Background(), hc, endpointFor(), map[string]any{"name": "qbit", "enable": true}, false); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
-	if got := testutil.ToFloat64(metrics.DriftCorrectedTotal.WithLabelValues("sonarr", "downloadClients", "qbit")); got != 1 {
-		t.Errorf("drift_corrected_total = %v, want 1", got)
-	}
+	require.NoError(t, reconcileResource(context.Background(), hc, endpointFor(), map[string]any{"name": "qbit", "enable": true}, false), "reconcile")
+	assert.Equal(t, 1.0, testutil.ToFloat64(metrics.DriftCorrectedTotal.WithLabelValues("sonarr", "downloadClients", "qbit")), "drift_corrected_total")
 }
 
 // Observe must record the difference and leave the app untouched, so drift can be
@@ -78,16 +70,10 @@ func TestObserveRecordsDriftWithoutWriting(t *testing.T) {
 	existing := map[string]any{"id": float64(1), "name": "qbit", "enable": false}
 	hc := driftServer(t, existing, &writes)
 
-	if err := reconcileResource(context.Background(), hc, endpointFor(), map[string]any{"name": "qbit", "enable": true}, true); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
+	require.NoError(t, reconcileResource(context.Background(), hc, endpointFor(), map[string]any{"name": "qbit", "enable": true}, true), "reconcile")
 
-	if got := testutil.ToFloat64(metrics.DriftObservedTotal.WithLabelValues("sonarr", "downloadClients", "qbit")); got != 1 {
-		t.Errorf("drift_observed_total = %v, want 1", got)
-	}
-	if len(writes) != 0 {
-		t.Errorf("observe wrote to the app: %v", writes)
-	}
+	assert.Equal(t, 1.0, testutil.ToFloat64(metrics.DriftObservedTotal.WithLabelValues("sonarr", "downloadClients", "qbit")), "drift_observed_total")
+	assert.Empty(t, writes, "observe wrote to the app")
 }
 
 // Enforce is the default, so an unset policy still corrects drift.
@@ -97,10 +83,6 @@ func TestEnforceWritesTheCorrection(t *testing.T) {
 	existing := map[string]any{"id": float64(1), "name": "qbit", "enable": false}
 	hc := driftServer(t, existing, &writes)
 
-	if err := reconcileResource(context.Background(), hc, endpointFor(), map[string]any{"name": "qbit", "enable": true}, false); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
-	if len(writes) != 1 {
-		t.Errorf("expected one write, got %v", writes)
-	}
+	require.NoError(t, reconcileResource(context.Background(), hc, endpointFor(), map[string]any{"name": "qbit", "enable": true}, false), "reconcile")
+	assert.Len(t, writes, 1, "expected one write")
 }

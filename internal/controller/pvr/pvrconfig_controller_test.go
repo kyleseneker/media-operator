@@ -14,6 +14,8 @@ import (
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	pvrv1alpha1 "github.com/kyleseneker/media-operator/api/pvr/v1alpha1"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -300,32 +302,25 @@ func apiKeySecret() *corev1.Secret {
 func run(t *testing.T, app pvrApp, objs ...client.Object) client.Client {
 	t.Helper()
 	scheme := runtime.NewScheme()
-	if err := clientgoscheme.AddToScheme(scheme); err != nil {
-		t.Fatalf("adding client-go scheme: %v", err)
-	}
-	if err := pvrv1alpha1.AddToScheme(scheme); err != nil {
-		t.Fatalf("adding pvr scheme: %v", err)
-	}
+	require.NoError(t, clientgoscheme.AddToScheme(scheme), "adding client-go scheme")
+	require.NoError(t, pvrv1alpha1.AddToScheme(scheme), "adding pvr scheme")
 	b := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(app.empty())
 	for _, o := range objs {
 		b = b.WithObjects(o)
 	}
 	c := b.Build()
 	r := app.newRec(c, scheme)
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
 		Name: "app", Namespace: "media",
-	}); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
+	})
+	require.NoError(t, err, "reconcile")
 	return c
 }
 
 func conditionStatus(t *testing.T, c client.Client, app pvrApp, condType string) string {
 	t.Helper()
 	obj := app.empty()
-	if err := c.Get(context.Background(), types.NamespacedName{Name: "app", Namespace: "media"}, obj); err != nil {
-		t.Fatalf("fetching config: %v", err)
-	}
+	require.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "app", Namespace: "media"}, obj), "fetching config")
 	for _, cond := range *obj.GetConditions() {
 		if cond.Type == condType {
 			return string(cond.Status)
@@ -341,27 +336,16 @@ func TestReconcileWritesDeclaredResources(t *testing.T) {
 			cfg := app.build(url, buildOpts{downloadClient: true, naming: true})
 			c := run(t, app, apiKeySecret(), cfg)
 
-			if !fa.saw("POST", fa.path("rootfolder")) {
-				t.Error("root folder was never created")
-			}
-			if !fa.saw("POST", fa.path("downloadclient")) {
-				t.Error("download client was never created")
-			}
+			assert.True(t, fa.saw("POST", fa.path("rootfolder")), "root folder was never created")
+			assert.True(t, fa.saw("POST", fa.path("downloadclient")), "download client was never created")
 			// Settings are written to /config/<section>/<id>.
-			if !fa.sawPrefix("PUT", fa.path("config/naming/")) {
-				t.Error("naming settings were never pushed")
-			}
-			if got := conditionStatus(t, c, app, "Synced"); got != conditionTrue {
-				t.Errorf("Synced = %q, want True", got)
-			}
+			assert.True(t, fa.sawPrefix("PUT", fa.path("config/naming/")), "naming settings were never pushed")
+			assert.Equal(t, conditionTrue, conditionStatus(t, c, app, "Synced"), "Synced")
 
 			obj := app.empty()
-			if err := c.Get(context.Background(), types.NamespacedName{Name: "app", Namespace: "media"}, obj); err != nil {
-				t.Fatalf("fetching config: %v", err)
-			}
-			if len((*obj.GetManagedResources())["downloadClients"]) == 0 {
-				t.Errorf("managedResources did not record the download client: %+v", *obj.GetManagedResources())
-			}
+			require.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "app", Namespace: "media"}, obj), "fetching config")
+			assert.NotEmpty(t, (*obj.GetManagedResources())["downloadClients"],
+				"managedResources did not record the download client: %+v", *obj.GetManagedResources())
 		})
 	}
 }
@@ -371,9 +355,7 @@ func TestReconcileMarksUnhealthyAppNotReady(t *testing.T) {
 		t.Run(app.name, func(t *testing.T) {
 			cfg := app.build(unhealthyURL(t), buildOpts{})
 			c := run(t, app, apiKeySecret(), cfg)
-			if got := conditionStatus(t, c, app, "Ready"); got == conditionTrue {
-				t.Error("Ready = True for an app failing its health check")
-			}
+			assert.NotEqual(t, conditionTrue, conditionStatus(t, c, app, "Ready"), "Ready = True for an app failing its health check")
 		})
 	}
 }
@@ -384,12 +366,8 @@ func TestReconcileMissingSecretDoesNotContactApp(t *testing.T) {
 			fa, url := newFakeArr(t, app.apiVer, nil)
 			cfg := app.build(url, buildOpts{})
 			c := run(t, app, cfg) // no Secret
-			if fa.sawPrefix("GET", "/api/") {
-				t.Error("reconciler contacted the app despite failing to resolve its API key")
-			}
-			if got := conditionStatus(t, c, app, "Synced"); got == conditionTrue {
-				t.Error("Synced = True despite a missing secret")
-			}
+			assert.False(t, fa.sawPrefix("GET", "/api/"), "reconciler contacted the app despite failing to resolve its API key")
+			assert.NotEqual(t, conditionTrue, conditionStatus(t, c, app, "Synced"), "Synced = True despite a missing secret")
 		})
 	}
 }
@@ -408,12 +386,8 @@ func TestPruneLeavesUnmanagedResourcesAlone(t *testing.T) {
 
 			// Guard against a vacuous pass: if the reconcile never reached the
 			// app, the absence of a DELETE would prove nothing.
-			if !fa.saw("POST", fa.path("downloadclient")) {
-				t.Fatal("reconcile never reached the app, so the DELETE check is meaningless")
-			}
-			if fa.sawPrefix("DELETE", fa.path("downloadclient")) {
-				t.Error("prune deleted a download client the operator never created")
-			}
+			require.True(t, fa.saw("POST", fa.path("downloadclient")), "reconcile never reached the app, so the DELETE check is meaningless")
+			assert.False(t, fa.sawPrefix("DELETE", fa.path("downloadclient")), "prune deleted a download client the operator never created")
 		})
 	}
 }
@@ -432,9 +406,7 @@ func TestPruneRemovesPreviouslyManagedResources(t *testing.T) {
 			})
 			run(t, app, apiKeySecret(), cfg)
 
-			if !fa.sawPrefix("DELETE", fa.path("downloadclient")) {
-				t.Error("prune did not remove a resource it had previously created")
-			}
+			assert.True(t, fa.sawPrefix("DELETE", fa.path("downloadclient")), "prune did not remove a resource it had previously created")
 		})
 	}
 }
@@ -450,19 +422,12 @@ func TestDeletePolicyCleansOwnedResourcesAcrossPVRControllers(t *testing.T) {
 			now := metav1.Now()
 			cfg.SetDeletionTimestamp(&now)
 			c := run(t, app, apiKeySecret(), cfg)
-			if !fa.saw("DELETE", fa.path("downloadclient/7")) {
-				t.Fatal("owned resource was not cleaned up")
-			}
-			if fa.saw("DELETE", fa.path("downloadclient/8")) {
-				t.Fatal("manual resource was deleted")
-			}
-			if fa.sawPrefix("DELETE", fa.path("tag")) || fa.sawPrefix("DELETE", fa.path("rootfolder")) {
-				t.Fatal("protected resources were deleted")
-			}
+			require.True(t, fa.saw("DELETE", fa.path("downloadclient/7")), "owned resource was not cleaned up")
+			require.False(t, fa.saw("DELETE", fa.path("downloadclient/8")), "manual resource was deleted")
+			require.False(t, fa.sawPrefix("DELETE", fa.path("tag")), "protected resources were deleted")
+			require.False(t, fa.sawPrefix("DELETE", fa.path("rootfolder")), "protected resources were deleted")
 			err := c.Get(context.Background(), client.ObjectKeyFromObject(cfg), app.empty())
-			if !apierrors.IsNotFound(err) {
-				t.Fatalf("finalizer not released: %v", err)
-			}
+			require.True(t, apierrors.IsNotFound(err), "finalizer not released: %v", err)
 		})
 	}
 }
@@ -484,12 +449,8 @@ func TestRemoteMappingsReachEveryPVRController(t *testing.T) {
 				obj.Spec.RemotePathMappings = mappings
 			}
 			c := run(t, app, apiKeySecret(), cfg)
-			if !fa.saw("POST", "/api/"+app.apiVer+"/remotepathmapping") {
-				t.Fatal("mapping was not created")
-			}
-			if got := conditionStatus(t, c, app, "Synced"); got != conditionTrue {
-				t.Fatalf("Synced = %s", got)
-			}
+			require.True(t, fa.saw("POST", "/api/"+app.apiVer+"/remotepathmapping"), "mapping was not created")
+			require.Equal(t, conditionTrue, conditionStatus(t, c, app, "Synced"), "Synced")
 		})
 	}
 }
