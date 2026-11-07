@@ -57,6 +57,32 @@ helm install media-operator-pvr \
 Each chart ships only its own CRDs and RBAC. Set `watchNamespace` to restrict an
 operator to a single namespace; it watches everything by default.
 
+## Compatibility
+
+CI runs every operator against the real application in a container
+([test/compat](test/compat/)). The first reconcile has to reach `Synced` and a
+second one has to send no writes. For apps that support `driftPolicy: observe`,
+observe mode has to send none either. These are the versions it runs; Renovate
+moves them forward. Older versions may work but aren't tested.
+
+| App | Tested version |
+| --- | --- |
+| Sonarr | 4.0.20 |
+| Radarr | 6.4.4 |
+| Lidarr | 3.1.6 |
+| Readarr | 0.4.18 (develop) |
+| Prowlarr | 2.7.0 |
+| FlareSolverr | 3.5.2 |
+| Bazarr | 1.6.2 |
+| qBittorrent | 5.3.0 |
+| SABnzbd | 5.1.3 |
+| Jellyfin | 12.4 |
+| Plex | 1.43.5, unclaimed |
+| Seerr | 3.5.1, set up through Jellyfin |
+| Maintainerr | not covered yet |
+| Tdarr | 3.06.00, auth off |
+| Autobrr | 1.90.0 |
+
 ## Configure
 
 Start from [examples/](examples/) — [minimal-sonarr.yaml](examples/minimal-sonarr.yaml)
