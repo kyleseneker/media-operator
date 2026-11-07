@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -70,11 +71,19 @@ func TestUnreachableAppRetriesButDoesNotWedgeForever(t *testing.T) {
 	// Recently deleted: keep retrying, hold the finalizer.
 	c := newConfig(DeletionPolicyDelete, time.Minute)
 	cl := testClient(c).Build()
-	_, err := HandleDeletion(context.Background(), cl, nil, c, func(context.Context) error {
+	recorder := events.NewFakeRecorder(1)
+	_, err := HandleDeletion(context.Background(), cl, recorder, c, func(context.Context) error {
 		return errors.New("app unreachable")
 	})
 	assert.Error(t, err, "expected an error so the request is retried")
 	assert.True(t, controllerutil.ContainsFinalizer(c, Finalizer), "finalizer must be held while still within the give-up window")
+	select {
+	case event := <-recorder.Events:
+		assert.Contains(t, event, "Warning CleanupFailed")
+		assert.Contains(t, event, "app unreachable")
+	default:
+		assert.Fail(t, "a failed cleanup must say why the resource is still there")
+	}
 
 	// Past the give-up window: release regardless.
 	c2 := newConfig(DeletionPolicyDelete, DeletionGiveUpAfter+time.Minute)

@@ -40,8 +40,9 @@ func EnsureFinalizer(ctx context.Context, c client.Client, obj ConfigResource) e
 
 // HandleDeletion runs when the resource is being deleted. It calls remove only
 // when the deletion policy is "delete", then releases the finalizer. If remove
-// fails it retries until DeletionGiveUpAfter has elapsed since deletion was
-// requested, after which the finalizer is released regardless.
+// fails it records a warning event and retries until DeletionGiveUpAfter has
+// elapsed since deletion was requested, after which the finalizer is released
+// regardless.
 func HandleDeletion(ctx context.Context, c client.Client, recorder events.EventRecorder, obj ConfigResource, remove func(context.Context) error) (bool, error) {
 	if !controllerutil.ContainsFinalizer(obj, Finalizer) {
 		return false, nil
@@ -73,6 +74,11 @@ func HandleDeletion(ctx context.Context, c client.Client, recorder events.EventR
 						"released finalizer after %s without removing remote resources: %v", DeletionGiveUpAfter, err)
 				}
 			} else {
+				if recorder != nil {
+					recorder.Eventf(obj, nil, corev1.EventTypeWarning, "CleanupFailed", "Cleanup",
+						"removing remote resources failed; retrying until the finalizer is released at %s: %v",
+						obj.GetDeletionTimestamp().Add(DeletionGiveUpAfter).Format(time.RFC3339), err)
+				}
 				return true, err
 			}
 		}
@@ -98,13 +104,16 @@ func expired(obj ConfigResource) bool {
 // reconciling, either because the object is being deleted or because the
 // finalizer could not be written.
 func HandleLifecycle(ctx context.Context, c client.Client, recorder events.EventRecorder, obj ConfigResource, remove func(context.Context) error) (bool, time.Duration) {
+	logger := log.FromContext(ctx)
 	if !obj.GetDeletionTimestamp().IsZero() {
 		if _, err := HandleDeletion(ctx, c, recorder, obj, remove); err != nil {
+			logger.Error(err, "deletion not finished; retrying")
 			return true, 30 * time.Second
 		}
 		return true, 0
 	}
 	if err := EnsureFinalizer(ctx, c, obj); err != nil {
+		logger.Error(err, "adding finalizer; retrying")
 		return true, 30 * time.Second
 	}
 	if rc := obj.GetReconcileConfig(); rc != nil && rc.DeletionPolicy != nil && *rc.DeletionPolicy == DeletionPolicyDelete {
