@@ -1,0 +1,71 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: TdarrConfig
+metadata:
+  name: tdarr
+spec:
+  connection:
+    url: ${URL}
+    apiKeySecretRef:
+      name: compat-credentials
+      key: api-key
+  workers:
+    transcodeCPU: 1
+    transcodeGPU: 0
+    healthcheckCPU: 2
+    healthcheckGPU: 0
+  flows:
+    - id: compatFlow1
+      name: Compat - remux check
+      description: Checks the container and stops
+      # Quote y: YAML 1.1 parsers, kubectl's included, read a bare y as true.
+      flowPlugins:
+        - name: Input File
+          sourceRepo: Community
+          pluginName: inputFile
+          version: 1.0.0
+          inputsDB:
+            fileAccessChecks: "true"
+          id: inputNode1
+          position:
+            x: 0
+            "y": 0
+          fpEnabled: true
+        - name: Check if mkv
+          sourceRepo: Community
+          pluginName: checkFileExtension
+          version: 1.0.0
+          inputsDB:
+            extensions: mkv
+          id: checkNode1
+          position:
+            x: 0
+            "y": 200
+          fpEnabled: true
+      flowEdges:
+        - source: inputNode1
+          sourceHandle: "1"
+          target: checkNode1
+          targetHandle: null
+          id: edge1
+  libraries:
+    - id: compatMovies
+      name: Movies
+      folder: /media/movies
+      cache: /temp
+      container: ".mkv"
+      containerFilter: "mkv,mp4"
+      foldersToIgnore: extras
+      folderWatching: false
+      processLibrary: true
+      processTranscodes: true
+      processHealthChecks: true
+      healthCheckMode: quick
+      decisionMode: flows
+      flowId: compatFlow1
+      scanOnStart: false
+      scheduledScanFindNew: false
+      scannerThreadCount: 2
+      ffmpeg: true
+      priority: 1
+      variables:
+        targetCodec: hevc
