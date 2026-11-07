@@ -16,7 +16,10 @@ import (
 var fakeTdarrCollections = map[string]string{
 	"LibrarySettingsJSONDB": `[{"_id":"movies","name":"Movies","folder":"/media/movies","handbrakescan":false,"ffmpegscan":true,
 		"decisionMaker":{"settingsFlows":true,"settingsPlugin":false},"priority":1,"flowId":"flow1",
-		"schedule":[{"checked":true},{"checked":false}],"variables":{"user":{"fromDoc":"a","shared":"doc"}}},
+		"schedule":[{"checked":true},{"checked":false}],
+		"pluginIDs":[{"_id":"plugin2","id":"Second","checked":true,"source":"Community","priority":1,"InputsDB":{}},
+			{"_id":"plugin1","id":"First","checked":true,"source":"Community","priority":0,"InputsDB":{}},
+			{"_id":"plugin3","id":"Off","checked":false,"source":"Community","priority":2,"InputsDB":{}}],"variables":{"user":{"fromDoc":"a","shared":"doc"}}},
 		{"_id":"tv","name":"TV","folder":"/media/tv","decisionMaker":{"settingsFlows":false,"settingsPlugin":false,"settingsVideo":true}}]`,
 	"VariablesJSONDB": `[{"key":"shared","value":"db","type":"library:movies"},{"key":"other","value":"x","type":"library:tv"},
 		{"key":"global","value":"g","type":"global"}]`,
@@ -55,7 +58,7 @@ func TestTdarrExportsLibrariesFlowsAndWorkers(t *testing.T) {
 	assert.Equal(t, "flows", movies.DecisionMode)
 	assert.Equal(t, map[string]string{"fromDoc": "a", "shared": "db"}, movies.Variables, "variable documents win over the library copy")
 	assert.Contains(t, res.Warnings,
-		`library "Movies" has a processing schedule; TdarrConfig turns every hour on, so applying the config would reset it`)
+		`library "Movies": plugin Off is disabled, local or has options, which pluginStack can't express`)
 	assert.Empty(t, cfg.Spec.Libraries[1].DecisionMode)
 	assert.Contains(t, res.Warnings,
 		`library "TV" decides by video and audio settings, which TdarrConfig can't express, so they stay as set in Tdarr`)

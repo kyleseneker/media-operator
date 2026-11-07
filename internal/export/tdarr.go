@@ -61,10 +61,27 @@ func exportTdarr(r *reader) (map[string]any, error) {
 	return spec, nil
 }
 
+// tdarrPlugins exports a library's classic plugin stack in priority order.
+func (r *reader) tdarrPlugins(library string, entries []map[string]any) []string {
+	slices.SortStableFunc(entries, func(a, b map[string]any) int { return int(num(a["priority"]) - num(b["priority"])) })
+	var ids []string
+	for _, e := range entries {
+		inputs, _ := e["InputsDB"].(map[string]any)
+		if e["checked"] != true || e["source"] != "Community" || len(inputs) > 0 {
+			r.warn("library %q: plugin %v is disabled, local or has options, which pluginStack can't express", library, e["id"])
+			continue
+		}
+		if id, _ := e["id"].(string); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
 func (r *reader) tdarrLibrary(doc map[string]any, variables []map[string]any) map[string]any {
 	lib := pick(doc, "name", "folder", "cache", "container", "containerFilter", "foldersToIgnore", "folderWatching",
 		"processLibrary", "processTranscodes", "processHealthChecks", "scanOnStart", "scheduledScanFindNew",
-		"scannerThreadCount", "ffmpeg", "priority", "flowId", "pluginStack")
+		"scannerThreadCount", "ffmpeg", "priority", "flowId")
 	id, _ := doc["_id"].(string)
 	name, _ := doc["name"].(string)
 	lib["id"] = id
@@ -84,11 +101,8 @@ func (r *reader) tdarrLibrary(doc map[string]any, variables []map[string]any) ma
 			r.warn("library %q decides by video and audio settings, which TdarrConfig can't express, so they stay as set in Tdarr", name)
 		}
 	}
-	for _, hour := range list(doc["schedule"]) {
-		if hour["checked"] != true {
-			r.warn("library %q has a processing schedule; TdarrConfig turns every hour on, so applying the config would reset it", name)
-			break
-		}
+	if plugins := r.tdarrPlugins(name, list(doc["pluginIDs"])); len(plugins) > 0 {
+		lib["pluginStack"] = plugins
 	}
 
 	vars := map[string]any{}

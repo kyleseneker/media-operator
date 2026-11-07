@@ -51,6 +51,8 @@ type fakeTdarr struct {
 	// call made against that collection so the variable sync can be asserted.
 	vars   []map[string]any
 	writes []varWrite
+	// libWrites records every insert and update of a library document.
+	libWrites []varWrite
 }
 
 type varWrite struct {
@@ -98,6 +100,9 @@ func (f *fakeTdarr) serve(t *testing.T) string {
 			f.mu.Lock()
 			f.ops = append(f.ops, body.Data.Mode)
 			found := f.docFound
+			if body.Data.Collection == "LibrarySettingsJSONDB" && (body.Data.Mode == "insert" || body.Data.Mode == "update") {
+				f.libWrites = append(f.libWrites, varWrite{mode: body.Data.Mode, docID: body.Data.DocID, obj: body.Data.Obj})
+			}
 			if body.Data.Collection == variablesCollection {
 				if body.Data.Mode != modeGetAll {
 					f.writes = append(f.writes, varWrite{mode: body.Data.Mode, docID: body.Data.DocID, obj: body.Data.Obj})
@@ -259,7 +264,7 @@ func TestLibraryDocCarriesFlowAttachment(t *testing.T) {
 	}
 	got := buildTdarrLibraryDoc(lib)
 	assert.Equal(t, "strip-tracks", got["flowId"], "flowId missing from library doc")
-	assert.Contains(t, got, "pluginStack", "pluginStack missing from library doc")
+	assert.Contains(t, got, "pluginIDs", "the plugin stack is missing from the library doc")
 }
 
 // Community flows read library variables as {{{args.variables.user.<name>}}},
@@ -279,17 +284,50 @@ func TestLibraryVariablesNestUnderUser(t *testing.T) {
 	assert.Equal(t, "true", user["do_audio_clean"], "unexpected user variables")
 }
 
-func TestLibraryDocAlwaysCarriesSchedule(t *testing.T) {
-	got := buildTdarrLibraryDoc(transcodev1alpha1.TdarrLibrary{ID: "movies", Name: "Movies"})
+func TestAlwaysOnScheduleNamesEachHourAsTdarrDoes(t *testing.T) {
+	schedule := alwaysOnSchedule()
+	require.Len(t, schedule, 7*24)
+	assert.Equal(t, map[string]any{"_id": "Sun:00-01", "checked": true}, schedule[0])
+	assert.Equal(t, map[string]any{"_id": "Sun:23-00", "checked": true}, schedule[23])
+	assert.Equal(t, map[string]any{"_id": "Sat:23-00", "checked": true}, schedule[len(schedule)-1])
+}
 
-	schedule, ok := got["schedule"].([]any)
-	require.True(t, ok, "schedule missing from library doc: %v", got)
-	require.Len(t, schedule, scheduleHoursPerWeek, "schedule must cover every hour of the week")
-	for i, slot := range schedule {
-		entry, ok := slot.(map[string]any)
-		require.True(t, ok, "slot %d must be an enabled entry, got %#v", i, slot)
-		require.Equal(t, true, entry["checked"], "slot %d must be an enabled entry", i)
+// A new library processes every hour; an existing library keeps the schedule
+// set in Tdarr, since an update only carries the declared fields.
+func TestOnlyANewLibraryGetsTheAlwaysOnSchedule(t *testing.T) {
+	for _, found := range []bool{false, true} {
+		app := &fakeTdarr{docFound: found, stored: map[string]any{"_id": "movies", "name": "Old name"}}
+		cfg := tdarrConfig(app.serve(t))
+		cfg.Spec.Libraries = []transcodev1alpha1.TdarrLibrary{{ID: "movies", Name: "Movies", Folder: "/media/movies"}}
+		runTdarr(t, cfg, true)
+
+		app.mu.Lock()
+		writes := append([]varWrite(nil), app.libWrites...)
+		app.mu.Unlock()
+		require.Len(t, writes, 1)
+		if found {
+			assert.Equal(t, "update", writes[0].mode)
+			assert.NotContains(t, writes[0].obj, "schedule", "an update reset the schedule set in Tdarr")
+		} else {
+			assert.Equal(t, "insert", writes[0].mode)
+			assert.Len(t, writes[0].obj["schedule"], 7*24)
+		}
 	}
+}
+
+// Tdarr runs a library's classic plugins from pluginIDs; a pluginStack key is
+// stored but never read.
+func TestPluginStackIsWrittenAsPluginIDs(t *testing.T) {
+	got := buildTdarrLibraryDoc(transcodev1alpha1.TdarrLibrary{
+		ID: "movies", Name: "Movies", PluginStack: []string{"Tdarr_Plugin_MC93_MigzImageRemoval", "Tdarr_Plugin_lmg1_Reorder_Streams"},
+	})
+	assert.NotContains(t, got, "pluginStack")
+	assert.Equal(t, []any{
+		map[string]any{"_id": "plugin1", "id": "Tdarr_Plugin_MC93_MigzImageRemoval", "checked": true, "source": "Community",
+			"priority": 0, "InputsDB": map[string]any{}},
+		map[string]any{"_id": "plugin2", "id": "Tdarr_Plugin_lmg1_Reorder_Streams", "checked": true, "source": "Community",
+			"priority": 1, "InputsDB": map[string]any{}},
+	}, got["pluginIDs"])
 }
 
 func TestLibraryDocAlwaysCarriesFoldersToIgnoreAsString(t *testing.T) {
@@ -546,7 +584,7 @@ var specFieldToDocKeys = map[string][]string{
 	"FFmpeg":               {"ffmpeg"},
 	"Priority":             {"priority"},
 	"FlowID":               {"flowId"},
-	"PluginStack":          {"pluginStack"},
+	"PluginStack":          {"pluginIDs"},
 	"Variables":            {"variables"},
 }
 

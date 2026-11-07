@@ -127,7 +127,8 @@ type TdarrLibrary struct {
 	// +optional
 	FlowID string `json:"flowId,omitempty"`
 
-	// pluginStack lists classic plugin IDs to run, for libraries not using a flow.
+	// pluginStack lists the community plugin IDs to run, in order, for libraries
+	// not using a flow.
 	// +optional
 	PluginStack []string `json:"pluginStack,omitempty"`
 

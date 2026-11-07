@@ -63,6 +63,8 @@ spec:
       healthCheckMode: quick
       decisionMode: flows
       flowId: compatFlow1
+      pluginStack:
+        - Tdarr_Plugin_MC93_MigzImageRemoval
       scanOnStart: false
       scheduledScanFindNew: false
       scannerThreadCount: 2

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -140,7 +141,9 @@ func (s *tdarrSync) run(ctx context.Context, spec *transcodev1alpha1.TdarrConfig
 }
 
 func (s *tdarrSync) library(ctx context.Context, lib transcodev1alpha1.TdarrLibrary) error {
-	if err := s.upsertDoc(ctx, "LibrarySettingsJSONDB", lib.ID, buildTdarrLibraryDoc(lib)); err != nil {
+	// A new library processes every hour; a schedule set in Tdarr afterwards is kept.
+	onCreate := map[string]any{"schedule": alwaysOnSchedule()}
+	if err := s.upsertDoc(ctx, "LibrarySettingsJSONDB", lib.ID, buildTdarrLibraryDoc(lib), onCreate); err != nil {
 		return err
 	}
 	return s.libraryVariables(ctx, lib)
@@ -275,15 +278,29 @@ func (s *tdarrSync) cleanup(ctx context.Context) error {
 	})
 }
 
-const scheduleHoursPerWeek = 168
-
-// alwaysOnSchedule renders a schedule with every hour of the week enabled.
+// alwaysOnSchedule renders a schedule with every hour of the week enabled,
+// each hour named as Tdarr names it, from "Sun:00-01" to "Sat:23-00".
 func alwaysOnSchedule() []any {
-	schedule := make([]any, scheduleHoursPerWeek)
-	for i := range schedule {
-		schedule[i] = map[string]any{"checked": true}
+	schedule := make([]any, 0, 7*24)
+	for _, day := range []string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"} {
+		for hour := range 24 {
+			id := fmt.Sprintf("%s:%02d-%02d", day, hour, (hour+1)%24)
+			schedule = append(schedule, map[string]any{"_id": id, "checked": true})
+		}
 	}
 	return schedule
+}
+
+// tdarrPluginIDs renders a classic plugin stack as Tdarr's pluginIDs, community
+// plugins in the declared order.
+func tdarrPluginIDs(plugins []string) []any {
+	out := make([]any, 0, len(plugins))
+	for i, id := range plugins {
+		out = append(out, map[string]any{
+			"_id": fmt.Sprintf("plugin%d", i+1), "id": id, "checked": true, "source": "Community", "priority": i, "InputsDB": map[string]any{},
+		})
+	}
+	return out
 }
 
 // buildTdarrLibraryDoc renders the library document Tdarr stores.
@@ -291,7 +308,6 @@ func buildTdarrLibraryDoc(lib transcodev1alpha1.TdarrLibrary) map[string]any {
 	obj := map[string]any{
 		"_id":             lib.ID,
 		"name":            lib.Name,
-		"schedule":        alwaysOnSchedule(),
 		"foldersToIgnore": lib.FoldersToIgnore,
 	}
 	if lib.Folder != "" {
@@ -351,7 +367,7 @@ func buildTdarrLibraryDoc(lib transcodev1alpha1.TdarrLibrary) map[string]any {
 		obj["flowId"] = lib.FlowID
 	}
 	if len(lib.PluginStack) > 0 {
-		obj["pluginStack"] = lib.PluginStack
+		obj["pluginIDs"] = tdarrPluginIDs(lib.PluginStack)
 	}
 	if len(lib.Variables) > 0 {
 		user := make(map[string]any, len(lib.Variables))
@@ -385,19 +401,21 @@ func (s *tdarrSync) flow(ctx context.Context, flow transcodev1alpha1.TdarrFlow) 
 	}
 	obj["flowEdges"] = edges
 
-	return s.upsertDoc(ctx, "FlowsJSONDB", flow.ID, obj)
+	return s.upsertDoc(ctx, "FlowsJSONDB", flow.ID, obj, nil)
 }
 
 // upsertDoc writes a library or flow only when Tdarr's stored document does not
 // already hold every declared value. Updating on every pass rewrote each library
 // and flow every few minutes, and Tdarr rescans on a library save.
-func (s *tdarrSync) upsertDoc(ctx context.Context, collection, id string, obj map[string]any) error {
+func (s *tdarrSync) upsertDoc(ctx context.Context, collection, id string, obj, onCreate map[string]any) error {
 	existing, err := s.tc.GetByID(ctx, collection, id)
 	if err != nil {
 		return fmt.Errorf("looking up %s/%s: %w", collection, id, err)
 	}
 	if len(existing) == 0 {
-		return s.Apply(collection, id, func() error { return s.tc.Insert(ctx, collection, id, obj) })
+		doc := maps.Clone(obj)
+		maps.Copy(doc, onCreate)
+		return s.Apply(collection, id, func() error { return s.tc.Insert(ctx, collection, id, doc) })
 	}
 	// Compare in JSON terms: the stored document decodes to float64s and []any.
 	raw, err := json.Marshal(obj)
