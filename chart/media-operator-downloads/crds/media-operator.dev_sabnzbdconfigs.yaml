@@ -151,7 +151,8 @@ spec:
                 description: general configures general SABnzbd settings.
                 properties:
                   autoSort:
-                    description: autoSort enables automatic sorting of downloads.
+                    description: autoSort sorts the queue by age whenever an NZB is
+                      added.
                     type: boolean
                   downloadSpeedLimit:
                     description: downloadSpeedLimit is the download speed limit (e.g.,
@@ -164,7 +165,9 @@ spec:
                     description: preCheck enables NZB pre-check for completion.
                     type: boolean
                   scriptDir:
-                    description: scriptDir is the path to the scripts directory.
+                    description: |-
+                      scriptDir is the path to the scripts directory.
+                      Deprecated: use folders.scriptDir, which takes precedence when both are set.
                     type: string
                 type: object
               reconcile:

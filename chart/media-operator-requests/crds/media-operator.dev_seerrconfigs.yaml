@@ -204,7 +204,7 @@ spec:
                       description: |-
                         agent is the notification agent type.
                         Supported values: discord, slack, telegram, pushover, email, webhook,
-                        gotify, lunasea, pushbullet, webpush.
+                        gotify, ntfy, pushbullet, webpush.
                       type: string
                     enabled:
                       description: enabled enables this notification agent.

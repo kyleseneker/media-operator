@@ -149,9 +149,9 @@ spec:
                   properties:
                     name:
                       description: |-
-                        name is the session identifier. Must be unique across sessions.
-                        This name is used when making requests through Prowlarr or other tools
-                        to reuse the same browser session.
+                        name is the session identifier. Must be unique across sessions. A client
+                        reuses the session by sending this name with its requests; Prowlarr's
+                        FlareSolverr proxy doesn't.
                       type: string
                   required:
                   - name

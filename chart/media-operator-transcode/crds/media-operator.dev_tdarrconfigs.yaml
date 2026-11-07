@@ -205,8 +205,9 @@ spec:
                       description: name is the display name of the library.
                       type: string
                     pluginStack:
-                      description: pluginStack lists classic plugin IDs to run, for
-                        libraries not using a flow.
+                      description: |-
+                        pluginStack lists the community plugin IDs to run, in order, for libraries
+                        not using a flow.
                       items:
                         type: string
                       type: array
