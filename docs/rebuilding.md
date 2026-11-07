@@ -42,10 +42,10 @@ Readarr share the same endpoint and are covered by the regular Go suite.
 
 Identity is `(host, remotePath)`, not just the directory. Changing `localPath`
 updates a mapping in place. Directory paths receive trailing separators to match
-Servarr's storage format, including Windows paths. Changing host or remotePath
-creates a new identity; use prune with a nonempty desired mapping list to remove
-old operator-created mappings. Omission or an empty list leaves existing mappings
-alone, consistent with other resources. Manually created mappings are never adopted
+how Sonarr, Radarr, Lidarr and Readarr store them, including Windows paths.
+Changing host or remotePath creates a new identity; use prune with a nonempty
+desired mapping list to remove old operator-created mappings. Omission or an
+empty list leaves existing mappings alone, consistent with other resources. Manually created mappings are never adopted
 for deletion. `deletionPolicy: delete` cleans up tracked mappings.
 
 ## Rebuild acceptance procedure

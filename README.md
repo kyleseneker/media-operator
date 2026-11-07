@@ -109,15 +109,17 @@ doesn't matter, the operator just reads them and re-reconciles when they change.
   event, potentially leaving remote resources behind.
 - **Settings drift is corrected every cycle; root folders and Jellyfin libraries
   are create-only.** Once they exist the operator won't modify them.
-- **Portable tag references.** Servarr resources accept `tagLabels`, resolved after
-  declared tags are created. Nonempty labels take precedence over numeric `tags`.
+- **Portable tag references.** Sonarr, Radarr, Lidarr and Readarr resources
+  accept `tagLabels`, resolved after declared tags are created. Nonempty labels
+  take precedence over numeric `tags`.
   Prowlarr's existing `tags` fields remain labels; its notifications use `tagLabels`.
   Missing or ambiguous references fail instead of silently dropping associations.
 - **Prowlarr sync profiles.** Declare `appProfiles` and reference them with
   `indexers[].appProfileName`; names take precedence over `appProfileId`. Profiles
   are created/updated but retained during prune and deletion.
-- **Remote downloaders.** Servarr `remotePathMappings` translate download
-  paths by host and remote directory; local paths can be updated in place.
+- **Remote downloaders.** Sonarr, Radarr, Lidarr and Readarr
+  `remotePathMappings` translate download paths by host and remote directory;
+  local paths can be updated in place.
 - **Any `fields` entry can read from a Secret.** Use `valueFrom` instead of
   `value` to keep indexer API keys and webhook URLs out of git.
 - **Self-signed certs work.** `connection.tls.caSecretRef` for a private CA, or
@@ -139,9 +141,10 @@ FlareSolverr report `Synced=False` with reason `DriftDetected` when differences 
 When upgrading, existing `status.managedResources` records are retained. Older
 versions also recorded matching pre-existing resources as managed; the operator
 cannot determine their origin retroactively. Review these records before enabling
-prune on an existing installation. New Servarr and FlareSolverr ownership records are added only
-after successful creation, and failed updates or deletions retain ownership so
-cleanup can be retried.
+prune on an existing installation. New ownership records for Sonarr, Radarr,
+Lidarr, Readarr, Prowlarr and FlareSolverr are added only after successful
+creation, and failed updates or deletions retain ownership so cleanup can be
+retried.
 
 Metrics are on `:8443/metrics` over HTTPS behind TokenReview auth, enabled by
 default. `media_operator_config_synced` is the one to alert on — it goes to 0 when

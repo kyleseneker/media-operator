@@ -401,7 +401,7 @@ type Tag struct {
 	Label string `json:"label"`
 }
 
-// Indexer defines an indexer connection for a Servarr app.
+// Indexer defines an indexer in Sonarr, Radarr, Lidarr or Readarr.
 type Indexer struct {
 	// name is the display name of the indexer.
 	// +required
@@ -460,7 +460,7 @@ type Indexer struct {
 	Fields []ConfigField `json:"fields,omitempty"`
 }
 
-// Notification defines a notification/connection for a Servarr app.
+// Notification defines a notification (a "Connect" entry) in Sonarr, Radarr, Lidarr, Readarr or Prowlarr.
 type Notification struct {
 	// name is the display name of the notification.
 	// +required
@@ -621,7 +621,7 @@ type Notification struct {
 	OnBookRetag *bool `json:"onBookRetag,omitempty"`
 }
 
-// ImportList defines an import list for automatically adding content to a Servarr app.
+// ImportList defines an import list that adds content to Sonarr, Radarr, Lidarr or Readarr.
 type ImportList struct {
 	// name is the display name of the import list.
 	// +required

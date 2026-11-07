@@ -13,7 +13,7 @@ import (
 	"github.com/kyleseneker/media-operator/internal/metrics"
 )
 
-// Definition returns the AppDefinition for any Servarr-family app.
+// Definition returns the AppDefinition for Sonarr, Radarr, Lidarr or Readarr.
 // apiVersion is "v3" for Sonarr/Radarr, "v1" for Lidarr/Readarr.
 func Definition(apiVersion string) engine.AppDefinition {
 	prefix := fmt.Sprintf("/api/%s", apiVersion)
@@ -44,7 +44,7 @@ func Definition(apiVersion string) engine.AppDefinition {
 	}
 }
 
-// Sections builds the sections map from a spec that follows the Servarr pattern.
+// Sections builds the sections map from a Sonarr, Radarr, Lidarr or Readarr spec.
 // The spec must have the fields: MediaManagement, Naming, IndexerConfig, DownloadClientConfig, UI.
 func Sections(spec any) (map[string]any, error) {
 	data, err := json.Marshal(spec)
@@ -79,7 +79,7 @@ type DownloadClientResolvedSecrets struct {
 	APIKey   string
 }
 
-// Options holds all the inputs needed to reconcile a Servarr-family app.
+// Options holds all the inputs needed to reconcile Sonarr, Radarr, Lidarr or Readarr.
 type Options struct {
 	RemotePathMappings []commonv1alpha1.RemotePathMapping
 	RootFolders        []commonv1alpha1.RootFolder
@@ -727,21 +727,21 @@ func BuildQualityItems(items []commonv1alpha1.QualityProfileItem) []map[string]a
 
 // FindCutoffID resolves a cutoff name (quality name or group name) to the corresponding ID.
 // For individual qualities, returns quality.id. For groups, returns the group item index + 1000
-// (matching Servarr's convention for group IDs).
+// (the IDs these apps give quality groups).
 func FindCutoffID(items []commonv1alpha1.QualityProfileItem, cutoffName string) (int, bool) {
 	for i, item := range items {
 		if item.Quality != nil && item.Quality.Name == cutoffName {
 			return item.Quality.ID, true
 		}
 		if item.Quality == nil && item.Name == cutoffName {
-			// Group — use 1000+index as the group ID (Servarr convention)
+			// Group — use 1000+index as the group ID (how these apps number groups)
 			return 1000 + i, true
 		}
 	}
 	return 0, false
 }
 
-// Reconcile runs the full reconciliation for any Servarr-family app.
+// Reconcile runs the full reconciliation for Sonarr, Radarr, Lidarr or Readarr.
 func Reconcile(ctx context.Context, client *engine.HTTPClient, apiVersion string, spec any, opts Options, policy engine.SyncPolicy, managed map[string][]string) (engine.ReconcileResult, error) {
 	def := Definition(apiVersion)
 	sections, err := Sections(spec)
@@ -821,7 +821,7 @@ func mergeResult(dst *engine.ReconcileResult, src engine.ReconcileResult) {
 	dst.Managed = src.Managed
 }
 
-// Servarr stores directory paths with a trailing separator. Use the same form
+// These apps store directory paths with a trailing separator. Use the same form
 // before matching so a fresh mapping is not recreated on every reconciliation.
 func directoryPath(path string) string {
 	if path == "" || strings.HasSuffix(path, "/") || strings.HasSuffix(path, `\`) {

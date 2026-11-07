@@ -19,7 +19,7 @@ import (
 )
 
 // rebuildAPI persists writes and assigns IDs like a newly initialized app. This
-// exercises ordering and convergence, not compatibility with a real Servarr API.
+// exercises ordering and convergence, not compatibility with a real Sonarr or Radarr.
 type rebuildAPI struct {
 	mu     sync.Mutex
 	items  map[string][]map[string]any

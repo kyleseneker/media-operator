@@ -368,8 +368,8 @@ spec:
                 description: importLists defines import list configurations for automatic
                   content addition.
                 items:
-                  description: ImportList defines an import list for automatically
-                    adding content to a Servarr app.
+                  description: ImportList defines an import list that adds content
+                    to Sonarr, Radarr, Lidarr or Readarr.
                   properties:
                     configContract:
                       description: |-
@@ -506,8 +506,8 @@ spec:
               indexers:
                 description: indexers defines indexer connections.
                 items:
-                  description: Indexer defines an indexer connection for a Servarr
-                    app.
+                  description: Indexer defines an indexer in Sonarr, Radarr, Lidarr
+                    or Readarr.
                   properties:
                     configContract:
                       description: |-
@@ -682,8 +682,8 @@ spec:
               notifications:
                 description: notifications defines notification/connection configurations.
                 items:
-                  description: Notification defines a notification/connection for
-                    a Servarr app.
+                  description: Notification defines a notification (a "Connect" entry)
+                    in Sonarr, Radarr, Lidarr, Readarr or Prowlarr.
                   properties:
                     configContract:
                       description: |-

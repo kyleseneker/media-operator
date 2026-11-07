@@ -21,8 +21,8 @@ export MEDIA_TEST_RADARR_LOCAL_PATH=/data/downloads
 make test-integration
 ```
 
-The tests log detected versions, round-trip remote mappings through both Servarr
-APIs, check that the next pass keeps the mapping's ID, and recreate a Prowlarr
+The tests log detected versions, round-trip remote mappings through both the Sonarr
+and Radarr APIs, check that the next pass keeps the mapping's ID, and recreate a Prowlarr
 profile to verify name resolution follows its new ID. Prowlarr indexer payloads
 are resolved but not submitted: a working external indexer is not required.
 Use Linux/POSIX local paths for this live test; Windows path normalization is

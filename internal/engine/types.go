@@ -18,7 +18,7 @@ type AuthType int
 const (
 	// AuthNone applies no authentication headers (FlareSolverr, SABnzbd with key in body).
 	AuthNone AuthType = iota
-	// AuthAPIKey uses X-Api-Key header (Servarr family, Tdarr, Autobrr, Maintainerr).
+	// AuthAPIKey sends the key in X-Api-Key, or in the header WithAPIKeyHeader names.
 	AuthAPIKey
 	// AuthCookie uses session-based cookie auth (qBittorrent).
 	AuthCookie
