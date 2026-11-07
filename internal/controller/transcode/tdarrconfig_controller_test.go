@@ -342,13 +342,40 @@ func TestLibraryVariablesUpdateChangedValueOnly(t *testing.T) {
 	assert.Equal(t, "22", writes[0].obj["value"], "new value not written: %v", writes[0].obj)
 }
 
-// A variable dropped from the spec must disappear from Tdarr, otherwise a flow
-// keeps reading a value that no longer exists in git.
-func TestLibraryVariablesPruneUndeclared(t *testing.T) {
+// A variable the operator created that leaves the spec is deleted under prune,
+// so a flow stops reading a value that is no longer in git. One added by hand
+// in Tdarr is never the operator's to delete.
+func TestLibraryVariablesPruneOnlyWhatTheOperatorCreated(t *testing.T) {
 	app := &fakeTdarr{docFound: true, vars: []map[string]any{
 		{"_id": "v1", "key": "bitrate_1080p", "value": "2500", "type": "library:movies"},
 		{"_id": "v9", "key": "stale_key", "value": "x", "type": "library:movies"},
+		{"_id": "v8", "key": "hand_made", "value": "x", "type": "library:movies"},
 		{"_id": "v7", "key": "other_lib", "value": "x", "type": "library:tv"},
+	}}
+	url := app.serve(t)
+
+	cfg := tdarrConfig(url)
+	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{Prune: new(true)}
+	cfg.Spec.Libraries = []transcodev1alpha1.TdarrLibrary{{
+		ID: "movies", Name: "Movies", Folder: "/data/media/movies",
+		Variables: map[string]string{"bitrate_1080p": "2500"},
+	}}
+	cfg.Status.ManagedResources = map[string][]string{variablesResource: {"movies/bitrate_1080p", "movies/stale_key"}}
+	c := runTdarr(t, cfg, true)
+
+	writes := app.varWrites()
+	require.Len(t, writes, 1, "expected a single removal")
+	assert.Equal(t, "removeOne", writes[0].mode, "expected stale_key (v9) removed")
+	assert.Equal(t, "v9", writes[0].docID, "expected stale_key (v9) removed")
+	assert.Equal(t, []string{"movies/bitrate_1080p"}, tdarrManaged(t, c)[variablesResource], "a pruned variable is still recorded as owned")
+}
+
+// Without prune nothing is deleted, as for every other resource: prune
+// defaults to false.
+func TestLibraryVariablesKeptWithoutPrune(t *testing.T) {
+	app := &fakeTdarr{docFound: true, vars: []map[string]any{
+		{"_id": "v1", "key": "bitrate_1080p", "value": "2500", "type": "library:movies"},
+		{"_id": "v9", "key": "stale_key", "value": "x", "type": "library:movies"},
 	}}
 	url := app.serve(t)
 
@@ -357,12 +384,34 @@ func TestLibraryVariablesPruneUndeclared(t *testing.T) {
 		ID: "movies", Name: "Movies", Folder: "/data/media/movies",
 		Variables: map[string]string{"bitrate_1080p": "2500"},
 	}}
+	cfg.Status.ManagedResources = map[string][]string{variablesResource: {"movies/stale_key"}}
 	runTdarr(t, cfg, true)
 
-	writes := app.varWrites()
-	require.Len(t, writes, 1, "expected a single removal")
-	assert.Equal(t, "removeOne", writes[0].mode, "expected stale_key (v9) removed")
-	assert.Equal(t, "v9", writes[0].docID, "expected stale_key (v9) removed")
+	assert.Empty(t, app.varWrites(), "deleted a variable with prune off")
+}
+
+// Only a variable the operator inserts becomes its own to prune later.
+func TestLibraryVariablesRecordWhatTheyCreate(t *testing.T) {
+	app := &fakeTdarr{docFound: true, vars: []map[string]any{
+		{"_id": "v1", "key": "adopted", "value": "1", "type": "library:movies"},
+	}}
+	url := app.serve(t)
+
+	cfg := tdarrConfig(url)
+	cfg.Spec.Libraries = []transcodev1alpha1.TdarrLibrary{{
+		ID: "movies", Name: "Movies", Folder: "/data/media/movies",
+		Variables: map[string]string{"adopted": "1", "created": "2"},
+	}}
+	c := runTdarr(t, cfg, true)
+
+	assert.Equal(t, []string{"movies/created"}, tdarrManaged(t, c)[variablesResource])
+}
+
+func tdarrManaged(t *testing.T, c client.Client) map[string][]string {
+	t.Helper()
+	var cfg transcodev1alpha1.TdarrConfig
+	require.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "tdarr", Namespace: "media"}, &cfg), "fetching config")
+	return cfg.Status.ManagedResources
 }
 
 func TestLibraryDocDecisionMode(t *testing.T) {

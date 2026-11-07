@@ -99,7 +99,9 @@ doesn't matter, the operator just reads them and re-reconciles when they change.
 - **`prune` won't touch anything you made by hand.** With
   `spec.reconcile.prune: true` the operator only deletes resources it created
   itself, tracked in `status.managedResources`. Root folders and tags are never
-  pruned, and prune bails out entirely if more than 25 candidates turn up.
+  pruned, and prune bails out entirely if more than 25 candidates turn up. It
+  covers Sonarr, Radarr, Lidarr, Readarr, Prowlarr and FlareSolverr resources and
+  Tdarr library variables; without it, nothing removed from a CR is deleted.
 - **Deleting a CR leaves the app's config alone.** `deletionPolicy` defaults to
   `orphan`. For Sonarr, Radarr, Lidarr, Readarr, Prowlarr, and FlareSolverr, set it to
   `delete` to clean up tracked, prunable resources. Root folders, tags, and
@@ -147,8 +149,8 @@ When upgrading, existing `status.managedResources` records are retained. Older
 versions also recorded matching pre-existing resources as managed; the operator
 cannot determine their origin retroactively. Review these records before enabling
 prune on an existing installation. New ownership records for Sonarr, Radarr,
-Lidarr, Readarr, Prowlarr and FlareSolverr are added only after successful
-creation, and failed updates or deletions retain ownership so cleanup can be
+Lidarr, Readarr, Prowlarr, FlareSolverr and Tdarr library variables are added
+only after successful creation, and failed updates or deletions retain ownership so cleanup can be
 retried.
 
 Metrics are on `:8443/metrics` over HTTPS behind TokenReview auth, enabled by

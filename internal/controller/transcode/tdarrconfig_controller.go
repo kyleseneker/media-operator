@@ -21,6 +21,7 @@ import (
 	tdarrclient "github.com/kyleseneker/media-operator/internal/client/tdarr"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/engine"
+	"github.com/kyleseneker/media-operator/internal/metrics"
 	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
 
@@ -76,8 +77,13 @@ func (r *TdarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
-	sync := &tdarrSync{App: "tdarr", Observe: ctrlcommon.ObserveOnly(config.Spec.Reconcile), tc: tc}
+	sync := &tdarrSync{
+		App: "tdarr", Observe: ctrlcommon.ObserveOnly(config.Spec.Reconcile), tc: tc,
+		prune: ctrlcommon.PruneEnabled(config.Spec.Reconcile), managed: cloneManaged(config.Status.ManagedResources),
+	}
 	syncErrors := sync.run(ctx, &config.Spec)
+	ctrlcommon.UpdateStatusManaged(&config, sync.managed)
+	ctrlcommon.EmitPruneEvents(r.Recorder, &config, sync.pruned)
 	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, sync.Observe, len(sync.Drift()) > 0, syncErrors)
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
@@ -88,6 +94,25 @@ func (r *TdarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 type tdarrSync struct {
 	engine.Writes
 	tc *tdarrclient.Client
+	// prune deletes library variables the operator created once they leave the
+	// spec, the same rule as every other pruned resource.
+	prune bool
+	// managed is status.managedResources, updated with the variables this pass
+	// creates and prunes.
+	managed map[string][]string
+	pruned  []engine.PrunedResource
+}
+
+// variablesResource is the status.managedResources key for library variables,
+// each recorded as <library id>/<key>.
+const variablesResource = "libraryVariables"
+
+func cloneManaged(managed map[string][]string) map[string][]string {
+	out := make(map[string][]string, len(managed))
+	for k, v := range managed {
+		out[k] = slices.Clone(v)
+	}
+	return out
 }
 
 func (s *tdarrSync) run(ctx context.Context, spec *transcodev1alpha1.TdarrConfigSpec) []string {
@@ -133,7 +158,8 @@ func libraryVariableType(libraryID string) string {
 
 // libraryVariables converges the VariablesJSONDB documents for a library. Each
 // variable is its own document rather than a field on the library, so they are
-// matched by key within the library's type tag.
+// matched by key within the library's type tag. A variable that leaves the spec
+// is deleted only under prune, and only if the operator created it.
 func (s *tdarrSync) libraryVariables(ctx context.Context, lib transcodev1alpha1.TdarrLibrary) error {
 	varType := libraryVariableType(lib.ID)
 
@@ -169,7 +195,13 @@ func (s *tdarrSync) libraryVariables(ctx context.Context, lib transcodev1alpha1.
 				"date":  time.Now().UnixMilli(),
 			}
 			err := s.Apply(variablesCollection, lib.ID+"/"+key, func() error {
-				return s.tc.Insert(ctx, variablesCollection, "", obj)
+				if err := s.tc.Insert(ctx, variablesCollection, "", obj); err != nil {
+					return err
+				}
+				if owned := s.managed[variablesResource]; !slices.Contains(owned, lib.ID+"/"+key) {
+					s.managed[variablesResource] = append(owned, lib.ID+"/"+key)
+				}
+				return nil
 			})
 			if err != nil {
 				return fmt.Errorf("inserting variable %s: %w", key, err)
@@ -195,22 +227,39 @@ func (s *tdarrSync) libraryVariables(ctx context.Context, lib transcodev1alpha1.
 		}
 	}
 
+	return s.pruneLibraryVariables(ctx, lib, existing)
+}
+
+// pruneLibraryVariables deletes the variables the operator created that the
+// library no longer declares. Like the engine's prune it never runs in observe
+// mode or for a library declaring no variables, so omitting them does not wipe
+// them, and it refuses past the same threshold.
+func (s *tdarrSync) pruneLibraryVariables(ctx context.Context, lib transcodev1alpha1.TdarrLibrary, existing map[string]map[string]any) error {
+	if !s.prune || s.Observe || len(lib.Variables) == 0 {
+		return nil
+	}
+	var candidates []string
 	for key, doc := range existing {
-		if _, declared := lib.Variables[key]; declared {
-			continue
-		}
+		_, declared := lib.Variables[key]
 		id, _ := doc["_id"].(string)
-		if id == "" {
-			continue
-		}
-		err := s.Apply(variablesCollection, lib.ID+"/"+key, func() error {
-			return s.tc.Remove(ctx, variablesCollection, id)
-		})
-		if err != nil {
-			return fmt.Errorf("removing variable %s: %w", key, err)
+		if !declared && id != "" && slices.Contains(s.managed[variablesResource], lib.ID+"/"+key) {
+			candidates = append(candidates, key)
 		}
 	}
-
+	if len(candidates) > engine.DefaultMaxPruneCount {
+		return fmt.Errorf("refusing to prune %d variables (threshold is %d)", len(candidates), engine.DefaultMaxPruneCount)
+	}
+	slices.Sort(candidates)
+	for _, key := range candidates {
+		id, _ := existing[key]["_id"].(string)
+		if err := s.tc.Remove(ctx, variablesCollection, id); err != nil {
+			return fmt.Errorf("removing variable %s: %w", key, err)
+		}
+		name := lib.ID + "/" + key
+		s.managed[variablesResource] = slices.DeleteFunc(s.managed[variablesResource], func(n string) bool { return n == name })
+		metrics.ResourcesPrunedTotal.WithLabelValues("tdarr", variablesResource).Inc()
+		s.pruned = append(s.pruned, engine.PrunedResource{Type: variablesResource, Name: name})
+	}
 	return nil
 }
 

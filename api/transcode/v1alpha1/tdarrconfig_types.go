@@ -133,7 +133,9 @@ type TdarrLibrary struct {
 
 	// variables are user-defined library variables. Flows read them as
 	// {{{args.variables.user.<name>}}}, which is how community flows are
-	// configured without editing the flow itself.
+	// configured without editing the flow itself. A variable removed from this
+	// map is deleted from Tdarr only with spec.reconcile.prune, and only if the
+	// operator created it.
 	// +optional
 	Variables map[string]string `json:"variables,omitempty"`
 }
