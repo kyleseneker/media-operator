@@ -166,6 +166,7 @@ Needs Go 1.27+ and kubebuilder.
 ```bash
 BINARY=pvr make run          # run one operator against your current kube context
 make build                   # all nine binaries
+BINARY=pvr make docker-build # that operator's image for this machine (IMG= to tag, ARCH= to cross-build)
 make test
 make manifests generate      # after editing api/
 make sync-crds               # copy generated CRDs into the charts
