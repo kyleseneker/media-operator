@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strconv"
 )
 
 // MergeOutcome is the result of overlaying desired state onto current state.
@@ -105,7 +106,34 @@ func differs(current, merged any, secrets *[]string) bool {
 		return false
 	}
 
-	return !reflect.DeepEqual(current, merged)
+	return !reflect.DeepEqual(current, merged) && !sameScalarText(current, merged)
+}
+
+// sameScalarText treats a string as equal to the number or boolean the app
+// stores for it. Several CRD fields take strings (Prowlarr field values, quoted
+// ports), the apps accept them and read back typed values, and comparing types
+// would rewrite the setting on every pass.
+func sameScalarText(current, merged any) bool {
+	text := func(v any) (string, bool) {
+		switch x := v.(type) {
+		case float64:
+			return strconv.FormatFloat(x, 'f', -1, 64), true
+		case int:
+			return strconv.Itoa(x), true
+		case bool:
+			return strconv.FormatBool(x), true
+		}
+		return "", false
+	}
+	if s, ok := merged.(string); ok {
+		t, ok := text(current)
+		return ok && s == t
+	}
+	if s, ok := current.(string); ok {
+		t, ok := text(merged)
+		return ok && s == t
+	}
+	return false
 }
 
 // mergeValue recurses into nested objects and into arrays of named objects,

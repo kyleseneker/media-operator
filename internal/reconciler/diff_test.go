@@ -209,3 +209,27 @@ func TestMergeAppendsNewFieldEntry(t *testing.T) {
 		t.Errorf("expected existing + appended = 2 entries, got %d", got)
 	}
 }
+
+// Prowlarr field values are strings in the CRD; the app reads them back typed.
+func TestStringMatchingTheAppsTypedValueIsNotDrift(t *testing.T) {
+	current := map[string]any{"fields": []any{
+		map[string]any{"name": "port", "value": float64(8080)},
+		map[string]any{"name": "useSsl", "value": false},
+	}}
+	desired := map[string]any{"fields": []any{
+		map[string]any{"name": "port", "value": "8080"},
+		map[string]any{"name": "useSsl", "value": "false"},
+	}}
+	_, changed, err := MergeDesiredOverCurrent(current, desired)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed {
+		t.Error("a quoted 8080 is the app's 8080; comparing types rewrites it on every pass")
+	}
+
+	desired["fields"].([]any)[0].(map[string]any)["value"] = "9090"
+	if _, changed, _ = MergeDesiredOverCurrent(current, desired); !changed {
+		t.Error("a different value must still be drift")
+	}
+}
