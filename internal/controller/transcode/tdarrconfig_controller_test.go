@@ -38,6 +38,8 @@ type fakeTdarr struct {
 	mu       sync.Mutex
 	ops      []string
 	docFound bool
+	// stored, when set, is what getById returns for a found document.
+	stored map[string]any
 
 	// vars is what VariablesJSONDB returns for getAll, and writes records every
 	// call made against that collection so the variable sync can be asserted.
@@ -113,7 +115,11 @@ func (f *fakeTdarr) serve(t *testing.T) string {
 					_ = json.NewEncoder(w).Encode(map[string]any{})
 					return
 				}
-				_ = json.NewEncoder(w).Encode(map[string]any{"_id": "lib1", "name": "Movies"})
+				doc := map[string]any{"_id": "lib1", "name": "Movies"}
+				if f.stored != nil {
+					doc = f.stored
+				}
+				_ = json.NewEncoder(w).Encode(doc)
 				return
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
@@ -205,6 +211,27 @@ func TestTdarrUpdatesExistingLibrary(t *testing.T) {
 
 	require.True(t, app.ranOp("getById"), "reconcile never looked the library up, so the insert check is meaningless")
 	assert.False(t, app.ranOp("insert"), "inserted a library that already existed")
+}
+
+// Updating on every pass rewrote each library every few minutes. A stored
+// document that already holds every declared value, plus Tdarr's own keys,
+// must be left alone.
+func TestTdarrLeavesAMatchingLibraryAlone(t *testing.T) {
+	lib := transcodev1alpha1.TdarrLibrary{ID: "lib1", Name: "Movies", Folder: "/media/movies"}
+	raw, err := json.Marshal(buildTdarrLibraryDoc(lib))
+	require.NoError(t, err)
+	var stored map[string]any
+	require.NoError(t, json.Unmarshal(raw, &stored))
+	stored["totalTranscodeCount"] = float64(12)
+	app := &fakeTdarr{docFound: true, stored: stored}
+
+	cfg := tdarrConfig(app.serve(t))
+	cfg.Spec.Libraries = []transcodev1alpha1.TdarrLibrary{lib}
+	runTdarr(t, cfg, true)
+
+	require.True(t, app.ranOp("getById"))
+	assert.False(t, app.ranOp("update"), "an unchanged library was rewritten")
+	assert.False(t, app.ranOp("insert"))
 }
 
 func TestTdarrMissingSecretDoesNotContactApp(t *testing.T) {

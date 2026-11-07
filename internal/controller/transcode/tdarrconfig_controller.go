@@ -22,6 +22,7 @@ import (
 	tdarrclient "github.com/kyleseneker/media-operator/internal/client/tdarr"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/engine"
+	"github.com/kyleseneker/media-operator/internal/metrics"
 	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
 
@@ -117,7 +118,7 @@ func (r *TdarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 }
 
 func reconcileTdarrLibrary(ctx context.Context, tc *tdarrclient.Client, lib transcodev1alpha1.TdarrLibrary) error {
-	if err := tc.Upsert(ctx, "LibrarySettingsJSONDB", lib.ID, buildTdarrLibraryDoc(lib)); err != nil {
+	if err := upsertTdarrDoc(ctx, tc, "LibrarySettingsJSONDB", lib.ID, buildTdarrLibraryDoc(lib)); err != nil {
 		return err
 	}
 	return reconcileTdarrLibraryVariables(ctx, tc, lib)
@@ -317,7 +318,34 @@ func reconcileTdarrFlow(ctx context.Context, tc *tdarrclient.Client, flow transc
 	}
 	obj["flowEdges"] = edges
 
-	return tc.Upsert(ctx, "FlowsJSONDB", flow.ID, obj)
+	return upsertTdarrDoc(ctx, tc, "FlowsJSONDB", flow.ID, obj)
+}
+
+// upsertTdarrDoc writes a library or flow only when Tdarr's stored document
+// does not already hold every declared value. Updating on every pass rewrote
+// each library and flow every few minutes, and Tdarr rescans on a library save.
+func upsertTdarrDoc(ctx context.Context, tc *tdarrclient.Client, collection, id string, obj map[string]any) error {
+	existing, err := tc.GetByID(ctx, collection, id)
+	if err != nil {
+		return fmt.Errorf("looking up %s/%s: %w", collection, id, err)
+	}
+	if len(existing) == 0 {
+		return tc.Insert(ctx, collection, id, obj)
+	}
+	// Compare in JSON terms: the stored document decodes to float64s and []any.
+	raw, err := json.Marshal(obj)
+	if err != nil {
+		return err
+	}
+	var desired any
+	if err := json.Unmarshal(raw, &desired); err != nil {
+		return err
+	}
+	if reconciler.Covers(existing, desired) {
+		return nil
+	}
+	metrics.DriftCorrectedTotal.WithLabelValues("tdarr", collection, id).Inc()
+	return tc.Update(ctx, collection, id, obj)
 }
 
 // decodeRawList turns a list of raw JSON nodes into plain values. Tdarr stores
