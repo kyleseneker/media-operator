@@ -152,7 +152,9 @@ type TdarrFlow struct {
 	// +optional
 	Description string `json:"description,omitempty"`
 
-	// flowPlugins is the raw JSON definition of flow plugin nodes.
+	// flowPlugins is the raw JSON definition of flow plugin nodes, as Tdarr
+	// exports it. Quote the y key of each node's position ("y": 200): YAML 1.1
+	// parsers, kubectl's included, read a bare y as the boolean true.
 	// +required
 	// +kubebuilder:pruning:PreserveUnknownFields
 	FlowPlugins []runtime.RawExtension `json:"flowPlugins"`

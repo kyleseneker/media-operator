@@ -125,8 +125,10 @@ spec:
                       type: array
                       x-kubernetes-preserve-unknown-fields: true
                     flowPlugins:
-                      description: flowPlugins is the raw JSON definition of flow
-                        plugin nodes.
+                      description: |-
+                        flowPlugins is the raw JSON definition of flow plugin nodes, as Tdarr
+                        exports it. Quote the y key of each node's position ("y": 200): YAML 1.1
+                        parsers, kubectl's included, read a bare y as the boolean true.
                       items:
                         type: object
                         x-kubernetes-preserve-unknown-fields: true

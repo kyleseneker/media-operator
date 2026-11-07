@@ -39,3 +39,40 @@ spec:
       scheduledScanFindNew: true
       scannerThreadCount: 2
       ffmpeg: true
+      decisionMode: flows
+      flowId: mkv-check
+  flows:
+    - id: mkv-check
+      name: MKV check
+      description: Checks the container and stops
+      # Paste flowPlugins and flowEdges from Tdarr's flow export. Quote "y":
+      # YAML 1.1 parsers, kubectl's included, read a bare y as true.
+      flowPlugins:
+        - id: inputNode
+          name: Input File
+          sourceRepo: Community
+          pluginName: inputFile
+          version: 1.0.0
+          inputsDB:
+            fileAccessChecks: "true"
+          position:
+            x: 0
+            "y": 0
+          fpEnabled: true
+        - id: checkNode
+          name: Check if mkv
+          sourceRepo: Community
+          pluginName: checkFileExtension
+          version: 1.0.0
+          inputsDB:
+            extensions: mkv
+          position:
+            x: 0
+            "y": 200
+          fpEnabled: true
+      flowEdges:
+        - id: inputToCheck
+          source: inputNode
+          sourceHandle: "1"
+          target: checkNode
+          targetHandle: null
