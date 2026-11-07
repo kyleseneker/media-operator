@@ -1,0 +1,73 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: BazarrConfig
+metadata:
+  name: bazarr
+spec:
+  connection:
+    url: ${URL}
+    apiKeySecretRef:
+      name: compat-credentials
+      key: api-key
+  general:
+    useSonarr: true
+    useRadarr: true
+    minimumScore: 90
+    minimumScoreMovie: 70
+    useScenename: true
+    usePostprocessing: false
+    adaptiveSearching: true
+    multithreading: true
+    upgradeSubs: true
+    upgradeFrequency: 12
+    wantedSearchFrequency: 6
+    utf8Encode: true
+    ignorePgsSubs: false
+    ignoreVobsubSubs: false
+    ignoreAssSubs: false
+    embeddedSubtitlesParser: ffprobe
+    hiExtension: hi
+  sonarrConnection:
+    host: ${HOST}
+    port: ${SONARR_PORT}
+    apiKeySecretRef:
+      name: compat-credentials
+      key: sonarr-api-key
+    httpTimeout: 300
+    fullUpdate: Daily
+    onlyMonitored: false
+    syncInterval: 60
+  radarrConnection:
+    host: ${HOST}
+    port: ${RADARR_PORT}
+    apiKeySecretRef:
+      name: compat-credentials
+      key: radarr-api-key
+    httpTimeout: 300
+    fullUpdate: Daily
+    onlyMonitored: false
+    syncInterval: 60
+  subSync:
+    useSubsync: true
+    useSubsyncThreshold: true
+    subsyncThreshold: 90
+    useSubsyncMovieThreshold: true
+    subsyncMovieThreshold: 70
+  providers:
+    - name: podnapisi
+      enabled: true
+    - name: yifysubtitles
+      enabled: true
+    - name: tvsubtitles
+      enabled: true
+  languages:
+    enabled:
+      - en
+      - es
+    profiles:
+      - profileId: 1
+        name: English
+        items:
+          - language: en
+            hi: false
+            forced: false
+            audioExclude: false

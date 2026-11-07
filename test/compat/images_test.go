@@ -19,6 +19,8 @@ const (
 	// renovate: datasource=docker
 	flaresolverrImage = "ghcr.io/flaresolverr/flaresolverr:v3.5.2"
 	// renovate: datasource=docker
+	bazarrImage = "lscr.io/linuxserver/bazarr:v1.6.2-ls371"
+	// renovate: datasource=docker
 	sabnzbdImage = "lscr.io/linuxserver/sabnzbd:5.1.3-ls280"
 	// renovate: datasource=docker
 	qbittorrentImage = "lscr.io/linuxserver/qbittorrent:5.3.0_v2.1.2-ls486"
