@@ -14,10 +14,12 @@ type ReconcileConfig struct {
 	// +optional
 	Interval *metav1.Duration `json:"interval,omitempty"`
 
-	// prune enables deletion of resources that exist in the app but are not declared in the CRD.
-	// When true, for each resource type where at least one item is specified, any existing
-	// resources not matching a declared item will be removed from the app.
-	// Root folders and tags are never pruned.
+	// prune deletes resources the operator created, tracked in
+	// status.managedResources, once they are removed from this spec. Resources
+	// it did not create are never deleted, and a resource type with nothing
+	// declared is left alone. Root folders and tags are never pruned.
+	// Not every integration supports prune; one that does not rejects it with
+	// InvalidConfig rather than ignoring it.
 	// Default: false (only create/update, never delete).
 	// +optional
 	Prune *bool `json:"prune,omitempty"`

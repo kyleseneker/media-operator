@@ -41,7 +41,7 @@ func (r *FlareSolverrConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	cleanup := func(ctx context.Context) error { return cleanupFlareSolverrSessions(ctx, r.Client, &config) }
-	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, cleanup); done {
+	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, ctrlcommon.Lifecycle{Remove: cleanup, Prune: true}); done {
 		return ctrl.Result{RequeueAfter: after}, nil
 	}
 

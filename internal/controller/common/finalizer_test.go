@@ -130,12 +130,43 @@ func TestLifecycleRejectsInvalidDeletionPolicies(t *testing.T) {
 		if observe {
 			remove = func(context.Context) error { require.Fail(t, "normal reconcile must not clean up"); return nil }
 		}
-		done, after := HandleLifecycle(context.Background(), c, nil, obj, remove)
+		done, after := HandleLifecycle(context.Background(), c, nil, obj, Lifecycle{Remove: remove, Prune: true})
 		require.True(t, done, "invalid policy was not stopped")
 		require.Positive(t, after, "invalid policy was not stopped")
 		condition := meta.FindStatusCondition(obj.Status.Conditions, "Synced")
 		require.NotNil(t, condition, "missing invalid config condition: %+v", obj.Status.Conditions)
 		require.Equal(t, "InvalidConfig", condition.Reason, "missing invalid config condition")
+	}
+}
+
+// An integration that cannot prune must say so: ignoring prune would leave
+// resources removed from the spec in place while the spec claims otherwise.
+func TestLifecycleRejectsPruneWhereUnsupported(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		lc       Lifecycle
+		rejected bool
+	}{
+		{"unsupported", Lifecycle{}, true},
+		{"supported", Lifecycle{Prune: true}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			obj := newConfig("", 0)
+			obj.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{Prune: new(true)}
+			c := testClient(obj).WithStatusSubresource(obj).Build()
+
+			done, _ := HandleLifecycle(context.Background(), c, nil, obj, tc.lc)
+
+			assert.Equal(t, tc.rejected, done)
+			condition := meta.FindStatusCondition(obj.Status.Conditions, "Synced")
+			if !tc.rejected {
+				assert.Nil(t, condition, "a supported prune was reported: %+v", condition)
+				return
+			}
+			require.NotNil(t, condition)
+			assert.Equal(t, "InvalidConfig", condition.Reason)
+			assert.Contains(t, condition.Message, "prune is not supported")
+		})
 	}
 }
 

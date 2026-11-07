@@ -39,7 +39,7 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	cleanup := func(ctx context.Context) error {
 		return ctrlcommon.CleanupApp(ctx, r.Client, r.Recorder, &config, config.Spec.Connection, prowlarrclient.ProwlarrDefinition(), "prowlarr")
 	}
-	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, cleanup); done {
+	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, ctrlcommon.Lifecycle{Remove: cleanup, Prune: true}); done {
 		return ctrl.Result{RequeueAfter: after}, nil
 	}
 

@@ -36,7 +36,7 @@ func reconcilePVR(ctx context.Context, c client.Client, recorder events.EventRec
 	cleanup := func(ctx context.Context) error {
 		return ctrlcommon.CleanupApp(ctx, c, recorder, obj, conn, pvrclient.Definition(cfg.apiVersion), cfg.app)
 	}
-	if done, after := ctrlcommon.HandleLifecycle(ctx, c, recorder, obj, cleanup); done {
+	if done, after := ctrlcommon.HandleLifecycle(ctx, c, recorder, obj, ctrlcommon.Lifecycle{Remove: cleanup, Prune: true}); done {
 		return ctrl.Result{RequeueAfter: after}, nil
 	}
 

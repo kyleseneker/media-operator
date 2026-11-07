@@ -394,11 +394,17 @@ func referencesSecret(v reflect.Value, name string) bool {
 	return false
 }
 
-// EmitPruneEvents emits a Kubernetes Warning event for each pruned resource.
+// EmitPruneEvents emits a Warning event for each resource the operator deleted
+// from the app, by prune or by deletionPolicy delete. Either only ever deletes
+// resources the operator created.
 func EmitPruneEvents(recorder events.EventRecorder, obj client.Object, pruned []engine.PrunedResource) {
 	for _, p := range pruned {
+		id := ""
+		if p.ID != 0 {
+			id = fmt.Sprintf(" (id=%d)", p.ID)
+		}
 		recorder.Eventf(obj, nil, corev1.EventTypeWarning, "ResourcePruned", "Prune",
-			"Pruned unmanaged %s %q (id=%d)", p.Type, p.Name, p.ID)
+			"Deleted %s %q%s, which the operator created", p.Type, p.Name, id)
 	}
 }
 

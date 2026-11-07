@@ -16,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -101,9 +102,14 @@ func TestBoolTo01(t *testing.T) {
 }
 
 func TestEmitPruneEvents(t *testing.T) {
-	// EmitPruneEvents just calls recorder.Eventf — verifying it doesn't panic with nil pruned list
-	EmitPruneEvents(nil, nil, nil)
-	EmitPruneEvents(nil, nil, []engine.PrunedResource{})
+	recorder := events.NewFakeRecorder(2)
+	EmitPruneEvents(recorder, newConfig("", 0), []engine.PrunedResource{
+		{Type: "indexers", Name: "old", ID: 7},
+		{Type: "libraryVariables", Name: "movies/stale"},
+	})
+	assert.Equal(t, `Warning ResourcePruned Deleted indexers "old" (id=7), which the operator created`, <-recorder.Events)
+	assert.Equal(t, `Warning ResourcePruned Deleted libraryVariables "movies/stale", which the operator created`, <-recorder.Events,
+		"a resource without a numeric id reported one")
 }
 
 func TestObservationStatus(t *testing.T) {
