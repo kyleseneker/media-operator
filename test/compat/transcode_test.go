@@ -80,7 +80,7 @@ func TestTdarr(t *testing.T) {
 			assert.Equal(t, "Compat - remux check", flow["name"])
 			assert.Len(t, compatMoviesVariables(t, tc), 1)
 		},
-		cleanup: func(t *testing.T) {
+		cleanup: func(t *testing.T, _ map[string][]string) {
 			assert.Empty(t, compatMoviesVariables(t, tc), "the library variable the operator created is still there")
 		},
 	})

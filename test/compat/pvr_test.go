@@ -15,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	pvrv1alpha1 "github.com/kyleseneker/media-operator/api/pvr/v1alpha1"
+	pvrclient "github.com/kyleseneker/media-operator/internal/client/pvr"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/controller/pvr"
 )
@@ -57,6 +58,7 @@ func TestSonarr(t *testing.T) {
 			require.Len(t, lists, 1)
 			assert.Equal(t, "all", lists[0]["shouldMonitor"], "import list monitor did not reach Sonarr")
 		},
+		cleanup: ownedGone(directClient(t, sonarr.url(), key), pvrclient.Definition("v3")),
 	})
 }
 
@@ -99,6 +101,7 @@ func TestRadarr(t *testing.T) {
 			assert.Equal(t, "movieOnly", lists[0]["monitor"], "import list monitor did not reach Radarr")
 			assert.Equal(t, true, lists[0]["enabled"], "import list enabled did not reach Radarr")
 		},
+		cleanup: ownedGone(directClient(t, radarr.url(), key), pvrclient.Definition("v3")),
 	})
 }
 
@@ -137,6 +140,8 @@ func TestLidarr(t *testing.T) {
 			require.Len(t, lists, 1)
 			assert.Equal(t, "entireArtist", lists[0]["shouldMonitor"], "import list monitor did not reach Lidarr")
 		},
+		// The root folder defaults to this profile and is never deleted.
+		cleanup: ownedGone(directClient(t, lidarr.url(), key), pvrclient.Definition("v1"), "qualityProfiles/Music"),
 	})
 }
 
@@ -165,6 +170,8 @@ func TestReadarr(t *testing.T) {
 			requireNamed(t, hc, "/api/v1/qualityprofile", "Books")
 			requireNamed(t, hc, "/api/v1/notification", "Compat Webhook")
 		},
+		// The root folder defaults to this profile and is never deleted.
+		cleanup: ownedGone(directClient(t, readarr.url(), key), pvrclient.Definition("v1"), "qualityProfiles/Books"),
 	})
 }
 

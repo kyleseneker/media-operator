@@ -77,7 +77,7 @@ func TestBazarr(t *testing.T) {
 			assert.Equal(t, []string{"English", "Hand-made"}, bazarrProfileNames(t, hc),
 				"saving the declared profile lost the hand-made one")
 		},
-		cleanup: func(t *testing.T) {
+		cleanup: func(t *testing.T, _ map[string][]string) {
 			assert.Equal(t, []string{"Hand-made"}, bazarrProfileNames(t, hc))
 		},
 	})

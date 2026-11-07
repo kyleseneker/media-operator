@@ -74,7 +74,7 @@ func TestSabnzbd(t *testing.T) {
 			}
 			assert.Subset(t, names, []any{"tv", "movies"})
 		},
-		cleanup: func(t *testing.T) {
+		cleanup: func(t *testing.T, _ map[string][]string) {
 			cfg := sabnzbdConfigOf(t, sab.url(), key)
 			assert.Empty(t, cfg.Servers, "servers the operator created are still there")
 			for _, c := range cfg.Categories {
@@ -149,7 +149,7 @@ func TestQBittorrent(t *testing.T) {
 			require.NoError(t, err)
 			assert.Contains(t, categories, "movies")
 		},
-		cleanup: func(t *testing.T) {
+		cleanup: func(t *testing.T, _ map[string][]string) {
 			hc := qbittorrentClient(t, qbit.url(), password)
 			categories, err := hc.GetJSON(context.Background(), "/api/v2/torrents/categories")
 			require.NoError(t, err)

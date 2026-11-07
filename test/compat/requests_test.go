@@ -81,7 +81,7 @@ func TestSeerr(t *testing.T) {
 		fixture:      "seerr.yaml",
 		export:       "seerr",
 		exportAPIKey: seerrAPIKey,
-		cleanup: func(t *testing.T) {
+		cleanup: func(t *testing.T, _ map[string][]string) {
 			hc := directClient(t, seerr.url(), seerrAPIKey(t))
 			for _, kind := range []string{"sonarr", "radarr"} {
 				servers, err := hc.GetJSONList(ctx, "/api/v1/settings/"+kind)

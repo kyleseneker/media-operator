@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	indexersv1alpha1 "github.com/kyleseneker/media-operator/api/indexers/v1alpha1"
+	prowlarrclient "github.com/kyleseneker/media-operator/internal/client/prowlarr"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/controller/indexers"
 )
@@ -70,6 +71,7 @@ func TestProwlarr(t *testing.T) {
 				return fmt.Errorf("sonarr has %d indexers, none synced from Prowlarr", len(items))
 			})
 		},
+		cleanup: ownedGone(directClient(t, prowlarr.url(), key), prowlarrclient.ProwlarrDefinition()),
 	})
 }
 
@@ -102,6 +104,13 @@ func TestFlareSolverr(t *testing.T) {
 			sessions, err := flaresolverrSessions(fs.url())
 			require.NoError(t, err)
 			assert.Subset(t, sessions, []string{"prowlarr", "compat"})
+		},
+		cleanup: func(t *testing.T, owned map[string][]string) {
+			sessions, err := flaresolverrSessions(fs.url())
+			require.NoError(t, err)
+			for _, name := range owned["sessions"] {
+				assert.NotContains(t, sessions, name, "a session the operator created is still there")
+			}
 		},
 	})
 }

@@ -87,7 +87,7 @@ func TestMaintainerr(t *testing.T) {
 			assert.EqualValues(t, 1, last["operator"], "the second section joins with OR")
 			assert.EqualValues(t, 1, last["section"])
 		},
-		cleanup: func(t *testing.T) {
+		cleanup: func(t *testing.T, _ map[string][]string) {
 			hc := directClient(t, maintainerr.url(), "")
 			for _, path := range []string{"/api/rules", "/api/settings/radarr"} {
 				items, err := hc.GetJSONList(ctx, path)

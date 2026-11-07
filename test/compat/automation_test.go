@@ -66,7 +66,7 @@ func TestAutobrr(t *testing.T) {
 			require.Len(t, actions, 1, "the filter's action was not created")
 			assert.Equal(t, downloaders[0]["id"], actions[0]["client_id"])
 		},
-		cleanup: func(t *testing.T) {
+		cleanup: func(t *testing.T, _ map[string][]string) {
 			hc := autobrrClient(t, ab.url(), key)
 			for _, path := range []string{"/api/downloaders", "/api/irc", "/api/filters"} {
 				items, err := hc.GetJSONList(context.Background(), path)

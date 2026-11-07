@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -142,8 +143,9 @@ type compatCase struct {
 	// signs in another way.
 	exportAPIKey func(t *testing.T) string
 	// cleanup, for an integration that supports deletionPolicy: delete, checks
-	// the application after the resource is deleted with that policy.
-	cleanup func(t *testing.T)
+	// the application after the resource is deleted with that policy. owned is
+	// what the resource recorded creating, read just before the delete.
+	cleanup func(t *testing.T, owned map[string][]string)
 }
 
 func checkCompat(t *testing.T, tc compatCase) {
@@ -214,12 +216,15 @@ func checkCleanup(t *testing.T, tc compatCase, r reconcile.Reconciler, key types
 		[]byte(`{"spec":{"reconcile":{"driftPolicy":"enforce","deletionPolicy":"delete"}}}`))
 	require.NoError(t, k8s.Patch(ctx, obj, patch), "setting deletionPolicy: delete")
 	requireSynced(t, reconcileUntilCurrent(t, r, key, tc.newObj), "reconcile with deletionPolicy: delete")
+	require.NoError(t, k8s.Get(ctx, key, obj))
+	owned := maps.Clone(*obj.GetManagedResources())
+	require.NotEmpty(t, owned, "the resource recorded nothing it created, so cleanup proves nothing")
 	require.NoError(t, k8s.Delete(ctx, obj), "deleting %s", key)
 	for range 5 {
 		_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: key})
 		require.NoError(t, err, "reconcile during deletion")
 		if apierrors.IsNotFound(k8s.Get(ctx, key, tc.newObj())) {
-			tc.cleanup(t)
+			tc.cleanup(t, owned)
 			return
 		}
 	}
@@ -394,4 +399,34 @@ func specOf(t *testing.T, obj client.Object) map[string]any {
 	}
 	require.NoError(t, json.Unmarshal(raw, &m))
 	return m.Spec
+}
+
+// ownedGone checks that none of the items a resource recorded creating is left
+// in an application reconciled through def, except kept ones (as kind/name),
+// which the app refuses to delete while something it keeps still uses them.
+func ownedGone(hc *engine.HTTPClient, def engine.AppDefinition, kept ...string) func(*testing.T, map[string][]string) {
+	return func(t *testing.T, owned map[string][]string) {
+		for _, ep := range def.Resources {
+			if !ep.Prunable || len(owned[ep.Name]) == 0 {
+				continue
+			}
+			items, err := hc.GetJSONList(context.Background(), ep.Path)
+			require.NoError(t, err)
+			left := map[string]bool{}
+			for _, item := range items {
+				key := fmt.Sprint(item[ep.MatchField])
+				if ep.MatchKey != nil {
+					key = ep.MatchKey(item)
+				}
+				left[key] = true
+			}
+			for _, name := range owned[ep.Name] {
+				if slices.Contains(kept, ep.Name+"/"+name) {
+					assert.True(t, left[name], "%s %q should have been kept", ep.Name, name)
+					continue
+				}
+				assert.False(t, left[name], "%s %q, which the operator created, is still there", ep.Name, name)
+			}
+		}
+	}
 }
