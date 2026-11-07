@@ -2,8 +2,13 @@ package subtitles
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"maps"
 	"net/url"
+	"reflect"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +27,7 @@ import (
 	bazarrclient "github.com/kyleseneker/media-operator/internal/client/bazarr"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/engine"
+	"github.com/kyleseneker/media-operator/internal/metrics"
 	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
 
@@ -47,10 +53,6 @@ func (r *BazarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, nil); done {
 		return ctrl.Result{RequeueAfter: after}, nil
-	}
-
-	if ctrlcommon.RejectUnsupportedObserve(ctx, r.Status(), &config) {
-		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
 
 	// Resolve API key
@@ -81,58 +83,48 @@ func (r *BazarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
-	var syncErrors []string
+	desired, problems := r.bazarrDesired(ctx, &config)
+	settings, err := bc.GetSettings(ctx)
+	if err != nil {
+		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("reading settings: %v", err))
+		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
+	}
+	var profiles []map[string]any
+	if desired.Has("languages-profiles") {
+		if profiles, err = bc.GetLanguageProfiles(ctx); err != nil {
+			ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("reading language profiles: %v", err))
+			return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
+		}
+	}
+	changes := bazarrChanges(desired, settings, profiles)
 
-	// General settings
-	if config.Spec.General != nil {
-		if err := bc.PostSettings(ctx, "general", config.Spec.General); err != nil {
-			logger.Error(err, "failed to reconcile general settings")
-			syncErrors = append(syncErrors, fmt.Sprintf("general: %v", err))
+	if ctrlcommon.ObserveOnly(config.Spec.Reconcile) {
+		for key := range changes {
+			metrics.DriftObservedTotal.WithLabelValues("bazarr", bazarrSettingSection(key), key).Inc()
+		}
+		var observeErr error
+		if len(problems) > 0 {
+			observeErr = fmt.Errorf("%v", problems)
+		}
+		ctrlcommon.UpdateObservationStatus(ctx, r.Status(), &config, len(changes) > 0, observeErr)
+		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
+	}
+
+	if len(changes) > 0 {
+		for key := range changes {
+			metrics.DriftCorrectedTotal.WithLabelValues("bazarr", bazarrSettingSection(key), key).Inc()
+		}
+		// One request with only what differs: every save reconnects Bazarr to
+		// Sonarr and Radarr, and enabling useSonarr in a request before the one
+		// carrying the connection hangs while Bazarr retries 127.0.0.1.
+		if err := bc.PostForm(ctx, "/api/system/settings", changes); err != nil {
+			logger.Error(err, "failed to write bazarr settings")
+			problems = append(problems, fmt.Sprintf("settings: %v", err))
 		}
 	}
 
-	// SubSync settings
-	if config.Spec.SubSync != nil {
-		if err := bc.PostSettings(ctx, "subsync", config.Spec.SubSync); err != nil {
-			logger.Error(err, "failed to reconcile subsync settings")
-			syncErrors = append(syncErrors, fmt.Sprintf("subsync: %v", err))
-		}
-	}
-
-	// Sonarr connection
-	if config.Spec.SonarrConnection != nil {
-		if err := r.reconcileBazarrConnection(ctx, bc, config.Namespace, "sonarr", config.Spec.SonarrConnection); err != nil {
-			logger.Error(err, "failed to reconcile sonarr connection")
-			syncErrors = append(syncErrors, fmt.Sprintf("sonarrConnection: %v", err))
-		}
-	}
-
-	// Radarr connection
-	if config.Spec.RadarrConnection != nil {
-		if err := r.reconcileBazarrConnection(ctx, bc, config.Namespace, "radarr", config.Spec.RadarrConnection); err != nil {
-			logger.Error(err, "failed to reconcile radarr connection")
-			syncErrors = append(syncErrors, fmt.Sprintf("radarrConnection: %v", err))
-		}
-	}
-
-	// Providers
-	if len(config.Spec.Providers) > 0 {
-		if err := r.reconcileBazarrProviders(ctx, bc, config.Namespace, config.Spec.Providers); err != nil {
-			logger.Error(err, "failed to reconcile providers")
-			syncErrors = append(syncErrors, fmt.Sprintf("providers: %v", err))
-		}
-	}
-
-	// Languages
-	if config.Spec.Languages != nil {
-		if err := bc.ReconcileLanguages(ctx, config.Spec.Languages); err != nil {
-			logger.Error(err, "failed to reconcile languages")
-			syncErrors = append(syncErrors, fmt.Sprintf("languages: %v", err))
-		}
-	}
-
-	if len(syncErrors) > 0 {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync failure: %v", syncErrors))
+	if len(problems) > 0 {
+		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync failure: %v", problems))
 	} else {
 		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, true, engine.ReasonSynced, "all configuration sections synced")
 	}
@@ -140,41 +132,71 @@ func (r *BazarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
 
-func (r *BazarrConfigReconciler) reconcileBazarrConnection(ctx context.Context, bc *bazarrclient.Client, namespace, section string, conn *subtitlesv1alpha1.BazarrAppConnection) error {
-	connAPIKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, namespace, conn.APIKeySecretRef)
-	if err != nil {
-		return fmt.Errorf("resolving apiKeySecretRef for %s: %w", section, err)
+// bazarrDesired renders every declared setting as the form fields Bazarr's
+// settings endpoint takes. Sections whose Secrets cannot be read are left out
+// and reported, so the rest still reconcile.
+func (r *BazarrConfigReconciler) bazarrDesired(ctx context.Context, config *subtitlesv1alpha1.BazarrConfig) (url.Values, []string) {
+	spec := config.Spec
+	form := url.Values{}
+	var problems []string
+	merge := func(v url.Values) { maps.Copy(form, v) }
+
+	if spec.General != nil {
+		merge(bazarrclient.StructToFormData("general", spec.General))
 	}
-
-	form := bazarrclient.StructToFormData(section, conn)
-	// Override the apiKeySecretRef field with the resolved key
-	delete(form, fmt.Sprintf("settings-%s-apiKeySecretRef", section))
-	form.Set(fmt.Sprintf("settings-%s-apikey", section), connAPIKey)
-
-	return bc.PostForm(ctx, "/api/system/settings", form)
+	if spec.SubSync != nil {
+		merge(bazarrclient.StructToFormData("subsync", spec.SubSync))
+	}
+	for _, c := range []struct {
+		section string
+		conn    *subtitlesv1alpha1.BazarrAppConnection
+	}{{"sonarr", spec.SonarrConnection}, {"radarr", spec.RadarrConnection}} {
+		if c.conn == nil {
+			continue
+		}
+		key, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, c.conn.APIKeySecretRef)
+		if err != nil {
+			problems = append(problems, fmt.Sprintf("%sConnection: resolving apiKeySecretRef: %v", c.section, err))
+			continue
+		}
+		merge(bazarrclient.StructToFormData(c.section, c.conn))
+		form.Set(fmt.Sprintf("settings-%s-apikey", c.section), key)
+	}
+	if len(spec.Providers) > 0 {
+		providers, err := r.bazarrProviderForm(ctx, config.Namespace, spec.Providers)
+		if err != nil {
+			problems = append(problems, fmt.Sprintf("providers: %v", err))
+		} else {
+			merge(providers)
+		}
+	}
+	if spec.Languages != nil {
+		languages, err := bazarrclient.LanguagesForm(spec.Languages)
+		if err != nil {
+			problems = append(problems, fmt.Sprintf("languages: %v", err))
+		} else {
+			merge(languages)
+		}
+	}
+	return form, problems
 }
 
-func (r *BazarrConfigReconciler) reconcileBazarrProviders(ctx context.Context, bc *bazarrclient.Client, namespace string, providers []subtitlesv1alpha1.BazarrProvider) error {
-	enabledProviders := []string{}
+func (r *BazarrConfigReconciler) bazarrProviderForm(ctx context.Context, namespace string, providers []subtitlesv1alpha1.BazarrProvider) (url.Values, error) {
 	form := url.Values{}
-
 	for _, p := range providers {
-		enabled := p.Enabled == nil || *p.Enabled
-		if enabled {
-			enabledProviders = append(enabledProviders, p.Name)
+		if p.Enabled == nil || *p.Enabled {
+			form.Add("settings-general-enabled_providers", p.Name)
 		}
-
 		for k, v := range p.Settings {
-			// Resolve secret references for values starting with "ENV:"
+			// "ENV:secretName:secretKey" reads the value from a Secret.
 			resolvedVal := v
 			if strings.HasPrefix(v, "ENV:") {
-				// Parse "ENV:secretName:secretKey" format
 				parts := strings.SplitN(v[4:], ":", 2)
 				if len(parts) == 2 {
 					ref := commonv1alpha1.SecretKeyRef{Name: parts[0], Key: parts[1]}
 					secret, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, namespace, ref)
 					if err != nil {
-						return fmt.Errorf("resolving secret for provider %s field %s: %w", p.Name, k, err)
+						return nil, fmt.Errorf("resolving secret for provider %s field %s: %w", p.Name, k, err)
 					}
 					resolvedVal = secret
 				}
@@ -182,12 +204,125 @@ func (r *BazarrConfigReconciler) reconcileBazarrProviders(ctx context.Context, b
 			form.Set(fmt.Sprintf("settings-%s-%s", p.Name, k), resolvedVal)
 		}
 	}
+	return form, nil
+}
 
-	for _, name := range enabledProviders {
-		form.Add("settings-general-enabled_providers", name)
+// bazarrChanges returns the desired form fields whose value differs from what
+// Bazarr reports, so a reconcile writes nothing when nothing changed.
+func bazarrChanges(desired url.Values, settings map[string]any, profiles []map[string]any) url.Values {
+	changes := url.Values{}
+	for key, values := range desired {
+		if key == "languages-profiles" {
+			if !sameBazarrProfiles(profiles, values[0]) {
+				changes[key] = values
+			}
+			continue
+		}
+		section, name, _ := strings.Cut(strings.TrimPrefix(key, "settings-"), "-")
+		current, _ := settings[section].(map[string]any)
+		if !bazarrSettingMatches(current[name], values) {
+			changes[key] = values
+		}
 	}
+	return changes
+}
 
-	return bc.PostForm(ctx, "/api/system/settings", form)
+func bazarrSettingSection(key string) string {
+	if key == "languages-profiles" {
+		return "languages"
+	}
+	section, _, _ := strings.Cut(strings.TrimPrefix(key, "settings-"), "-")
+	return section
+}
+
+// bazarrSettingMatches compares a stored setting with its form value(s). Lists
+// (enabled providers and languages) compare as sets.
+func bazarrSettingMatches(current any, values []string) bool {
+	if list, ok := current.([]any); ok {
+		want := values
+		if len(values) == 1 && strings.HasPrefix(values[0], "[") {
+			if err := json.Unmarshal([]byte(values[0]), &want); err != nil {
+				return false
+			}
+		}
+		have := make([]string, 0, len(list))
+		for _, v := range list {
+			have = append(have, fmt.Sprint(v))
+		}
+		return slices.Equal(slices.Sorted(slices.Values(have)), slices.Sorted(slices.Values(want)))
+	}
+	return len(values) == 1 && bazarrScalarText(current) == values[0]
+}
+
+func bazarrScalarText(v any) string {
+	switch x := v.(type) {
+	case nil:
+		return ""
+	case float64:
+		return strconv.FormatFloat(x, 'f', -1, 64)
+	default:
+		return fmt.Sprint(x)
+	}
+}
+
+// sameBazarrProfiles compares only the keys the operator sends. Bazarr adds
+// keys of its own (tag) and reports originalFormat as 0/1.
+func sameBazarrProfiles(current []map[string]any, desiredJSON string) bool {
+	var want []any
+	if err := json.Unmarshal([]byte(desiredJSON), &want); err != nil {
+		return false
+	}
+	have := make([]any, len(current))
+	for i, p := range current {
+		have[i] = p
+	}
+	byID := func(list []any) {
+		slices.SortStableFunc(list, func(a, b any) int {
+			ai, _ := a.(map[string]any)["profileId"].(float64)
+			bi, _ := b.(map[string]any)["profileId"].(float64)
+			return int(ai - bi)
+		})
+	}
+	byID(have)
+	byID(want)
+	return bazarrProjectedEqual(have, want)
+}
+
+func bazarrProjectedEqual(current, desired any) bool {
+	switch d := desired.(type) {
+	case map[string]any:
+		c, ok := current.(map[string]any)
+		if !ok {
+			return false
+		}
+		for k, dv := range d {
+			if !bazarrProjectedEqual(c[k], dv) {
+				return false
+			}
+		}
+		return true
+	case []any:
+		c, ok := current.([]any)
+		if !ok || len(c) != len(d) {
+			return false
+		}
+		for i := range d {
+			if !bazarrProjectedEqual(c[i], d[i]) {
+				return false
+			}
+		}
+		return true
+	case bool:
+		switch c := current.(type) {
+		case bool:
+			return c == d
+		case float64:
+			return (c != 0) == d
+		}
+		return false
+	default:
+		return reflect.DeepEqual(current, desired)
+	}
 }
 
 // SetupWithManager sets up the controller with the Manager.

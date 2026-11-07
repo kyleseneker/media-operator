@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	subtitlesv1alpha1 "github.com/kyleseneker/media-operator/api/subtitles/v1alpha1"
 	"github.com/kyleseneker/media-operator/internal/engine"
 )
@@ -36,26 +37,6 @@ func TestPing(t *testing.T) {
 	assert.NoError(t, c.Ping(context.Background()))
 }
 
-func TestPostSettings(t *testing.T) {
-	type generalSettings struct {
-		IPAddr string `json:"ip"`
-		Port   int    `json:"port"`
-	}
-
-	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/api/system/settings", r.URL.Path)
-		assert.Equal(t, "application/x-www-form-urlencoded", r.Header.Get("Content-Type"))
-		body, _ := io.ReadAll(r.Body)
-		assert.Contains(t, string(body), "settings-general-ip=0.0.0.0")
-		assert.Contains(t, string(body), "settings-general-port=6767")
-		w.WriteHeader(http.StatusOK)
-	})
-
-	err := c.PostSettings(context.Background(), "general", generalSettings{IPAddr: "0.0.0.0", Port: 6767})
-	assert.NoError(t, err)
-}
-
 func TestPostForm(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/system/settings", r.URL.Path)
@@ -69,48 +50,30 @@ func TestPostForm(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestReconcileLanguages(t *testing.T) {
-	tests := []struct {
-		name       string
-		langs      *subtitlesv1alpha1.BazarrLanguages
-		expectCall bool
-		checkBody  func(t *testing.T, body string)
-	}{
-		{
-			name: "enabled languages only",
-			langs: &subtitlesv1alpha1.BazarrLanguages{
-				Enabled: []string{"en", "es"},
-			},
-			expectCall: true,
-			checkBody: func(t *testing.T, body string) {
-				assert.Contains(t, body, "settings-general-enabled_languages")
-				assert.Contains(t, body, "en")
-				assert.Contains(t, body, "es")
-			},
-		},
-		{
-			name:       "empty languages — no API call",
-			langs:      &subtitlesv1alpha1.BazarrLanguages{},
-			expectCall: false,
-		},
-	}
+func TestLanguagesForm(t *testing.T) {
+	form, err := LanguagesForm(&subtitlesv1alpha1.BazarrLanguages{
+		Enabled:  []string{"en", "es"},
+		Profiles: []subtitlesv1alpha1.BazarrLanguageProfile{{Name: "English", Items: []subtitlesv1alpha1.BazarrLanguageItem{{Language: "en"}}}},
+	})
+	require.NoError(t, err)
+	assert.JSONEq(t, `["en","es"]`, form.Get("settings-general-enabled_languages"))
+	assert.Contains(t, form.Get("languages-profiles"), `"name":"English"`)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			called := false
-			c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-				called = true
-				if tt.checkBody != nil {
-					body, _ := io.ReadAll(r.Body)
-					tt.checkBody(t, string(body))
-				}
-				w.WriteHeader(http.StatusOK)
-			})
+	empty, err := LanguagesForm(&subtitlesv1alpha1.BazarrLanguages{})
+	require.NoError(t, err)
+	assert.Empty(t, empty, "nothing declared means nothing to send")
+}
 
-			err := c.ReconcileLanguages(context.Background(), tt.langs)
-			assert.NoError(t, err)
-			assert.Equal(t, tt.expectCall, called)
-		})
+// A Secret reference is not a setting; posting it stored its printed form in
+// Bazarr's config as sonarr.api_key_secret_ref.
+func TestStructToFormDataSkipsNonScalarFields(t *testing.T) {
+	form := StructToFormData("sonarr", &subtitlesv1alpha1.BazarrAppConnection{
+		Host:            "sonarr",
+		APIKeySecretRef: commonv1alpha1.SecretKeyRef{Name: "creds", Key: "api-key"},
+	})
+	assert.Equal(t, "sonarr", form.Get("settings-sonarr-ip"))
+	for key := range form {
+		assert.NotContains(t, key, "secret", "a Secret reference leaked into the settings form")
 	}
 }
 

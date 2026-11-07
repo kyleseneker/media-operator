@@ -231,20 +231,45 @@ func TestBazarrMissingSecretDoesNotContactApp(t *testing.T) {
 	assert.NotEqual(t, conditionTrue, bazarrCondition(t, c, "Synced"), "Synced = True despite a missing secret")
 }
 
-func TestBazarrObserveRejectedBeforeApplicationAccess(t *testing.T) {
-	scheme := runtime.NewScheme()
-	require.NoError(t, subtitlesv1alpha1.AddToScheme(scheme))
+func TestBazarrObserveReportsDriftWithoutWriting(t *testing.T) {
+	app := &fakeBazarr{}
+	cfg := bazarrConfig(app.serve(t))
+	cfg.Spec.General = &subtitlesv1alpha1.BazarrGeneral{UseSonarr: new(true)}
 	policy := "observe"
-	cfg := &subtitlesv1alpha1.BazarrConfig{Name: "observe", Namespace: "media"}
 	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &policy}
-	// No URL or Secrets: rejection must happen before application access or authentication.
-	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(cfg).WithObjects(cfg).Build()
-	r := &BazarrConfigReconciler{Client: c, Scheme: scheme}
-	key := types.NamespacedName{Namespace: cfg.Namespace, Name: cfg.Name}
-	_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
-	require.NoError(t, err)
-	require.NoError(t, c.Get(context.Background(), key, cfg))
-	require.True(t, slices.ContainsFunc(cfg.Status.Conditions, func(condition metav1.Condition) bool {
-		return condition.Type == "Synced" && condition.Reason == "InvalidConfig" && condition.Status == metav1.ConditionFalse
-	}), "expected explicit unsupported-policy status, got %+v", cfg.Status.Conditions)
+	c := runBazarr(t, cfg, bazarrSecrets())
+
+	assert.True(t, app.sawPath("/api/system/settings"), "observe must read the settings")
+	assert.Empty(t, app.forms, "observe must not write")
+	assert.Equal(t, string(metav1.ConditionFalse), bazarrCondition(t, c, "Synced"))
+}
+
+// Writing every section on every pass reconnected Bazarr to Sonarr and Radarr
+// each time. Only settings that read back differently may be sent.
+func TestBazarrChangesOnlyWhatDiffers(t *testing.T) {
+	desired := url.Values{
+		"settings-general-use_sonarr":        {"true"},
+		"settings-general-minimum_score":     {"90"},
+		"settings-general-enabled_providers": {"podnapisi", "tvsubtitles"},
+		"settings-general-enabled_languages": {`["en","es"]`},
+		"settings-sonarr-ip":                 {"10.0.0.5"},
+		"languages-profiles": {`[{"profileId":1,"name":"English","cutoff":null,"originalFormat":false,` +
+			`"items":[{"id":1,"language":"en","hi":"False","forced":"False","audio_exclude":"False"}]}]`},
+	}
+	settings := map[string]any{
+		"general": map[string]any{
+			"use_sonarr": true, "minimum_score": float64(90),
+			"enabled_providers": []any{"tvsubtitles", "podnapisi"}, "enabled_languages": []any{"en", "es"},
+		},
+		"sonarr": map[string]any{"ip": "127.0.0.1"},
+	}
+	profiles := []map[string]any{{
+		"profileId": float64(1), "name": "English", "cutoff": nil, "originalFormat": float64(0), "tag": nil,
+		"items": []any{map[string]any{"id": float64(1), "language": "en", "hi": "False", "forced": "False", "audio_exclude": "False"}},
+	}}
+
+	changes := bazarrChanges(desired, settings, profiles)
+
+	assert.Equal(t, url.Values{"settings-sonarr-ip": {"10.0.0.5"}}, changes,
+		"typed values, provider order, originalFormat 0 and Bazarr's own tag key are not changes")
 }

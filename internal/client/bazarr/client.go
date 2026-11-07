@@ -69,10 +69,14 @@ func boolStr(b *bool) string {
 	return "False"
 }
 
-// PostSettings serializes a struct to form data under the given section and posts it to /api/system/settings.
-func (c *Client) PostSettings(ctx context.Context, section string, settings any) error {
-	form := StructToFormData(section, settings)
-	return c.PostForm(ctx, "/api/system/settings", form)
+// GetSettings returns every Bazarr setting, keyed by section.
+func (c *Client) GetSettings(ctx context.Context) (map[string]any, error) {
+	return c.hc.GetJSON(ctx, "/api/system/settings")
+}
+
+// GetLanguageProfiles returns the stored language profiles.
+func (c *Client) GetLanguageProfiles(ctx context.Context) ([]map[string]any, error) {
+	return c.hc.GetJSONList(ctx, "/api/system/languages/profiles")
 }
 
 // PostForm posts a raw form to the given path.
@@ -81,32 +85,25 @@ func (c *Client) PostForm(ctx context.Context, path string, form url.Values) err
 	return err
 }
 
-// ReconcileLanguages posts language configuration to /api/system/settings.
-// Returns nil without calling the API if neither enabled languages nor profiles are set.
-func (c *Client) ReconcileLanguages(ctx context.Context, langs *subtitlesv1alpha1.BazarrLanguages) error {
+// LanguagesForm renders enabled languages and profiles as the settings form
+// fields Bazarr accepts. It is empty when neither is declared.
+func LanguagesForm(langs *subtitlesv1alpha1.BazarrLanguages) (url.Values, error) {
 	form := url.Values{}
-
 	if len(langs.Enabled) > 0 {
 		enabledJSON, err := json.Marshal(langs.Enabled)
 		if err != nil {
-			return fmt.Errorf("marshaling enabled languages: %w", err)
+			return nil, fmt.Errorf("marshaling enabled languages: %w", err)
 		}
 		form.Set("settings-general-enabled_languages", string(enabledJSON))
 	}
-
 	if len(langs.Profiles) > 0 {
 		profilesJSON, err := json.Marshal(buildLanguageProfiles(langs.Profiles))
 		if err != nil {
-			return fmt.Errorf("marshaling language profiles: %w", err)
+			return nil, fmt.Errorf("marshaling language profiles: %w", err)
 		}
 		form.Set("languages-profiles", string(profilesJSON))
 	}
-
-	if len(form) == 0 {
-		return nil
-	}
-
-	return c.PostForm(ctx, "/api/system/settings", form)
+	return form, nil
 }
 
 // settingNameOverrides maps a spec field to the Bazarr setting it drives where
@@ -165,6 +162,11 @@ func StructToFormData(section string, obj any) url.Values {
 			continue
 		}
 		if fv.Kind() == reflect.String && fv.String() == "" {
+			continue
+		}
+		// Only scalars are settings. A struct such as a Secret reference would
+		// otherwise be stored in Bazarr's config as its printed form.
+		if k := reflect.Indirect(fv).Kind(); k == reflect.Struct || k == reflect.Slice || k == reflect.Map {
 			continue
 		}
 
