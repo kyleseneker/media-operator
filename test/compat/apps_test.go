@@ -9,6 +9,7 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
@@ -111,4 +112,8 @@ WebUI\LocalHostAuth=false
 		return nil
 	})
 	return c, password
+}
+
+func jsonDecode(resp *http.Response, into any) error {
+	return json.NewDecoder(resp.Body).Decode(into)
 }

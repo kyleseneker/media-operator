@@ -162,7 +162,11 @@ func checkCompat(t *testing.T, tc compatCase) {
 	}
 
 	tc.proxy.reset()
-	requireSynced(t, reconcileUntilCurrent(t, r, key, tc.newObj), "second reconcile")
+	second := reconcileUntilCurrent(t, r, key, tc.newObj)
+	if !isSynced(second) {
+		t.Logf("requests during the second reconcile:\n%s", formatRequests(tc.proxy.all()))
+	}
+	requireSynced(t, second, "second reconcile")
 	writes := tc.proxy.writes(read)
 	assert.Empty(t, writes, "second reconcile wrote to the application; these settings do not read back as written:\n%s",
 		formatRequests(writes))

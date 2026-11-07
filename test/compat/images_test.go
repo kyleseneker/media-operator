@@ -23,6 +23,8 @@ const (
 	// renovate: datasource=docker
 	jellyfinImage = "docker.io/jellyfin/jellyfin:12.4"
 	// renovate: datasource=docker
+	seerrImage = "ghcr.io/seerr-team/seerr:v3.5.1"
+	// renovate: datasource=docker
 	tdarrImage = "ghcr.io/haveagitgat/tdarr:3.06.00"
 	// renovate: datasource=docker
 	sabnzbdImage = "lscr.io/linuxserver/sabnzbd:5.1.3-ls280"

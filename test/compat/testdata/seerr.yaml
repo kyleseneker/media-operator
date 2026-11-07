@@ -1,0 +1,60 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: SeerrConfig
+metadata:
+  name: seerr
+spec:
+  connection:
+    url: ${URL}
+  jellyfinAuth:
+    hostname: ${HOST}
+    port: ${JELLYFIN_PORT}
+    useSsl: false
+    usernameSecretRef:
+      name: compat-credentials
+      key: jellyfin-username
+    passwordSecretRef:
+      name: compat-credentials
+      key: jellyfin-password
+  main:
+    applicationTitle: Compat Requests
+    applicationUrl: https://requests.example.com
+    hideAvailable: true
+    localLogin: true
+    mediaServerLogin: true
+    defaultPermissions: 32
+    partialRequestsEnabled: true
+    locale: en
+  sonarr:
+    name: Sonarr
+    hostname: ${HOST}
+    port: ${SONARR_PORT}
+    apiKeySecretRef:
+      name: compat-credentials
+      key: sonarr-api-key
+    useSsl: false
+    activeProfileName: HD-1080p
+    activeDirectory: /data/media/tv
+    is4k: false
+    isDefault: true
+    seriesType: standard
+    enableSeasonFolders: true
+  radarr:
+    name: Radarr
+    hostname: ${HOST}
+    port: ${RADARR_PORT}
+    apiKeySecretRef:
+      name: compat-credentials
+      key: radarr-api-key
+    useSsl: false
+    activeProfileName: HD-1080p
+    activeDirectory: /data/media/movies
+    is4k: false
+    isDefault: true
+    minimumAvailability: released
+  notifications:
+    - agent: discord
+      enabled: true
+      types: 4094
+      options:
+        webhookUrl: ${FAKES}/webhook
+        botUsername: Compat

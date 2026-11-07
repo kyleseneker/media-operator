@@ -28,9 +28,24 @@ type request struct {
 	Path   string
 	Body   string
 	Before string
+	Status int
+}
+
+// statusRecorder captures the status the application answered with.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (s *statusRecorder) WriteHeader(code int) {
+	s.status = code
+	s.ResponseWriter.WriteHeader(code)
 }
 
 func (r request) String() string {
+	if r.Status >= 400 {
+		return fmt.Sprintf("%s %s -> %d %s", r.Method, r.Path, r.Status, truncate(r.Body))
+	}
 	if r.Before != "" {
 		if changes := jsonChanges(r.Before, r.Body); len(changes) > 0 {
 			return fmt.Sprintf("%s %s changes:\n      %s", r.Method, r.Path, strings.Join(changes, "\n      "))
@@ -133,10 +148,12 @@ func newRecordingProxy(t *testing.T, target string) *recordingProxy {
 		if r.Method == http.MethodPut || r.Method == http.MethodPost {
 			rec.Before = fetchBefore(target, r)
 		}
+		sw := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		forward.ServeHTTP(sw, r)
+		rec.Status = sw.status
 		p.mu.Lock()
 		p.requests = append(p.requests, rec)
 		p.mu.Unlock()
-		forward.ServeHTTP(w, r)
 	}))
 	return p
 }
@@ -171,6 +188,13 @@ func (p *recordingProxy) reset() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.requests = nil
+}
+
+// all returns every recorded request, for diagnosing a failed stage.
+func (p *recordingProxy) all() []request {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]request(nil), p.requests...)
 }
 
 // writes returns every recorded request the read predicate does not accept.
