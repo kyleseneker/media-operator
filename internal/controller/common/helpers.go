@@ -72,14 +72,31 @@ func UpdateObservationStatus(ctx context.Context, sw client.SubResourceWriter, o
 // the observe policy, whether anything differs.
 func UpdateResultStatus(ctx context.Context, sw client.SubResourceWriter, obj ConfigResource, result engine.ReconcileResult) {
 	if ObserveOnly(obj.GetReconcileConfig()) {
-		var err error
-		if !result.Success() {
-			err = fmt.Errorf("%v", result.Errors)
-		}
-		UpdateObservationStatus(ctx, sw, obj, len(result.Drift) > 0, err)
+		UpdateObservationStatus(ctx, sw, obj, len(result.Drift) > 0, syncError(result.Errors))
 		return
 	}
 	UpdateStatus(ctx, sw, obj, result.Success(), ResultReason(result), result.Message())
+}
+
+// UpdateSyncStatus reports a pass of an integration that writes through its
+// own client: under the observe policy, whether anything differs; otherwise
+// what failed.
+func UpdateSyncStatus(ctx context.Context, sw client.SubResourceWriter, obj ConfigResource, observe, drift bool, syncErrors []string) {
+	switch {
+	case observe:
+		UpdateObservationStatus(ctx, sw, obj, drift, syncError(syncErrors))
+	case len(syncErrors) > 0:
+		UpdateStatus(ctx, sw, obj, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync failure: %v", syncErrors))
+	default:
+		UpdateStatus(ctx, sw, obj, true, engine.ReasonSynced, "all configuration sections synced")
+	}
+}
+
+func syncError(syncErrors []string) error {
+	if len(syncErrors) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%v", syncErrors)
 }
 
 // ResultReason returns the appropriate status reason for a reconcile result.

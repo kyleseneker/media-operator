@@ -20,7 +20,6 @@ import (
 	plexclient "github.com/kyleseneker/media-operator/internal/client/plex"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/engine"
-	"github.com/kyleseneker/media-operator/internal/metrics"
 	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
 
@@ -73,45 +72,18 @@ func (r *PlexConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
-	writes := &plexWrites{observe: ctrlcommon.ObserveOnly(config.Spec.Reconcile)}
+	writes := &engine.Writes{App: "plex", Observe: ctrlcommon.ObserveOnly(config.Spec.Reconcile)}
 	syncErrors := reconcilePlexPreferences(ctx, pc, writes, string(config.UID), buildPlexPreferences(config.Spec))
 	syncErrors = append(syncErrors, reconcilePlexLibraries(ctx, pc, writes, config.Spec.Libraries)...)
 
-	switch {
-	case writes.observe:
-		var observeErr error
-		if len(syncErrors) > 0 {
-			observeErr = fmt.Errorf("%v", syncErrors)
-		}
-		ctrlcommon.UpdateObservationStatus(ctx, r.Status(), &config, len(writes.drift) > 0, observeErr)
-	case len(syncErrors) > 0:
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync: %v", syncErrors))
-	default:
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, true, engine.ReasonSynced, "all configuration synced")
-	}
+	ctrlcommon.UpdateSyncStatus(ctx, r.Status(), &config, writes.Observe, len(writes.Drift()) > 0, syncErrors)
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
-}
-
-// plexWrites sends Plex writes, or in observe mode records them instead.
-type plexWrites struct {
-	observe bool
-	drift   []string
-}
-
-func (w *plexWrites) apply(kind, name string, write func() error) error {
-	if w.observe {
-		metrics.DriftObservedTotal.WithLabelValues("plex", kind, name).Inc()
-		w.drift = append(w.drift, kind+"/"+name)
-		return nil
-	}
-	metrics.DriftCorrectedTotal.WithLabelValues("plex", kind, name).Inc()
-	return write()
 }
 
 // reconcilePlexLibraries creates the declared libraries Plex does not have.
 // Libraries are create-only: an existing one is never changed.
 func reconcilePlexLibraries(
-	ctx context.Context, pc *plexclient.Client, w *plexWrites, libraries []mediaserversv1alpha1.PlexLibrary,
+	ctx context.Context, pc *plexclient.Client, w *engine.Writes, libraries []mediaserversv1alpha1.PlexLibrary,
 ) []string {
 	if len(libraries) == 0 {
 		return nil
@@ -132,7 +104,7 @@ func reconcilePlexLibraries(
 			continue
 		}
 		agent, scanner, lang := plexLibraryDefaults(lib)
-		err := w.apply("libraries", lib.Name, func() error {
+		err := w.Apply("libraries", lib.Name, func() error {
 			return pc.CreateLibrary(ctx, lib.Name, lib.Type, agent, scanner, lang, lib.Paths)
 		})
 		if err != nil {
@@ -265,7 +237,7 @@ func plexPreferenceChanges(desired, current map[string]string) (map[string]strin
 // per request, and returns what could not be read or written. Observe mode
 // compares only the preferences Plex lists: the others cannot be read back.
 func reconcilePlexPreferences(
-	ctx context.Context, pc *plexclient.Client, w *plexWrites, owner string, desiredPrefs map[string]string,
+	ctx context.Context, pc *plexclient.Client, w *engine.Writes, owner string, desiredPrefs map[string]string,
 ) []string {
 	logger := log.FromContext(ctx)
 	var syncErrors []string
@@ -279,14 +251,14 @@ func reconcilePlexPreferences(
 			// but never listed, so what was last written is remembered instead.
 			remember := func(key string) string { return fmt.Sprintf("plex/%s/pref/%s", owner, key) }
 			for _, key := range unlisted {
-				if !w.observe && reconciler.SecretsChangedSince(remember(key), desiredPrefs[key]) {
+				if !w.Observe && reconciler.SecretsChangedSince(remember(key), desiredPrefs[key]) {
 					changes[key] = desiredPrefs[key]
 				}
 			}
 			// One key per request: Plex rejects a whole update over one setting it
 			// does not have, which would block every other setting.
 			for _, key := range slices.Sorted(maps.Keys(changes)) {
-				err := w.apply("settings", key, func() error {
+				err := w.Apply("settings", key, func() error {
 					if err := pc.SetPreferences(ctx, map[string]string{key: changes[key]}); err != nil {
 						return err
 					}

@@ -157,6 +157,38 @@ func TestUpdateResultStatusReportsObservedDrift(t *testing.T) {
 	}
 }
 
+func TestUpdateSyncStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		observe bool
+		drift   bool
+		errors  []string
+		status  metav1.ConditionStatus
+		reason  string
+		message string
+	}{
+		{"synced", false, false, nil, metav1.ConditionTrue, engine.ReasonSynced, "all configuration sections synced"},
+		{"partial failure", false, false, []string{"flow(a): x"}, metav1.ConditionFalse, engine.ReasonSyncFailed, "partial sync failure: [flow(a): x]"},
+		{"observe match", true, false, nil, metav1.ConditionTrue, "Observed", ""},
+		{"observe drift", true, true, nil, metav1.ConditionFalse, "DriftDetected", ""},
+		{"observe error precedes drift", true, true, []string{"x"}, metav1.ConditionFalse, engine.ReasonSyncFailed, "observation failed: [x]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			obj := newConfig("", 0)
+			c := testClient(obj).WithStatusSubresource(obj).Build()
+			UpdateSyncStatus(context.Background(), c.Status(), obj, tc.observe, tc.drift, tc.errors)
+			require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(obj), obj))
+			condition := meta.FindStatusCondition(obj.Status.Conditions, "Synced")
+			require.NotNil(t, condition)
+			assert.Equal(t, tc.status, condition.Status)
+			assert.Equal(t, tc.reason, condition.Reason)
+			if tc.message != "" {
+				assert.Equal(t, tc.message, condition.Message)
+			}
+		})
+	}
+}
+
 func TestConfigChangedPredicate(t *testing.T) {
 	old := newConfig("", 0)
 	old.Generation = 1

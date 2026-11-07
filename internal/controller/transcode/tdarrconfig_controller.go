@@ -20,7 +20,6 @@ import (
 	tdarrclient "github.com/kyleseneker/media-operator/internal/client/tdarr"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/engine"
-	"github.com/kyleseneker/media-operator/internal/metrics"
 	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
 
@@ -76,19 +75,9 @@ func (r *TdarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
-	sync := &tdarrSync{tc: tc, observe: ctrlcommon.ObserveOnly(config.Spec.Reconcile)}
+	sync := &tdarrSync{App: "tdarr", Observe: ctrlcommon.ObserveOnly(config.Spec.Reconcile), tc: tc}
 	syncErrors := sync.run(ctx, &config.Spec)
-	if sync.observe {
-		var observeErr error
-		if len(syncErrors) > 0 {
-			observeErr = fmt.Errorf("%v", syncErrors)
-		}
-		ctrlcommon.UpdateObservationStatus(ctx, r.Status(), &config, len(sync.drift) > 0, observeErr)
-	} else if len(syncErrors) > 0 {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync failure: %v", syncErrors))
-	} else {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, true, engine.ReasonSynced, "all configuration sections synced")
-	}
+	ctrlcommon.UpdateSyncStatus(ctx, r.Status(), &config, sync.Observe, len(sync.Drift()) > 0, syncErrors)
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
@@ -96,20 +85,8 @@ func (r *TdarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 // tdarrSync applies one TdarrConfig. With observe set it only reads, and
 // records what it would have written.
 type tdarrSync struct {
-	tc      *tdarrclient.Client
-	observe bool
-	drift   []string
-}
-
-// apply writes a difference, or in observe mode records it instead.
-func (s *tdarrSync) apply(kind, name string, write func() error) error {
-	if s.observe {
-		metrics.DriftObservedTotal.WithLabelValues("tdarr", kind, name).Inc()
-		s.drift = append(s.drift, kind+"/"+name)
-		return nil
-	}
-	metrics.DriftCorrectedTotal.WithLabelValues("tdarr", kind, name).Inc()
-	return write()
+	engine.Writes
+	tc *tdarrclient.Client
 }
 
 func (s *tdarrSync) run(ctx context.Context, spec *transcodev1alpha1.TdarrConfigSpec) []string {
@@ -190,7 +167,7 @@ func (s *tdarrSync) libraryVariables(ctx context.Context, lib transcodev1alpha1.
 				"type":  varType,
 				"date":  time.Now().UnixMilli(),
 			}
-			err := s.apply(variablesCollection, lib.ID+"/"+key, func() error {
+			err := s.Apply(variablesCollection, lib.ID+"/"+key, func() error {
 				return s.tc.Insert(ctx, variablesCollection, "", obj)
 			})
 			if err != nil {
@@ -209,7 +186,7 @@ func (s *tdarrSync) libraryVariables(ctx context.Context, lib transcodev1alpha1.
 			"type":  varType,
 			"date":  time.Now().UnixMilli(),
 		}
-		err := s.apply(variablesCollection, lib.ID+"/"+key, func() error {
+		err := s.Apply(variablesCollection, lib.ID+"/"+key, func() error {
 			return s.tc.Update(ctx, variablesCollection, id, obj)
 		})
 		if err != nil {
@@ -225,7 +202,7 @@ func (s *tdarrSync) libraryVariables(ctx context.Context, lib transcodev1alpha1.
 		if id == "" {
 			continue
 		}
-		err := s.apply(variablesCollection, lib.ID+"/"+key, func() error {
+		err := s.Apply(variablesCollection, lib.ID+"/"+key, func() error {
 			return s.tc.Remove(ctx, variablesCollection, id)
 		})
 		if err != nil {
@@ -358,7 +335,7 @@ func (s *tdarrSync) upsertDoc(ctx context.Context, collection, id string, obj ma
 		return fmt.Errorf("looking up %s/%s: %w", collection, id, err)
 	}
 	if len(existing) == 0 {
-		return s.apply(collection, id, func() error { return s.tc.Insert(ctx, collection, id, obj) })
+		return s.Apply(collection, id, func() error { return s.tc.Insert(ctx, collection, id, obj) })
 	}
 	// Compare in JSON terms: the stored document decodes to float64s and []any.
 	raw, err := json.Marshal(obj)
@@ -372,7 +349,7 @@ func (s *tdarrSync) upsertDoc(ctx context.Context, collection, id string, obj ma
 	if reconciler.Covers(existing, desired) {
 		return nil
 	}
-	return s.apply(collection, id, func() error { return s.tc.Update(ctx, collection, id, obj) })
+	return s.Apply(collection, id, func() error { return s.tc.Update(ctx, collection, id, obj) })
 }
 
 // decodeRawList turns a list of raw JSON nodes into plain values. Tdarr stores
@@ -462,7 +439,7 @@ func (s *tdarrSync) convergeWorkerLimit(ctx context.Context, nodeID, workerType 
 	if steps == 0 {
 		return nil
 	}
-	return s.apply("workers", workerType, func() error {
+	return s.Apply("workers", workerType, func() error {
 		for range steps {
 			if err := s.tc.StepWorkerLimit(ctx, nodeID, workerType, process); err != nil {
 				return err

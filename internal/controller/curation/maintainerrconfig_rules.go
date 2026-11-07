@@ -84,11 +84,11 @@ func (s *maintainerrSync) ruleGroups(
 	// before them. When observe mode has found those differing, a group that
 	// cannot be resolved is counted as differing too, not as a failure: on a
 	// fresh Maintainerr nothing it refers to exists yet.
-	unresolvable := s.observe && len(s.drift) > 0
+	unresolvable := s.Observe && len(s.Drift()) > 0
 	fail := func(err error) []string {
 		if unresolvable {
 			for i := range groups {
-				s.recordDrift("ruleGroup", groups[i].Name)
+				s.RecordDrift("ruleGroup", groups[i].Name)
 			}
 			return nil
 		}
@@ -123,7 +123,7 @@ func (s *maintainerrSync) ruleGroups(
 		switch {
 		case err == nil:
 		case unresolvable:
-			s.recordDrift("ruleGroup", groups[i].Name)
+			s.RecordDrift("ruleGroup", groups[i].Name)
 		default:
 			errs = append(errs, fmt.Sprintf("ruleGroup(%s): %v", groups[i].Name, err))
 		}
@@ -154,7 +154,7 @@ func (s *maintainerrSync) ruleGroup(
 		match = e
 	}
 	if match == nil {
-		return s.apply("ruleGroup", g.Name, func() error { return s.mc.CreateRuleGroup(ctx, newRuleGroupBody(send)) })
+		return s.Apply("ruleGroup", g.Name, func() error { return s.mc.CreateRuleGroup(ctx, newRuleGroupBody(send)) })
 	}
 
 	current := storedRuleGroup(match)
@@ -163,7 +163,7 @@ func (s *maintainerrSync) ruleGroup(
 	}
 	// An update deletes and recreates every rule and writes a collection log
 	// entry, so it is sent only when something differs.
-	return s.apply("ruleGroup", g.Name, func() error { return s.mc.UpdateRuleGroup(ctx, overlayRuleGroup(current, send)) })
+	return s.Apply("ruleGroup", g.Name, func() error { return s.mc.UpdateRuleGroup(ctx, overlayRuleGroup(current, send)) })
 }
 
 // qualityProfile resolves the profile changeQualityProfile switches to, in the

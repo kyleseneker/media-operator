@@ -99,11 +99,7 @@ func (r *BazarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		for key := range changes {
 			metrics.DriftObservedTotal.WithLabelValues("bazarr", bazarrSettingSection(key), key).Inc()
 		}
-		var observeErr error
-		if len(problems) > 0 {
-			observeErr = fmt.Errorf("%v", problems)
-		}
-		ctrlcommon.UpdateObservationStatus(ctx, r.Status(), &config, len(changes) > 0, observeErr)
+		ctrlcommon.UpdateSyncStatus(ctx, r.Status(), &config, true, len(changes) > 0, problems)
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
 
@@ -120,11 +116,7 @@ func (r *BazarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}
 
-	if len(problems) > 0 {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync failure: %v", problems))
-	} else {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, true, engine.ReasonSynced, "all configuration sections synced")
-	}
+	ctrlcommon.UpdateSyncStatus(ctx, r.Status(), &config, false, false, problems)
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }

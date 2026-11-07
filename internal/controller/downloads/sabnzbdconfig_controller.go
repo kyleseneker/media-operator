@@ -86,11 +86,7 @@ func (r *SabnzbdConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		for _, w := range writes {
 			metrics.DriftObservedTotal.WithLabelValues("sabnzbd", w.resourceType, w.name).Inc()
 		}
-		var observeErr error
-		if len(syncErrors) > 0 {
-			observeErr = fmt.Errorf("%v", syncErrors)
-		}
-		ctrlcommon.UpdateObservationStatus(ctx, r.Status(), &config, len(writes) > 0, observeErr)
+		ctrlcommon.UpdateSyncStatus(ctx, r.Status(), &config, true, len(writes) > 0, syncErrors)
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
 
@@ -105,11 +101,7 @@ func (r *SabnzbdConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	if len(syncErrors) > 0 {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync: %v", syncErrors))
-	} else {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, true, engine.ReasonSynced, "all configuration synced")
-	}
+	ctrlcommon.UpdateSyncStatus(ctx, r.Status(), &config, false, false, syncErrors)
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
 

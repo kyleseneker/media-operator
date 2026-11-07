@@ -18,7 +18,6 @@ import (
 	seerrclient "github.com/kyleseneker/media-operator/internal/client/seerr"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/engine"
-	"github.com/kyleseneker/media-operator/internal/metrics"
 	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
 
@@ -67,8 +66,8 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
-	writes := &seerrWrites{observe: ctrlcommon.ObserveOnly(config.Spec.Reconcile)}
-	if !isInitialized && writes.observe {
+	writes := &engine.Writes{App: "seerr", Observe: ctrlcommon.ObserveOnly(config.Spec.Reconcile)}
+	if !isInitialized && writes.Observe {
 		// Signing in to a Seerr that has not been set up configures its media
 		// server, so observe mode reports the setup as missing and stops.
 		config.Status.Initialized = &isInitialized
@@ -126,17 +125,7 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 
-	if writes.observe {
-		var observeErr error
-		if len(syncErrors) > 0 {
-			observeErr = fmt.Errorf("%v", syncErrors)
-		}
-		ctrlcommon.UpdateObservationStatus(ctx, r.Status(), &config, len(writes.drift) > 0, observeErr)
-	} else if len(syncErrors) > 0 {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync failure: %v", syncErrors))
-	} else {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, true, engine.ReasonSynced, "all configuration sections synced")
-	}
+	ctrlcommon.UpdateSyncStatus(ctx, r.Status(), &config, writes.Observe, len(writes.Drift()) > 0, syncErrors)
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
@@ -144,7 +133,7 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 // setup runs Seerr's first-time setup: the media server's libraries, the Sonarr
 // and Radarr connections and the main settings, then marks Seerr initialized.
 func (r *SeerrConfigReconciler) setup(
-	ctx context.Context, sc *seerrclient.Client, writes *seerrWrites, config *requestsv1alpha1.SeerrConfig,
+	ctx context.Context, sc *seerrclient.Client, writes *engine.Writes, config *requestsv1alpha1.SeerrConfig,
 ) error {
 	logger := log.FromContext(ctx)
 	var initErrors []string
@@ -194,7 +183,7 @@ func (r *SeerrConfigReconciler) setup(
 }
 
 func (r *SeerrConfigReconciler) reconcileSonarrConnection(
-	ctx context.Context, sc *seerrclient.Client, w *seerrWrites, config *requestsv1alpha1.SeerrConfig, createOnly bool,
+	ctx context.Context, sc *seerrclient.Client, w *engine.Writes, config *requestsv1alpha1.SeerrConfig, createOnly bool,
 ) error {
 	sonarrAPIKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Sonarr.APIKeySecretRef)
 	if err != nil {
@@ -228,20 +217,20 @@ func (r *SeerrConfigReconciler) reconcileSonarrConnection(
 			if !seerrDiffers(e, payload) {
 				return nil
 			}
-			return w.apply("sonarr", name, func() error {
+			return w.Apply("sonarr", name, func() error {
 				return sc.Put(ctx, fmt.Sprintf("/api/v1/settings/sonarr/%d", int(id)), payload)
 			})
 		}
 	}
 
-	return w.apply("sonarr", config.Spec.Sonarr.Name, func() error {
+	return w.Apply("sonarr", config.Spec.Sonarr.Name, func() error {
 		_, err := sc.Post(ctx, "/api/v1/settings/sonarr", payload)
 		return err
 	})
 }
 
 func (r *SeerrConfigReconciler) reconcileRadarrConnection(
-	ctx context.Context, sc *seerrclient.Client, w *seerrWrites, config *requestsv1alpha1.SeerrConfig, createOnly bool,
+	ctx context.Context, sc *seerrclient.Client, w *engine.Writes, config *requestsv1alpha1.SeerrConfig, createOnly bool,
 ) error {
 	radarrAPIKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Radarr.APIKeySecretRef)
 	if err != nil {
@@ -275,13 +264,13 @@ func (r *SeerrConfigReconciler) reconcileRadarrConnection(
 			if !seerrDiffers(e, payload) {
 				return nil
 			}
-			return w.apply("radarr", name, func() error {
+			return w.Apply("radarr", name, func() error {
 				return sc.Put(ctx, fmt.Sprintf("/api/v1/settings/radarr/%d", int(id)), payload)
 			})
 		}
 	}
 
-	return w.apply("radarr", config.Spec.Radarr.Name, func() error {
+	return w.Apply("radarr", config.Spec.Radarr.Name, func() error {
 		_, err := sc.Post(ctx, "/api/v1/settings/radarr", payload)
 		return err
 	})
@@ -336,7 +325,7 @@ func buildServicePayload(svc *requestsv1alpha1.SeerrServiceConnection, apiKey st
 	return payload
 }
 
-func reconcileSeerrMainSettings(ctx context.Context, sc *seerrclient.Client, w *seerrWrites, main *requestsv1alpha1.SeerrMain) error {
+func reconcileSeerrMainSettings(ctx context.Context, sc *seerrclient.Client, w *engine.Writes, main *requestsv1alpha1.SeerrMain) error {
 	payload := map[string]any{}
 	if main.ApplicationTitle != "" {
 		payload["applicationTitle"] = main.ApplicationTitle
@@ -374,14 +363,14 @@ func reconcileSeerrMainSettings(ctx context.Context, sc *seerrclient.Client, w *
 	if !seerrDiffers(current, payload) {
 		return nil
 	}
-	return w.apply("settings", "main", func() error {
+	return w.Apply("settings", "main", func() error {
 		_, err := sc.Post(ctx, "/api/v1/settings/main", payload)
 		return err
 	})
 }
 
 func reconcileSeerrNotificationAgent(
-	ctx context.Context, sc *seerrclient.Client, w *seerrWrites, agent requestsv1alpha1.SeerrNotificationAgent,
+	ctx context.Context, sc *seerrclient.Client, w *engine.Writes, agent requestsv1alpha1.SeerrNotificationAgent,
 ) error {
 	payload := map[string]any{}
 	if agent.Enabled != nil {
@@ -406,27 +395,10 @@ func reconcileSeerrNotificationAgent(
 	if !seerrDiffers(current, payload) {
 		return nil
 	}
-	return w.apply("notifications", agent.Agent, func() error {
+	return w.Apply("notifications", agent.Agent, func() error {
 		_, err := sc.Post(ctx, path, payload)
 		return err
 	})
-}
-
-// seerrWrites sends Seerr's settings writes, or in observe mode records them
-// instead.
-type seerrWrites struct {
-	observe bool
-	drift   []string
-}
-
-func (w *seerrWrites) apply(kind, name string, write func() error) error {
-	if w.observe {
-		metrics.DriftObservedTotal.WithLabelValues("seerr", kind, name).Inc()
-		w.drift = append(w.drift, kind+"/"+name)
-		return nil
-	}
-	metrics.DriftCorrectedTotal.WithLabelValues("seerr", kind, name).Inc()
-	return write()
 }
 
 // seerrDiffers reports whether Seerr's stored settings lack any declared value.

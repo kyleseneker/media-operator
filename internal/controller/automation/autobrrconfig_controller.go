@@ -19,7 +19,6 @@ import (
 	autobrrclient "github.com/kyleseneker/media-operator/internal/client/autobrr"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/engine"
-	"github.com/kyleseneker/media-operator/internal/metrics"
 	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
 
@@ -78,20 +77,11 @@ func (r *AutobrrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	sync := &autobrrSync{
-		c: r.Client, ac: ac, namespace: config.Namespace, observe: ctrlcommon.ObserveOnly(config.Spec.Reconcile),
+		App: "autobrr", Observe: ctrlcommon.ObserveOnly(config.Spec.Reconcile),
+		c: r.Client, ac: ac, namespace: config.Namespace,
 	}
 	syncErrors := sync.run(ctx, &config.Spec)
-	if sync.observe {
-		var observeErr error
-		if len(syncErrors) > 0 {
-			observeErr = fmt.Errorf("%v", syncErrors)
-		}
-		ctrlcommon.UpdateObservationStatus(ctx, r.Status(), &config, len(sync.drift) > 0, observeErr)
-	} else if len(syncErrors) > 0 {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync failure: %v", syncErrors))
-	} else {
-		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, true, engine.ReasonSynced, "all configuration sections synced")
-	}
+	ctrlcommon.UpdateSyncStatus(ctx, r.Status(), &config, sync.Observe, len(sync.Drift()) > 0, syncErrors)
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
@@ -99,26 +89,10 @@ func (r *AutobrrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 // autobrrSync applies one AutobrrConfig. With observe set it only reads, and
 // records what it would have written.
 type autobrrSync struct {
+	engine.Writes
 	c         client.Reader
 	ac        *autobrrclient.Client
 	namespace string
-	observe   bool
-	drift     []string
-}
-
-// apply writes a difference, or in observe mode records it instead.
-func (s *autobrrSync) apply(kind, name string, write func() error) error {
-	if s.observe {
-		s.recordDrift(kind, name)
-		return nil
-	}
-	metrics.DriftCorrectedTotal.WithLabelValues("autobrr", kind, name).Inc()
-	return write()
-}
-
-func (s *autobrrSync) recordDrift(kind, name string) {
-	metrics.DriftObservedTotal.WithLabelValues("autobrr", kind, name).Inc()
-	s.drift = append(s.drift, kind+"/"+name)
 }
 
 // run applies the sections in dependency order: filter actions refer to
@@ -431,9 +405,9 @@ func (s *autobrrSync) actions(
 			// Autobrr links an action to a downloader by its numeric ID.
 			id, ok := clientIDs[a.ClientRef]
 			switch {
-			case !ok && s.observe && len(s.drift) > 0:
+			case !ok && s.Observe && len(s.Drift()) > 0:
 				// The download client may be one observe mode found missing.
-				s.recordDrift("action", a.Name)
+				s.RecordDrift("action", a.Name)
 				continue
 			case !ok:
 				return fmt.Errorf("action %q references download client %q, which does not exist", a.Name, a.ClientRef)
@@ -509,9 +483,9 @@ func (s *autobrrSync) upsert(kind, name string, existing []map[string]any, obj m
 		if reconciler.Covers(e, desired) {
 			return nil
 		}
-		return s.apply(kind, name, func() error { return update(int(id)) })
+		return s.Apply(kind, name, func() error { return update(int(id)) })
 	}
-	return s.apply(kind, name, create)
+	return s.Apply(kind, name, create)
 }
 
 // upsertFilter compares against the full stored filter, since the list
@@ -547,10 +521,10 @@ func (s *autobrrSync) upsertFilter(
 		}
 		delete(merged, "actions")
 		addRequiredFilterLists(merged)
-		return id, s.apply("filter", name, func() error { return s.ac.UpdateFilter(ctx, id, merged) })
+		return id, s.Apply("filter", name, func() error { return s.ac.UpdateFilter(ctx, id, merged) })
 	}
 	var id int
-	err := s.apply("filter", name, func() error {
+	err := s.Apply("filter", name, func() error {
 		created, err := s.ac.CreateFilter(ctx, create)
 		if err != nil {
 			return err
