@@ -11,6 +11,7 @@ package compat
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -187,13 +188,14 @@ func checkCompat(t *testing.T, tc compatCase) {
 	assert.Empty(t, writes, "observe mode wrote to the application:\n%s", formatRequests(writes))
 
 	if tc.export != "" {
-		checkExport(t, tc, r, ns.Name, read)
+		checkExport(t, tc, r, obj, read)
 	}
 }
 
-func checkExport(t *testing.T, tc compatCase, r reconcile.Reconciler, namespace string, read isRead) {
+func checkExport(t *testing.T, tc compatCase, r reconcile.Reconciler, fixture client.Object, read isRead) {
 	t.Helper()
 	ctx := context.Background()
+	namespace := fixture.GetNamespace()
 	res, err := export.Run(ctx, export.Options{
 		App: tc.export, URL: tc.proxy.url(), APIKey: tc.secrets["api-key"], Name: "exported", Namespace: namespace,
 	})
@@ -202,6 +204,12 @@ func checkExport(t *testing.T, tc compatCase, r reconcile.Reconciler, namespace 
 	require.NoError(t, err)
 	for _, w := range res.Warnings {
 		t.Logf("export warning: %s", w)
+	}
+	exportedSpec, fixtureSpec := specOf(t, res.Config), specOf(t, fixture)
+	for section := range fixtureSpec {
+		if section != "connection" && section != "reconcile" {
+			assert.Contains(t, exportedSpec, section, "export left out %s, which the fixture configures:\n%s", section, out)
+		}
 	}
 	for _, key := range res.Unfilled {
 		res.Secret.StringData[key] = "unreadable"
@@ -326,4 +334,15 @@ func observedDrift(t *testing.T, app string) []string {
 		}
 	}
 	return drift
+}
+
+func specOf(t *testing.T, obj client.Object) map[string]any {
+	t.Helper()
+	raw, err := json.Marshal(obj)
+	require.NoError(t, err)
+	var m struct {
+		Spec map[string]any `json:"spec"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &m))
+	return m.Spec
 }

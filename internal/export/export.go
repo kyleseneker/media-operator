@@ -21,6 +21,7 @@ import (
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	indexersv1alpha1 "github.com/kyleseneker/media-operator/api/indexers/v1alpha1"
 	pvrv1alpha1 "github.com/kyleseneker/media-operator/api/pvr/v1alpha1"
+	subtitlesv1alpha1 "github.com/kyleseneker/media-operator/api/subtitles/v1alpha1"
 	pvrclient "github.com/kyleseneker/media-operator/internal/client/pvr"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/engine"
@@ -55,9 +56,11 @@ type Result struct {
 }
 
 type app struct {
-	auth   engine.AuthType
-	newObj func() client.Object
-	export func(r *reader) (map[string]any, error)
+	auth    engine.AuthType
+	apiKey  bool
+	options []engine.HTTPClientOption
+	newObj  func() client.Object
+	export  func(r *reader) (map[string]any, error)
 }
 
 var apps = map[string]app{
@@ -66,16 +69,23 @@ var apps = map[string]app{
 	"lidarr":  pvrApp(pvrclient.Lidarr, func() client.Object { return &pvrv1alpha1.LidarrConfig{} }),
 	"readarr": pvrApp(pvrclient.Readarr, func() client.Object { return &pvrv1alpha1.ReadarrConfig{} }),
 	"prowlarr": {
-		auth: engine.AuthAPIKey, newObj: func() client.Object { return &indexersv1alpha1.ProwlarrConfig{} }, export: exportProwlarr,
+		auth: engine.AuthAPIKey, apiKey: true, export: exportProwlarr,
+		newObj: func() client.Object { return &indexersv1alpha1.ProwlarrConfig{} },
 	},
 	"flaresolverr": {
-		auth: engine.AuthNone, newObj: func() client.Object { return &indexersv1alpha1.FlareSolverrConfig{} }, export: exportFlareSolverr,
+		auth: engine.AuthNone, export: exportFlareSolverr,
+		newObj: func() client.Object { return &indexersv1alpha1.FlareSolverrConfig{} },
+	},
+	"bazarr": {
+		auth: engine.AuthFormEncoded, apiKey: true, export: exportBazarr,
+		options: []engine.HTTPClientOption{engine.WithAPIKeyHeader("X-API-KEY")},
+		newObj:  func() client.Object { return &subtitlesv1alpha1.BazarrConfig{} },
 	},
 }
 
 // NeedsAPIKey reports whether export reads app with an API key.
 func NeedsAPIKey(app string) bool {
-	return apps[app].auth == engine.AuthAPIKey
+	return apps[app].apiKey
 }
 
 // Apps lists the apps export supports.
@@ -110,8 +120,10 @@ func Run(ctx context.Context, o Options) (Result, error) {
 	if o.InsecureSkipVerify {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // the user asked to skip verification
 	}
-	hc, err := engine.NewHTTPClient(o.URL, a.auth,
-		engine.WithAPIKey(o.APIKey), engine.WithTransport(transport), engine.WithAppLabel(o.App))
+	options := append([]engine.HTTPClientOption{
+		engine.WithAPIKey(o.APIKey), engine.WithTransport(transport), engine.WithAppLabel(o.App),
+	}, a.options...)
+	hc, err := engine.NewHTTPClient(o.URL, a.auth, options...)
 	if err != nil {
 		return Result{}, err
 	}
@@ -129,7 +141,7 @@ func Run(ctx context.Context, o Options) (Result, error) {
 		conn = map[string]any{}
 	}
 	conn["url"] = o.ConnectionURL
-	if a.auth == engine.AuthAPIKey {
+	if a.apiKey {
 		conn["apiKeySecretRef"] = map[string]any{"name": o.SecretName, "key": apiKeyKey}
 	}
 	spec["connection"] = conn
@@ -232,7 +244,30 @@ func referencedKeys(obj any, secret string) []string {
 			keys = append(keys, ref.Key)
 		}
 	}
-	return keys
+	raw, _ := json.Marshal(obj)
+	var doc any
+	_ = json.Unmarshal(raw, &doc)
+	var inline []string
+	var walk func(v any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case string:
+			if key, ok := strings.CutPrefix(x, "ENV:"+secret+":"); ok && !slices.Contains(keys, key) && !slices.Contains(inline, key) {
+				inline = append(inline, key)
+			}
+		case []any:
+			for _, item := range x {
+				walk(item)
+			}
+		case map[string]any:
+			for _, item := range x {
+				walk(item)
+			}
+		}
+	}
+	walk(doc)
+	slices.Sort(inline)
+	return append(keys, inline...)
 }
 
 type reader struct {

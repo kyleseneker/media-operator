@@ -11,6 +11,7 @@ import (
 func pvrApp(a pvrclient.App, newObj func() client.Object) app {
 	return app{
 		auth:   engine.AuthAPIKey,
+		apiKey: true,
 		newObj: newObj,
 		export: func(r *reader) (map[string]any, error) {
 			r.prefix = "/api/" + a.APIVersion

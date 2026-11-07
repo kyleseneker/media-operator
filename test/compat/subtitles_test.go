@@ -46,6 +46,7 @@ func TestBazarr(t *testing.T) {
 
 	checkCompat(t, compatCase{
 		fixture: "bazarr.yaml",
+		export:  "bazarr",
 		vars: map[string]string{
 			"URL": proxy.url(), "HOST": hostIP,
 			"SONARR_PORT": strconv.Itoa(sonarr.port), "RADARR_PORT": strconv.Itoa(radarr.port),

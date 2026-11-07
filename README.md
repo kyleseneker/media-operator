@@ -115,7 +115,7 @@ doesn't matter, the operator just reads them and re-reconciles when they change.
 
 `media-operator export` reads a running app and prints a config that describes
 it, with a Secret for its credentials. It supports Sonarr, Radarr, Lidarr,
-Readarr, Prowlarr and FlareSolverr so far. Get it from the `media-operator-cli` release
+Readarr, Prowlarr, FlareSolverr and Bazarr so far. Get it from the `media-operator-cli` release
 archives, or run it in the cluster from the `ghcr.io/kyleseneker/media-operator-cli`
 image:
 

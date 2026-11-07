@@ -193,7 +193,7 @@ func TestSettingNameConvertsCamelCaseAndHonoursOverrides(t *testing.T) {
 		{"radarr", "syncInterval", "movies_sync"},
 	}
 	for _, c := range cases {
-		assert.Equal(t, c.want, settingName(c.section, c.in), "settingName(%q, %q)", c.section, c.in)
+		assert.Equal(t, c.want, SettingName(c.section, c.in), "SettingName(%q, %q)", c.section, c.in)
 	}
 }
 

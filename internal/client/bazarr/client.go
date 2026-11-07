@@ -113,10 +113,10 @@ var settingNameOverrides = map[string]map[string]string{
 	"radarr": {"host": "ip", "basePath": "base_url", "syncInterval": "movies_sync"},
 }
 
-// settingName converts a spec field name to the key Bazarr stores it under.
+// SettingName converts a spec field name to the key Bazarr stores it under.
 // Bazarr accepts and persists unknown keys without complaint, so a wrong name
 // is silently inert rather than an error.
-func settingName(section, jsonName string) string {
+func SettingName(section, jsonName string) string {
 	if o, ok := settingNameOverrides[section][jsonName]; ok {
 		return o
 	}
@@ -170,7 +170,7 @@ func StructToFormData(section string, obj any) url.Values {
 			continue
 		}
 
-		key := fmt.Sprintf("settings-%s-%s", section, settingName(section, jsonName))
+		key := fmt.Sprintf("settings-%s-%s", section, SettingName(section, jsonName))
 		var val string
 		switch fv.Kind() {
 		case reflect.Pointer:
