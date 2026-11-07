@@ -57,6 +57,49 @@ func SchemaConfigContract(schema []map[string]any, implementation, declared stri
 	return ""
 }
 
+// SchemaProtocol returns the protocol the app's schema gives an implementation.
+// Each implementation has exactly one, and the apps spell it differently
+// (Lidarr: TorrentDownloadProtocol, the others: torrent), so the declared value
+// is used only when the schema cannot be read.
+func SchemaProtocol(schema []map[string]any, implementation, declared string) string {
+	if def := schemaDefinition(schema, implementation); def != nil {
+		if protocol, _ := def["protocol"].(string); protocol != "" {
+			return protocol
+		}
+	}
+	return declared
+}
+
+// UnsupportedEvents lists the event switches in a notification payload that the
+// implementation's schema lacks. The app drops them, so they would read back
+// missing and be rewritten on every pass.
+func UnsupportedEvents(schema []map[string]any, implementation string, payload map[string]any) []string {
+	def := schemaDefinition(schema, implementation)
+	if def == nil {
+		return nil
+	}
+	var unsupported []string
+	for key := range payload {
+		if !strings.HasPrefix(key, "on") && !strings.HasPrefix(key, "include") {
+			continue
+		}
+		if _, ok := def[key]; !ok {
+			unsupported = append(unsupported, key)
+		}
+	}
+	sort.Strings(unsupported)
+	return unsupported
+}
+
+func schemaDefinition(schema []map[string]any, implementation string) map[string]any {
+	for _, def := range schema {
+		if impl, _ := def["implementation"].(string); strings.EqualFold(impl, implementation) {
+			return def
+		}
+	}
+	return nil
+}
+
 // ValidateFieldNames reports field names the implementation does not accept. These
 // apps store an unknown field and answer 2xx, so an unvalidated typo is inert
 // rather than an error.
@@ -132,6 +175,10 @@ func ValidateOptionFields(ctx context.Context, client *engine.HTTPClient, apiVer
 		schema := opts.schema(ctx, client, apiVersion, "notification")
 		for _, n := range opts.Notifications {
 			check("notification", n.Name, n.Implementation, n.Fields, schema)
+			if events := UnsupportedEvents(schema, n.Implementation, BuildNotificationPayload(n)); len(events) > 0 {
+				problems = append(problems, fmt.Sprintf("notification(%s): %s has no %s event; it was not sent",
+					n.Name, n.Implementation, strings.Join(events, ", ")))
+			}
 		}
 	}
 	if len(opts.ImportLists) > 0 {

@@ -52,7 +52,8 @@ func baseSpec(o buildOpts) (commonv1alpha1.AppConnection, []commonv1alpha1.RootF
 	conn := commonv1alpha1.AppConnection{
 		APIKeySecretRef: commonv1alpha1.SecretKeyRef{Name: "app-credentials", Key: "api-key"},
 	}
-	roots := []commonv1alpha1.RootFolder{{Path: "/media"}}
+	// Lidarr and Readarr need default profiles on a root folder; the others ignore them.
+	roots := []commonv1alpha1.RootFolder{{Path: "/media", DefaultQualityProfileName: "Any", DefaultMetadataProfileName: "Standard"}}
 	var dcs []commonv1alpha1.DownloadClient
 	if o.downloadClient {
 		dcs = []commonv1alpha1.DownloadClient{{
@@ -233,6 +234,12 @@ func newFakeArr(t *testing.T, apiVer string, existing map[string][]map[string]an
 	t.Helper()
 	if existing == nil {
 		existing = map[string][]map[string]any{}
+	}
+	// A fresh app ships default profiles that root folders can reference.
+	for kind, name := range map[string]string{"qualityprofile": "Any", "metadataprofile": "Standard"} {
+		if _, ok := existing[kind]; !ok {
+			existing[kind] = []map[string]any{{"id": float64(1), "name": name}}
+		}
 	}
 	f := &fakeArr{apiVer: apiVer, existing: existing}
 	prefix := "/api/" + apiVer + "/"

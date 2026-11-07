@@ -423,6 +423,11 @@ spec:
                     listOrder:
                       description: listOrder controls the display order of this list.
                       type: integer
+                    metadataProfileName:
+                      description: |-
+                        metadataProfileName is the metadata profile for imported items (Lidarr,
+                        Readarr). Resolved to an ID at reconciliation time.
+                      type: string
                     minimumAvailability:
                       description: 'minimumAvailability controls when imported movies
                         are considered available (Radarr: announced, inCinemas, released).'
@@ -724,12 +729,48 @@ spec:
                     name:
                       description: name is the display name of the notification.
                       type: string
+                    onAlbumDelete:
+                      description: onAlbumDelete fires when an album is deleted (Lidarr).
+                      type: boolean
                     onApplicationUpdate:
                       description: onApplicationUpdate fires when the application
                         is updated.
                       type: boolean
+                    onArtistAdd:
+                      description: onArtistAdd fires when an artist is added (Lidarr).
+                      type: boolean
+                    onArtistDelete:
+                      description: onArtistDelete fires when an artist is deleted
+                        (Lidarr).
+                      type: boolean
+                    onAuthorAdded:
+                      description: onAuthorAdded fires when an author is added (Readarr).
+                      type: boolean
+                    onAuthorDelete:
+                      description: onAuthorDelete fires when an author is deleted
+                        (Readarr).
+                      type: boolean
+                    onBookDelete:
+                      description: onBookDelete fires when a book is deleted (Readarr).
+                      type: boolean
+                    onBookFileDelete:
+                      description: onBookFileDelete fires when a book file is deleted
+                        (Readarr).
+                      type: boolean
+                    onBookFileDeleteForUpgrade:
+                      description: onBookFileDeleteForUpgrade fires when a book file
+                        is deleted for an upgrade (Readarr).
+                      type: boolean
+                    onBookRetag:
+                      description: onBookRetag fires when book file tags are rewritten
+                        (Readarr).
+                      type: boolean
                     onDownload:
                       description: onDownload fires when a download is imported.
+                      type: boolean
+                    onDownloadFailure:
+                      description: onDownloadFailure fires when a download fails (Lidarr,
+                        Readarr).
                       type: boolean
                     onEpisodeFileDelete:
                       description: onEpisodeFileDelete fires when an episode file
@@ -749,6 +790,14 @@ spec:
                     onHealthRestored:
                       description: onHealthRestored fires when a health check recovers.
                       type: boolean
+                    onImportComplete:
+                      description: onImportComplete fires when every file of a download
+                        has been imported (Sonarr).
+                      type: boolean
+                    onImportFailure:
+                      description: onImportFailure fires when an import fails (Lidarr,
+                        Readarr).
+                      type: boolean
                     onManualInteractionRequired:
                       description: onManualInteractionRequired fires when manual interaction
                         is needed.
@@ -767,6 +816,11 @@ spec:
                       description: onMovieFileDeleteForUpgrade fires when a movie
                         file is deleted for upgrade (Radarr).
                       type: boolean
+                    onReleaseImport:
+                      description: |-
+                        onReleaseImport fires when a release is imported (Lidarr, Readarr; Sonarr
+                        and Radarr call this onDownload).
+                      type: boolean
                     onRename:
                       description: onRename fires when files are renamed.
                       type: boolean
@@ -775,6 +829,10 @@ spec:
                       type: boolean
                     onSeriesDelete:
                       description: onSeriesDelete fires when a series is deleted (Sonarr).
+                      type: boolean
+                    onTrackRetag:
+                      description: onTrackRetag fires when track tags are rewritten
+                        (Lidarr).
                       type: boolean
                     onUpgrade:
                       description: onUpgrade fires when an existing file is upgraded.
@@ -998,6 +1056,23 @@ spec:
                 items:
                   description: RootFolder defines a media root folder path.
                   properties:
+                    defaultMetadataProfileName:
+                      description: |-
+                        defaultMetadataProfileName is the metadata profile for content added to
+                        this folder (Lidarr, Readarr; required there). Resolved to an ID at
+                        reconciliation time.
+                      type: string
+                    defaultQualityProfileName:
+                      description: |-
+                        defaultQualityProfileName is the quality profile for content added to
+                        this folder (Lidarr, Readarr; required there). Resolved to an ID at
+                        reconciliation time, after declared quality profiles are applied.
+                      type: string
+                    name:
+                      description: |-
+                        name labels the root folder (Lidarr, Readarr). Defaults to the last
+                        element of path.
+                      type: string
                     path:
                       description: path is the filesystem path for the root folder
                         inside the container.

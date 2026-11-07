@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"sort"
 	"strings"
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
@@ -86,12 +87,15 @@ type Options struct {
 	DCSecrets          map[string]DownloadClientResolvedSecrets
 	CategoryField      string
 	ImportListFields   ImportListFields
-	QualityProfiles    []commonv1alpha1.QualityProfile
-	CustomFormats      []commonv1alpha1.CustomFormat
-	Tags               []commonv1alpha1.Tag
-	Indexers           []commonv1alpha1.Indexer
-	Notifications      []commonv1alpha1.Notification
-	ImportLists        []commonv1alpha1.ImportList
+	// MetadataProfiles marks apps with metadata profiles (Lidarr, Readarr): their
+	// root folders need a name and default profiles, and import lists a metadata profile.
+	MetadataProfiles bool
+	QualityProfiles  []commonv1alpha1.QualityProfile
+	CustomFormats    []commonv1alpha1.CustomFormat
+	Tags             []commonv1alpha1.Tag
+	Indexers         []commonv1alpha1.Indexer
+	Notifications    []commonv1alpha1.Notification
+	ImportLists      []commonv1alpha1.ImportList
 
 	// schemas caches each provider kind's /schema listing for one reconcile.
 	schemas map[string][]map[string]any
@@ -107,7 +111,6 @@ func (o Options) schema(ctx context.Context, client *engine.HTTPClient, apiVersi
 
 // Resources builds the resources map from the options.
 func Resources(ctx context.Context, client *engine.HTTPClient, apiVersion string, opts Options) (map[string][]map[string]any, error) {
-	resources := make(map[string][]map[string]any)
 	var tagIDs engine.NamedIDs
 	if hasTagLabels(opts) {
 		var err error
@@ -117,118 +120,48 @@ func Resources(ctx context.Context, client *engine.HTTPClient, apiVersion string
 		}
 	}
 
-	if len(opts.Tags) > 0 {
-		tags := make([]map[string]any, 0, len(opts.Tags))
-		for _, t := range opts.Tags {
-			tags = append(tags, map[string]any{"label": t.Label})
-		}
-		resources["tags"] = tags
+	builders := []struct {
+		name  string
+		count int
+		build func() ([]map[string]any, error)
+	}{
+		{"tags", len(opts.Tags), func() ([]map[string]any, error) { return tagResources(opts.Tags), nil }},
+		{"remotePathMappings", len(opts.RemotePathMappings), func() ([]map[string]any, error) {
+			return remotePathMappingResources(opts.RemotePathMappings)
+		}},
+		{"rootFolders", len(opts.RootFolders), func() ([]map[string]any, error) {
+			return rootFolderResources(ctx, client, apiVersion, opts)
+		}},
+		{"downloadClients", len(opts.DownloadClients), func() ([]map[string]any, error) {
+			return downloadClientResources(ctx, client, apiVersion, opts, tagIDs)
+		}},
+		{"indexers", len(opts.Indexers), func() ([]map[string]any, error) {
+			return indexerResources(ctx, client, apiVersion, opts, tagIDs)
+		}},
+		{"customFormats", len(opts.CustomFormats), func() ([]map[string]any, error) {
+			return customFormatResources(opts.CustomFormats), nil
+		}},
+		{"qualityProfiles", len(opts.QualityProfiles), func() ([]map[string]any, error) {
+			return qualityProfileResources(ctx, client, apiVersion, opts.QualityProfiles)
+		}},
+		{"notifications", len(opts.Notifications), func() ([]map[string]any, error) {
+			return notificationResources(ctx, client, apiVersion, opts, tagIDs)
+		}},
+		{"importLists", len(opts.ImportLists), func() ([]map[string]any, error) {
+			return importListResources(ctx, client, apiVersion, opts, tagIDs)
+		}},
 	}
 
-	if len(opts.RemotePathMappings) > 0 {
-		mappings, err := remotePathMappingResources(opts.RemotePathMappings)
+	resources := make(map[string][]map[string]any)
+	for _, b := range builders {
+		if b.count == 0 {
+			continue
+		}
+		items, err := b.build()
 		if err != nil {
 			return nil, err
 		}
-		resources["remotePathMappings"] = mappings
-	}
-
-	if len(opts.RootFolders) > 0 {
-		rfs := make([]map[string]any, 0, len(opts.RootFolders))
-		for _, rf := range opts.RootFolders {
-			rfs = append(rfs, map[string]any{"path": rf.Path})
-		}
-		resources["rootFolders"] = rfs
-	}
-
-	if len(opts.DownloadClients) > 0 {
-		schema := opts.schema(ctx, client, apiVersion, "downloadclient")
-		dcs := make([]map[string]any, 0, len(opts.DownloadClients))
-		for _, dc := range opts.DownloadClients {
-			resolvedTags, err := tagIDs.ResolveTags(dc.TagLabels, dc.Tags)
-			if err != nil {
-				return nil, fmt.Errorf("downloadClients(%s): %w", dc.Name, err)
-			}
-			dc.Tags = resolvedTags
-			dc.ConfigContract = SchemaConfigContract(schema, dc.Implementation, dc.ConfigContract)
-			secrets := opts.DCSecrets[dc.Name]
-			dcs = append(dcs, BuildDownloadClientPayload(dc, secrets, opts.CategoryField))
-		}
-		resources["downloadClients"] = dcs
-	}
-
-	if len(opts.Indexers) > 0 {
-		schema := opts.schema(ctx, client, apiVersion, "indexer")
-		idxs := make([]map[string]any, 0, len(opts.Indexers))
-		for _, idx := range opts.Indexers {
-			resolvedTags, err := tagIDs.ResolveTags(idx.TagLabels, idx.Tags)
-			if err != nil {
-				return nil, fmt.Errorf("indexers(%s): %w", idx.Name, err)
-			}
-			idx.Tags = resolvedTags
-			idx.ConfigContract = SchemaConfigContract(schema, idx.Implementation, idx.ConfigContract)
-			idxs = append(idxs, BuildIndexerPayload(idx))
-		}
-		resources["indexers"] = idxs
-	}
-
-	if len(opts.CustomFormats) > 0 {
-		cfs := make([]map[string]any, 0, len(opts.CustomFormats))
-		for _, cf := range opts.CustomFormats {
-			cfs = append(cfs, BuildCustomFormatPayload(cf))
-		}
-		resources["customFormats"] = cfs
-	}
-
-	if len(opts.QualityProfiles) > 0 {
-		profiles, err := qualityProfileResources(ctx, client, apiVersion, opts.QualityProfiles)
-		if err != nil {
-			return nil, err
-		}
-		resources["qualityProfiles"] = profiles
-	}
-
-	if len(opts.Notifications) > 0 {
-		schema := opts.schema(ctx, client, apiVersion, "notification")
-		var notifs []map[string]any
-		for _, n := range opts.Notifications {
-			resolvedTags, err := tagIDs.ResolveTags(n.TagLabels, n.Tags)
-			if err != nil {
-				return nil, fmt.Errorf("notifications(%s): %w", n.Name, err)
-			}
-			n.Tags = resolvedTags
-			n.ConfigContract = SchemaConfigContract(schema, n.Implementation, n.ConfigContract)
-			notifs = append(notifs, BuildNotificationPayload(n))
-		}
-		resources["notifications"] = notifs
-	}
-
-	if len(opts.ImportLists) > 0 {
-		// Resolve quality profile name → ID mapping for qualityProfileName references.
-		profiles, err := engine.FetchNamedIDs(ctx, client, fmt.Sprintf("/api/%s/qualityprofile", apiVersion), "name")
-		if err != nil {
-			return nil, err
-		}
-		schema := opts.schema(ctx, client, apiVersion, "importlist")
-		var ils []map[string]any
-		for _, il := range opts.ImportLists {
-			resolvedTags, err := tagIDs.ResolveTags(il.TagLabels, il.Tags)
-			if err != nil {
-				return nil, fmt.Errorf("importLists(%s): %w", il.Name, err)
-			}
-			il.Tags = resolvedTags
-			il.ConfigContract = SchemaConfigContract(schema, il.Implementation, il.ConfigContract)
-			qpIDs := map[string]int{}
-			if il.QualityProfileName != "" {
-				id, err := profiles.Resolve(il.QualityProfileName)
-				if err != nil {
-					return nil, fmt.Errorf("importLists(%s): %w", il.Name, err)
-				}
-				qpIDs[il.QualityProfileName] = id
-			}
-			ils = append(ils, BuildImportListPayload(il, qpIDs, opts.ImportListFields))
-		}
-		resources["importLists"] = ils
+		resources[b.name] = items
 	}
 
 	// Record managed resource counts for observability.
@@ -238,6 +171,123 @@ func Resources(ctx context.Context, client *engine.HTTPClient, apiVersion string
 	}
 
 	return resources, nil
+}
+
+func tagResources(declared []commonv1alpha1.Tag) []map[string]any {
+	tags := make([]map[string]any, 0, len(declared))
+	for _, t := range declared {
+		tags = append(tags, map[string]any{"label": t.Label})
+	}
+	return tags
+}
+
+func customFormatResources(declared []commonv1alpha1.CustomFormat) []map[string]any {
+	cfs := make([]map[string]any, 0, len(declared))
+	for _, cf := range declared {
+		cfs = append(cfs, BuildCustomFormatPayload(cf))
+	}
+	return cfs
+}
+
+func downloadClientResources(
+	ctx context.Context, client *engine.HTTPClient, apiVersion string, opts Options, tagIDs engine.NamedIDs,
+) ([]map[string]any, error) {
+	schema := opts.schema(ctx, client, apiVersion, "downloadclient")
+	dcs := make([]map[string]any, 0, len(opts.DownloadClients))
+	for _, dc := range opts.DownloadClients {
+		resolvedTags, err := tagIDs.ResolveTags(dc.TagLabels, dc.Tags)
+		if err != nil {
+			return nil, fmt.Errorf("downloadClients(%s): %w", dc.Name, err)
+		}
+		dc.Tags = resolvedTags
+		dc.ConfigContract = SchemaConfigContract(schema, dc.Implementation, dc.ConfigContract)
+		dc.Protocol = SchemaProtocol(schema, dc.Implementation, dc.Protocol)
+		dcs = append(dcs, BuildDownloadClientPayload(dc, opts.DCSecrets[dc.Name], opts.CategoryField))
+	}
+	return dcs, nil
+}
+
+func indexerResources(
+	ctx context.Context, client *engine.HTTPClient, apiVersion string, opts Options, tagIDs engine.NamedIDs,
+) ([]map[string]any, error) {
+	schema := opts.schema(ctx, client, apiVersion, "indexer")
+	idxs := make([]map[string]any, 0, len(opts.Indexers))
+	for _, idx := range opts.Indexers {
+		resolvedTags, err := tagIDs.ResolveTags(idx.TagLabels, idx.Tags)
+		if err != nil {
+			return nil, fmt.Errorf("indexers(%s): %w", idx.Name, err)
+		}
+		idx.Tags = resolvedTags
+		idx.ConfigContract = SchemaConfigContract(schema, idx.Implementation, idx.ConfigContract)
+		idx.Protocol = SchemaProtocol(schema, idx.Implementation, idx.Protocol)
+		idxs = append(idxs, BuildIndexerPayload(idx))
+	}
+	return idxs, nil
+}
+
+func notificationResources(
+	ctx context.Context, client *engine.HTTPClient, apiVersion string, opts Options, tagIDs engine.NamedIDs,
+) ([]map[string]any, error) {
+	schema := opts.schema(ctx, client, apiVersion, "notification")
+	notifs := make([]map[string]any, 0, len(opts.Notifications))
+	for _, n := range opts.Notifications {
+		resolvedTags, err := tagIDs.ResolveTags(n.TagLabels, n.Tags)
+		if err != nil {
+			return nil, fmt.Errorf("notifications(%s): %w", n.Name, err)
+		}
+		n.Tags = resolvedTags
+		n.ConfigContract = SchemaConfigContract(schema, n.Implementation, n.ConfigContract)
+		payload := BuildNotificationPayload(n)
+		// Validation reports these; sending them would rewrite the notification forever.
+		for _, event := range UnsupportedEvents(schema, n.Implementation, payload) {
+			delete(payload, event)
+		}
+		notifs = append(notifs, payload)
+	}
+	return notifs, nil
+}
+
+func importListResources(
+	ctx context.Context, client *engine.HTTPClient, apiVersion string, opts Options, tagIDs engine.NamedIDs,
+) ([]map[string]any, error) {
+	profiles, err := engine.FetchNamedIDs(ctx, client, fmt.Sprintf("/api/%s/qualityprofile", apiVersion), "name")
+	if err != nil {
+		return nil, err
+	}
+	var metadataProfiles engine.NamedIDs
+	if opts.MetadataProfiles {
+		if metadataProfiles, err = engine.FetchNamedIDs(ctx, client, fmt.Sprintf("/api/%s/metadataprofile", apiVersion), "name"); err != nil {
+			return nil, err
+		}
+	}
+	schema := opts.schema(ctx, client, apiVersion, "importlist")
+	ils := make([]map[string]any, 0, len(opts.ImportLists))
+	for _, il := range opts.ImportLists {
+		resolvedTags, err := tagIDs.ResolveTags(il.TagLabels, il.Tags)
+		if err != nil {
+			return nil, fmt.Errorf("importLists(%s): %w", il.Name, err)
+		}
+		il.Tags = resolvedTags
+		il.ConfigContract = SchemaConfigContract(schema, il.Implementation, il.ConfigContract)
+		qpIDs := map[string]int{}
+		if il.QualityProfileName != "" {
+			id, err := profiles.Resolve(il.QualityProfileName)
+			if err != nil {
+				return nil, fmt.Errorf("importLists(%s): %w", il.Name, err)
+			}
+			qpIDs[il.QualityProfileName] = id
+		}
+		payload := BuildImportListPayload(il, qpIDs, opts.ImportListFields)
+		if opts.MetadataProfiles && il.MetadataProfileName != "" {
+			id, err := metadataProfiles.Resolve(il.MetadataProfileName)
+			if err != nil {
+				return nil, fmt.Errorf("importLists(%s): %w", il.Name, err)
+			}
+			payload["metadataProfileId"] = id
+		}
+		ils = append(ils, payload)
+	}
+	return ils, nil
 }
 
 // BuildDownloadClientPayload builds the API payload for a download client.
@@ -397,6 +447,23 @@ func BuildNotificationPayload(n commonv1alpha1.Notification) map[string]any {
 	SetOptionalBool(payload, "onMovieDelete", n.OnMovieDelete)
 	SetOptionalBool(payload, "onMovieFileDelete", n.OnMovieFileDelete)
 	SetOptionalBool(payload, "onMovieFileDeleteForUpgrade", n.OnMovieFileDeleteForUpgrade)
+	SetOptionalBool(payload, "onImportComplete", n.OnImportComplete)
+	// Lidarr and Readarr
+	SetOptionalBool(payload, "onReleaseImport", n.OnReleaseImport)
+	SetOptionalBool(payload, "onDownloadFailure", n.OnDownloadFailure)
+	SetOptionalBool(payload, "onImportFailure", n.OnImportFailure)
+	// Lidarr-specific
+	SetOptionalBool(payload, "onArtistAdd", n.OnArtistAdd)
+	SetOptionalBool(payload, "onArtistDelete", n.OnArtistDelete)
+	SetOptionalBool(payload, "onAlbumDelete", n.OnAlbumDelete)
+	SetOptionalBool(payload, "onTrackRetag", n.OnTrackRetag)
+	// Readarr-specific
+	SetOptionalBool(payload, "onAuthorAdded", n.OnAuthorAdded)
+	SetOptionalBool(payload, "onAuthorDelete", n.OnAuthorDelete)
+	SetOptionalBool(payload, "onBookDelete", n.OnBookDelete)
+	SetOptionalBool(payload, "onBookFileDelete", n.OnBookFileDelete)
+	SetOptionalBool(payload, "onBookFileDeleteForUpgrade", n.OnBookFileDeleteForUpgrade)
+	SetOptionalBool(payload, "onBookRetag", n.OnBookRetag)
 
 	return payload
 }
@@ -697,6 +764,7 @@ func Reconcile(ctx context.Context, client *engine.HTTPClient, apiVersion string
 	base := opts
 	base.Tags = nil
 	base.QualityProfiles = nil
+	base.RootFolders = nil
 	base.ImportLists = nil
 	resources, err := Resources(ctx, client, apiVersion, base)
 	if err != nil {
@@ -716,8 +784,23 @@ func Reconcile(ctx context.Context, client *engine.HTTPClient, apiVersion string
 		}
 	}
 
+	// Root folders in Lidarr and Readarr reference quality profiles, and import
+	// lists reference root folders, so they apply between the two.
+	if len(opts.RootFolders) > 0 {
+		stage := Options{RootFolders: opts.RootFolders, MetadataProfiles: opts.MetadataProfiles}
+		rfRes, rerr := Resources(ctx, client, apiVersion, stage)
+		if rerr != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("rootFolders: %v", rerr))
+		} else {
+			mergeResult(&result, engine.ReconcileApp(ctx, client, def, nil, rfRes, policy, result.Managed))
+		}
+	}
+
 	if len(opts.ImportLists) > 0 {
-		stage := Options{ImportLists: opts.ImportLists, ImportListFields: opts.ImportListFields, schemas: opts.schemas}
+		stage := Options{
+			ImportLists: opts.ImportLists, ImportListFields: opts.ImportListFields,
+			MetadataProfiles: opts.MetadataProfiles, schemas: opts.schemas,
+		}
 		ilRes, ierr := Resources(ctx, client, apiVersion, stage)
 		if ierr != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("importLists: %v", ierr))
@@ -770,6 +853,10 @@ func qualityProfileResources(ctx context.Context, client *engine.HTTPClient, api
 	if err != nil {
 		return nil, err
 	}
+	existing, err := engine.FetchNamedIDs(ctx, client, fmt.Sprintf("/api/%s/qualityprofile", apiVersion), "name")
+	if err != nil {
+		return nil, err
+	}
 	var qps []map[string]any
 	for _, qp := range profiles {
 		cfIDs := map[string]int{}
@@ -784,9 +871,39 @@ func qualityProfileResources(ctx context.Context, client *engine.HTTPClient, api
 		if items, ok := payload["items"].([]map[string]any); ok {
 			payload["items"] = CompleteQualityItems(items, qp.Items, definitions)
 		}
+		if _, ok := existing[qp.Name]; !ok {
+			declared, _ := payload["formatItems"].([]map[string]any)
+			payload["formatItems"] = CompleteFormatItems(declared, formats)
+		}
 		qps = append(qps, payload)
 	}
 	return qps, nil
+}
+
+// CompleteFormatItems lists every custom format the app has, scoring the
+// undeclared ones 0. A new profile must name each custom format exactly once;
+// an existing one already does, because the apps add each new format to every
+// profile, so updates send only the declared scores and leave others' scores be.
+func CompleteFormatItems(declared []map[string]any, formats engine.NamedIDs) []map[string]any {
+	out := append([]map[string]any{}, declared...)
+	seen := map[string]bool{}
+	for _, item := range declared {
+		name, _ := item["name"].(string)
+		seen[name] = true
+	}
+	names := make([]string, 0, len(formats))
+	for name := range formats {
+		if !seen[name] {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		for _, id := range formats[name] {
+			out = append(out, map[string]any{"format": id, "name": name, "score": 0})
+		}
+	}
+	return out
 }
 
 // CompleteQualityItems sends each quality as the app defines it, and adds every
@@ -845,6 +962,54 @@ func CompleteQualityItems(items []map[string]any, declared []commonv1alpha1.Qual
 		})
 	}
 	return append(missing, items...)
+}
+
+// rootFolderResources builds root folders. Lidarr and Readarr reject a folder
+// without a name and default quality and metadata profiles; those profiles are
+// referenced by name so a rebuilt app's new IDs are picked up.
+func rootFolderResources(ctx context.Context, client *engine.HTTPClient, apiVersion string, opts Options) ([]map[string]any, error) {
+	var qualities, metadata engine.NamedIDs
+	if opts.MetadataProfiles {
+		var err error
+		if qualities, err = engine.FetchNamedIDs(ctx, client, fmt.Sprintf("/api/%s/qualityprofile", apiVersion), "name"); err != nil {
+			return nil, err
+		}
+		if metadata, err = engine.FetchNamedIDs(ctx, client, fmt.Sprintf("/api/%s/metadataprofile", apiVersion), "name"); err != nil {
+			return nil, err
+		}
+	}
+	rfs := make([]map[string]any, 0, len(opts.RootFolders))
+	for _, rf := range opts.RootFolders {
+		item := map[string]any{"path": rf.Path}
+		if opts.MetadataProfiles {
+			if rf.DefaultQualityProfileName == "" || rf.DefaultMetadataProfileName == "" {
+				return nil, fmt.Errorf("rootFolders(%s): defaultQualityProfileName and defaultMetadataProfileName are required", rf.Path)
+			}
+			qualityID, err := qualities.Resolve(rf.DefaultQualityProfileName)
+			if err != nil {
+				return nil, fmt.Errorf("rootFolders(%s): %w", rf.Path, err)
+			}
+			metadataID, err := metadata.Resolve(rf.DefaultMetadataProfileName)
+			if err != nil {
+				return nil, fmt.Errorf("rootFolders(%s): %w", rf.Path, err)
+			}
+			name := rf.Name
+			if name == "" {
+				name = folderName(rf.Path)
+			}
+			item["name"] = name
+			item["defaultQualityProfileId"] = qualityID
+			item["defaultMetadataProfileId"] = metadataID
+		}
+		rfs = append(rfs, item)
+	}
+	return rfs, nil
+}
+
+// folderName is the last element of a container path, POSIX or Windows.
+func folderName(dir string) string {
+	trimmed := strings.TrimRight(dir, `/\`)
+	return trimmed[strings.LastIndexAny(trimmed, `/\`)+1:]
 }
 
 func remotePathMappingResources(mappings []commonv1alpha1.RemotePathMapping) ([]map[string]any, error) {

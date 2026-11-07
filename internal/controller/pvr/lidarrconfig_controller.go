@@ -97,6 +97,7 @@ func (r *LidarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		DCSecrets:          dcSecrets,
 		CategoryField:      "musicCategory",
 		ImportListFields:   pvrclient.ImportListFields{AutomaticAdd: "enableAutomaticAdd", Monitor: "shouldMonitor", MonitorAll: "entireArtist"},
+		MetadataProfiles:   true,
 		QualityProfiles:    config.Spec.QualityProfiles,
 		CustomFormats:      config.Spec.CustomFormats,
 		Tags:               config.Spec.Tags,

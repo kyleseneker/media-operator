@@ -141,6 +141,23 @@ type RootFolder struct {
 	// path is the filesystem path for the root folder inside the container.
 	// +required
 	Path string `json:"path"`
+
+	// name labels the root folder (Lidarr, Readarr). Defaults to the last
+	// element of path.
+	// +optional
+	Name string `json:"name,omitempty"`
+
+	// defaultQualityProfileName is the quality profile for content added to
+	// this folder (Lidarr, Readarr; required there). Resolved to an ID at
+	// reconciliation time, after declared quality profiles are applied.
+	// +optional
+	DefaultQualityProfileName string `json:"defaultQualityProfileName,omitempty"`
+
+	// defaultMetadataProfileName is the metadata profile for content added to
+	// this folder (Lidarr, Readarr; required there). Resolved to an ID at
+	// reconciliation time.
+	// +optional
+	DefaultMetadataProfileName string `json:"defaultMetadataProfileName,omitempty"`
 }
 
 // DownloadClient defines a download client connection.
@@ -545,6 +562,63 @@ type Notification struct {
 	// onMovieFileDeleteForUpgrade fires when a movie file is deleted for upgrade (Radarr).
 	// +optional
 	OnMovieFileDeleteForUpgrade *bool `json:"onMovieFileDeleteForUpgrade,omitempty"`
+
+	// onImportComplete fires when every file of a download has been imported (Sonarr).
+	// +optional
+	OnImportComplete *bool `json:"onImportComplete,omitempty"`
+
+	// onReleaseImport fires when a release is imported (Lidarr, Readarr; Sonarr
+	// and Radarr call this onDownload).
+	// +optional
+	OnReleaseImport *bool `json:"onReleaseImport,omitempty"`
+
+	// onDownloadFailure fires when a download fails (Lidarr, Readarr).
+	// +optional
+	OnDownloadFailure *bool `json:"onDownloadFailure,omitempty"`
+
+	// onImportFailure fires when an import fails (Lidarr, Readarr).
+	// +optional
+	OnImportFailure *bool `json:"onImportFailure,omitempty"`
+
+	// onArtistAdd fires when an artist is added (Lidarr).
+	// +optional
+	OnArtistAdd *bool `json:"onArtistAdd,omitempty"`
+
+	// onArtistDelete fires when an artist is deleted (Lidarr).
+	// +optional
+	OnArtistDelete *bool `json:"onArtistDelete,omitempty"`
+
+	// onAlbumDelete fires when an album is deleted (Lidarr).
+	// +optional
+	OnAlbumDelete *bool `json:"onAlbumDelete,omitempty"`
+
+	// onTrackRetag fires when track tags are rewritten (Lidarr).
+	// +optional
+	OnTrackRetag *bool `json:"onTrackRetag,omitempty"`
+
+	// onAuthorAdded fires when an author is added (Readarr).
+	// +optional
+	OnAuthorAdded *bool `json:"onAuthorAdded,omitempty"`
+
+	// onAuthorDelete fires when an author is deleted (Readarr).
+	// +optional
+	OnAuthorDelete *bool `json:"onAuthorDelete,omitempty"`
+
+	// onBookDelete fires when a book is deleted (Readarr).
+	// +optional
+	OnBookDelete *bool `json:"onBookDelete,omitempty"`
+
+	// onBookFileDelete fires when a book file is deleted (Readarr).
+	// +optional
+	OnBookFileDelete *bool `json:"onBookFileDelete,omitempty"`
+
+	// onBookFileDeleteForUpgrade fires when a book file is deleted for an upgrade (Readarr).
+	// +optional
+	OnBookFileDeleteForUpgrade *bool `json:"onBookFileDeleteForUpgrade,omitempty"`
+
+	// onBookRetag fires when book file tags are rewritten (Readarr).
+	// +optional
+	OnBookRetag *bool `json:"onBookRetag,omitempty"`
 }
 
 // ImportList defines an import list for automatically adding content to a Servarr app.
@@ -582,6 +656,11 @@ type ImportList struct {
 	// Must match an existing quality profile. Resolved to an ID at reconciliation time.
 	// +optional
 	QualityProfileName string `json:"qualityProfileName,omitempty"`
+
+	// metadataProfileName is the metadata profile for imported items (Lidarr,
+	// Readarr). Resolved to an ID at reconciliation time.
+	// +optional
+	MetadataProfileName string `json:"metadataProfileName,omitempty"`
 
 	// rootFolderPath is the root folder path for imported items.
 	// +optional

@@ -76,3 +76,25 @@ func TestSchemaConfigContractComesFromTheAppSchema(t *testing.T) {
 		t.Errorf("an unreadable schema must leave the builder's fallback, got %q", got)
 	}
 }
+
+func TestSchemaProtocolUsesTheAppsSpelling(t *testing.T) {
+	schema := []map[string]any{{"implementation": "QBittorrent", "protocol": "TorrentDownloadProtocol"}}
+	if got := SchemaProtocol(schema, "qbittorrent", "torrent"); got != "TorrentDownloadProtocol" {
+		t.Errorf("got %q; Lidarr reads torrent back as TorrentDownloadProtocol and rewrites it forever", got)
+	}
+	if got := SchemaProtocol(nil, "QBittorrent", "torrent"); got != "torrent" {
+		t.Errorf("an unreadable schema must keep the declared protocol, got %q", got)
+	}
+}
+
+func TestUnsupportedEventsAreTheOnesTheImplementationLacks(t *testing.T) {
+	schema := []map[string]any{{"implementation": "Webhook", "onGrab": false, "onReleaseImport": false, "includeHealthWarnings": false}}
+	payload := map[string]any{"name": "hook", "onGrab": true, "onDownload": true, "onHealthRestored": true, "includeHealthWarnings": true}
+	got := UnsupportedEvents(schema, "Webhook", payload)
+	if strings.Join(got, ",") != "onDownload,onHealthRestored" {
+		t.Errorf("got %v", got)
+	}
+	if UnsupportedEvents(nil, "Webhook", payload) != nil {
+		t.Error("an unreadable schema must not reject events")
+	}
+}

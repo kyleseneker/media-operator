@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
+	"github.com/kyleseneker/media-operator/internal/engine"
 )
 
 func fieldValue(raw string) *commonv1alpha1.FieldValue {
@@ -797,4 +798,30 @@ func TestPayloadsAreJSONSerializable(t *testing.T) {
 			assert.NoError(t, err)
 		})
 	}
+}
+
+func TestFolderNameDefaultsToTheLastPathElement(t *testing.T) {
+	for in, want := range map[string]string{
+		"/data/media/music":  "music",
+		"/data/media/music/": "music",
+		`D:\Media\Books\`:    "Books",
+		"/":                  "",
+	} {
+		assert.Equal(t, want, folderName(in), in)
+	}
+}
+
+func TestCompleteFormatItemsNamesEveryCustomFormatForANewProfile(t *testing.T) {
+	formats := engine.NamedIDs{"x265": {1}, "WEBDL": {2}, "HDR": {3}}
+	declared := []map[string]any{{"format": 2, "name": "WEBDL", "score": 1000}}
+
+	items := CompleteFormatItems(declared, formats)
+
+	require.Len(t, items, 3, "the apps reject a new profile that omits any custom format")
+	assert.Equal(t, 1000, items[0]["score"], "declared scores are kept")
+	assert.Equal(t, "HDR", items[1]["name"])
+	assert.Equal(t, 0, items[1]["score"])
+	assert.Equal(t, "x265", items[2]["name"])
+	assert.Empty(t, CompleteFormatItems(nil, engine.NamedIDs{}), "an app without custom formats gets an empty list, not null")
+	assert.NotNil(t, CompleteFormatItems(nil, engine.NamedIDs{}))
 }
