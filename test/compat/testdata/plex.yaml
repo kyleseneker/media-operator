@@ -1,0 +1,43 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: PlexConfig
+metadata:
+  name: plex
+spec:
+  connection:
+    url: ${URL}
+    tokenSecretRef:
+      name: compat-credentials
+      key: token
+  server:
+    friendlyName: compat-plex
+    enableRemoteAccess: false
+    logDebug: false
+    autoEmptyTrash: true
+    scanMyLibraryAutomatically: true
+    scanMyLibraryPeriodically: true
+  transcoder:
+    transcodeHwRequested: false
+    maxSimultaneousVideoTranscodes: 2
+    transcodeHwEncodingEnabled: false
+    transcoderTempDirectory: /transcode
+  network:
+    secureConnections: 1
+    customServerAccessUrls: https://plex.example.com:443
+    # Must keep covering the suite's own address, or the next pass is locked out.
+    allowedNetworks: ${ALLOWED_NETWORKS}
+    enableIPv6: false
+  libraries:
+    - name: Movies
+      type: movie
+      paths:
+        - /media/movies
+      language: en-US
+      agent: tv.plex.agents.movie
+      scanner: Plex Movie
+    - name: TV Shows
+      type: show
+      paths:
+        - /media/tv
+      language: en-US
+      agent: tv.plex.agents.series
+      scanner: Plex TV Series

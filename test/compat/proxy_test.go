@@ -139,7 +139,9 @@ func newRecordingProxy(t *testing.T, target string) *recordingProxy {
 	upstream, err := url.Parse(target)
 	require.NoError(t, err)
 	p := &recordingProxy{}
-	forward := httputil.NewSingleHostReverseProxy(upstream)
+	// Rewrite adds no X-Forwarded-For, which keeps the proxy transparent: Plex
+	// treats a forwarded request as remote and refuses its allowed networks.
+	forward := &httputil.ReverseProxy{Rewrite: func(r *httputil.ProxyRequest) { r.SetURL(upstream) }}
 	p.server = serveOnHostIP(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		r.Body = io.NopCloser(bytes.NewReader(body))

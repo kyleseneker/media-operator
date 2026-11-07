@@ -31,5 +31,7 @@ const (
 	// renovate: datasource=docker
 	sabnzbdImage = "lscr.io/linuxserver/sabnzbd:5.1.3-ls280"
 	// renovate: datasource=docker
+	plexImage = "docker.io/plexinc/pms-docker:1.43.5.11079-b3b13e506"
+	// renovate: datasource=docker
 	qbittorrentImage = "lscr.io/linuxserver/qbittorrent:5.3.0_v2.1.2-ls486"
 )

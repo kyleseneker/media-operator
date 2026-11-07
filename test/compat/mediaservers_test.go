@@ -94,3 +94,69 @@ func jellyfinClient(t *testing.T, base, password string) *jellyfinclient.Client 
 	require.NoError(t, jc.Authenticate(context.Background(), jellyfinAdmin, password))
 	return jc
 }
+
+// plexAllowedNetworks lets an unclaimed Plex answer the suite without a
+// plex.tv account: Plex accepts any token from these networks.
+const plexAllowedNetworks = "10.0.0.0/255.0.0.0,172.16.0.0/255.240.0.0,192.168.0.0/255.255.0.0"
+
+func TestPlex(t *testing.T) {
+	t.Parallel()
+	prefs := `<?xml version="1.0" encoding="utf-8"?>
+<Preferences allowedNetworks="` + plexAllowedNetworks + `" FriendlyName="compat" AcceptedEULA="1" />
+`
+	plex := startContainer(t, containerSpec{
+		name: "plex", image: plexImage, port: 32400,
+		files: map[string]string{"/config/Library/Application Support/Plex Media Server/Preferences.xml": prefs},
+	})
+	plex.exec(t, "mkdir -p /media/movies /media/tv /media/ready /transcode")
+	// Plex answers long before it will create a library ("the server is still
+	// starting up"); a throwaway library shows when it is ready.
+	waitFor(t, "plex", 3*time.Minute, func() error {
+		resp, err := http.Post(plex.url()+"/library/sections?name=ready&type=movie&agent=tv.plex.agents.movie"+
+			"&scanner=Plex%20Movie&language=en-US&location=%2Fmedia%2Fready", "", nil)
+		if err != nil {
+			return err
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("library create %d", resp.StatusCode)
+		}
+		return nil
+	})
+	deleteReady, err := http.NewRequest(http.MethodDelete, plex.url()+"/library/sections/1", nil)
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(deleteReady)
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	proxy := newRecordingProxy(t, plex.url())
+
+	checkCompat(t, compatCase{
+		fixture: "plex.yaml",
+		vars:    map[string]string{"URL": proxy.url(), "ALLOWED_NETWORKS": plexAllowedNetworks},
+		secrets: map[string]string{"token": "unclaimed"},
+		newObj:  func() ctrlcommon.ConfigResource { return &mediaserversv1alpha1.PlexConfig{} },
+		reconciler: func(c client.Client) reconcile.Reconciler {
+			return &mediaservers.PlexConfigReconciler{Client: c, Scheme: c.Scheme(), Recorder: events.NewFakeRecorder(100)}
+		},
+		proxy: proxy,
+		verify: func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodGet, plex.url()+"/library/sections", nil)
+			require.NoError(t, err)
+			req.Header.Set("Accept", "application/json")
+			resp, err := http.DefaultClient.Do(req)
+			require.NoError(t, err)
+			defer func() { _ = resp.Body.Close() }()
+			var sections struct {
+				MediaContainer struct {
+					Directory []struct{ Title string } `json:"Directory"`
+				} `json:"MediaContainer"`
+			}
+			require.NoError(t, jsonDecode(resp, &sections))
+			titles := make([]string, 0, len(sections.MediaContainer.Directory))
+			for _, d := range sections.MediaContainer.Directory {
+				titles = append(titles, d.Title)
+			}
+			assert.ElementsMatch(t, []string{"Movies", "TV Shows"}, titles)
+		},
+	})
+}
