@@ -109,6 +109,7 @@ func TestQBittorrent(t *testing.T) {
 
 	checkCompat(t, compatCase{
 		fixture: "qbittorrent.yaml",
+		export:  "qbittorrent",
 		vars:    map[string]string{"URL": proxy.url()},
 		secrets: map[string]string{"username": qbittorrentUser, "password": password},
 		newObj:  func() ctrlcommon.ConfigResource { return &downloadsv1alpha1.QBittorrentConfig{} },

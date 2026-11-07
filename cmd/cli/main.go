@@ -68,6 +68,10 @@ func exportCommand(ctx context.Context, args []string, stdout, stderr io.Writer)
 	fs.StringVar(&o.ConnectionURL, "connection-url", "", "URL the operator should reach the app at, if not --url")
 	fs.StringVar(&o.APIKey, "api-key", os.Getenv("MEDIA_OPERATOR_API_KEY"),
 		"the app's API key (default $MEDIA_OPERATOR_API_KEY)")
+	fs.StringVar(&o.Username, "username", os.Getenv("MEDIA_OPERATOR_USERNAME"),
+		"username to sign in with, for apps without an API key (default $MEDIA_OPERATOR_USERNAME)")
+	fs.StringVar(&o.Password, "password", os.Getenv("MEDIA_OPERATOR_PASSWORD"),
+		"password to sign in with (default $MEDIA_OPERATOR_PASSWORD)")
 	fs.StringVar(&o.Name, "name", "", "name of the config (default: the app)")
 	fs.StringVar(&o.Namespace, "namespace", "", "namespace for the config and Secret")
 	fs.StringVar(&o.SecretName, "secret", "", "name of the Secret (default: <name>-credentials)")
@@ -98,6 +102,10 @@ func exportCommand(ctx context.Context, args []string, stdout, stderr io.Writer)
 	}
 	if o.APIKey == "" && export.NeedsAPIKey(o.App) {
 		return errors.New("--api-key or $MEDIA_OPERATOR_API_KEY is required")
+	}
+	if (o.Username == "" || o.Password == "") && export.NeedsLogin(o.App) {
+		return fmt.Errorf("%s needs --username and --password, or $MEDIA_OPERATOR_USERNAME and $MEDIA_OPERATOR_PASSWORD",
+			o.App)
 	}
 	if *exclude != "" {
 		o.Exclude = strings.Split(*exclude, ",")

@@ -48,6 +48,14 @@ func TestExportRequiresAnAppURLAndKey(t *testing.T) {
 	require.EqualError(t, err, "unexpected arguments: extra")
 }
 
+func TestExportRequiresALoginForApps(t *testing.T) {
+	t.Setenv("MEDIA_OPERATOR_USERNAME", "")
+	t.Setenv("MEDIA_OPERATOR_PASSWORD", "")
+	_, _, err := runCLI(t, "export", "qbittorrent", "--url", "http://qbittorrent", "--username", "admin")
+	require.EqualError(t, err,
+		"qbittorrent needs --username and --password, or $MEDIA_OPERATOR_USERNAME and $MEDIA_OPERATOR_PASSWORD")
+}
+
 func TestExportPrintsTheSecretAndConfig(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/config/") {

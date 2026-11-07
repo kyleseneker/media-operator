@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
+	downloadsv1alpha1 "github.com/kyleseneker/media-operator/api/downloads/v1alpha1"
 	indexersv1alpha1 "github.com/kyleseneker/media-operator/api/indexers/v1alpha1"
 	pvrv1alpha1 "github.com/kyleseneker/media-operator/api/pvr/v1alpha1"
 	subtitlesv1alpha1 "github.com/kyleseneker/media-operator/api/subtitles/v1alpha1"
@@ -38,6 +39,8 @@ type Options struct {
 	URL                string
 	ConnectionURL      string
 	APIKey             string
+	Username           string
+	Password           string
 	Name               string
 	Namespace          string
 	SecretName         string
@@ -58,6 +61,7 @@ type Result struct {
 type app struct {
 	auth    engine.AuthType
 	apiKey  bool
+	login   bool
 	options []engine.HTTPClientOption
 	newObj  func() client.Object
 	export  func(r *reader) (map[string]any, error)
@@ -76,6 +80,11 @@ var apps = map[string]app{
 		auth: engine.AuthNone, export: exportFlareSolverr,
 		newObj: func() client.Object { return &indexersv1alpha1.FlareSolverrConfig{} },
 	},
+	"qbittorrent": {
+		auth: engine.AuthCookie, login: true, export: exportQBittorrent,
+		options: []engine.HTTPClientOption{engine.WithDisableRedirect()},
+		newObj:  func() client.Object { return &downloadsv1alpha1.QBittorrentConfig{} },
+	},
 	"bazarr": {
 		auth: engine.AuthFormEncoded, apiKey: true, export: exportBazarr,
 		options: []engine.HTTPClientOption{engine.WithAPIKeyHeader("X-API-KEY")},
@@ -86,6 +95,11 @@ var apps = map[string]app{
 // NeedsAPIKey reports whether export reads app with an API key.
 func NeedsAPIKey(app string) bool {
 	return apps[app].apiKey
+}
+
+// NeedsLogin reports whether export signs in to app with a username and password.
+func NeedsLogin(app string) bool {
+	return apps[app].login
 }
 
 // Apps lists the apps export supports.
@@ -128,7 +142,10 @@ func Run(ctx context.Context, o Options) (Result, error) {
 		return Result{}, err
 	}
 
-	r := &reader{ctx: ctx, hc: hc, creds: &credentials{secret: o.SecretName, values: map[string]string{apiKeyKey: o.APIKey}}}
+	r := &reader{
+		ctx: ctx, hc: hc, username: o.Username, password: o.Password,
+		creds: &credentials{secret: o.SecretName, values: map[string]string{apiKeyKey: o.APIKey}},
+	}
 	spec, err := a.export(r)
 	if err != nil {
 		return Result{}, err
@@ -273,6 +290,8 @@ func referencedKeys(obj any, secret string) []string {
 type reader struct {
 	ctx      context.Context
 	hc       *engine.HTTPClient
+	username string
+	password string
 	prefix   string
 	creds    *credentials
 	tags     map[float64]string

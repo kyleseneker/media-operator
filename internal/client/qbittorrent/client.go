@@ -18,6 +18,14 @@ type Client struct {
 	password string
 }
 
+// MaxRatioActions maps the spec's maxRatioAction names to qBittorrent's max_ratio_act values.
+var MaxRatioActions = map[string]int{
+	"stop":               0,
+	"remove":             1,
+	"enableSuperSeeding": 2,
+	"removeWithContent":  3,
+}
+
 // NewClient creates a new qBittorrent API client backed by the given engine.HTTPClient.
 func NewClient(hc *engine.HTTPClient, username, password string) *Client {
 	return &Client{

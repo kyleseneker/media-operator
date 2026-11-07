@@ -198,6 +198,7 @@ func checkExport(t *testing.T, tc compatCase, r reconcile.Reconciler, fixture cl
 	namespace := fixture.GetNamespace()
 	res, err := export.Run(ctx, export.Options{
 		App: tc.export, URL: tc.proxy.url(), APIKey: tc.secrets["api-key"], Name: "exported", Namespace: namespace,
+		Username: tc.secrets["username"], Password: tc.secrets["password"],
 	})
 	require.NoError(t, err, "exporting %s", tc.export)
 	out, err := res.YAML()
@@ -206,9 +207,19 @@ func checkExport(t *testing.T, tc compatCase, r reconcile.Reconciler, fixture cl
 		t.Logf("export warning: %s", w)
 	}
 	exportedSpec, fixtureSpec := specOf(t, res.Config), specOf(t, fixture)
-	for section := range fixtureSpec {
-		if section != "connection" && section != "reconcile" {
-			assert.Contains(t, exportedSpec, section, "export left out %s, which the fixture configures:\n%s", section, out)
+	for section, value := range fixtureSpec {
+		if section == "connection" || section == "reconcile" {
+			continue
+		}
+		if !assert.Contains(t, exportedSpec, section, "export left out %s, which the fixture configures:\n%s", section, out) {
+			continue
+		}
+		fields, ok := value.(map[string]any)
+		exported, _ := exportedSpec[section].(map[string]any)
+		for field := range fields {
+			if ok {
+				assert.Contains(t, exported, field, "export left out %s.%s, which the fixture configures:\n%s", section, field, out)
+			}
 		}
 	}
 	for _, key := range res.Unfilled {

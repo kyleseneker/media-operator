@@ -132,13 +132,6 @@ func (r *QBittorrentConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
 
-var maxRatioActions = map[string]int{
-	"stop":               0,
-	"remove":             1,
-	"enableSuperSeeding": 2,
-	"removeWithContent":  3,
-}
-
 // qbPreferencePayload maps spec fields to the keys qBittorrent's API expects.
 func qbPreferencePayload(prefs *downloadsv1alpha1.QBittorrentPreferences) (map[string]any, error) {
 	out := map[string]any{}
@@ -181,7 +174,7 @@ func qbPreferencePayload(prefs *downloadsv1alpha1.QBittorrentPreferences) (map[s
 		out["max_ratio"] = ratio
 	}
 	if prefs.MaxRatioAction != nil {
-		act, ok := maxRatioActions[*prefs.MaxRatioAction]
+		act, ok := qbclient.MaxRatioActions[*prefs.MaxRatioAction]
 		if !ok {
 			return nil, fmt.Errorf("unknown maxRatioAction %q", *prefs.MaxRatioAction)
 		}
