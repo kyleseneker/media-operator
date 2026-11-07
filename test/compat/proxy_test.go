@@ -38,8 +38,8 @@ func (r request) String() string {
 		return r.Method + " " + r.Path
 	}
 	body := r.Body
-	if len(body) > 300 {
-		body = body[:300] + "…"
+	if len(body) > 1500 {
+		body = body[:1500] + "…"
 	}
 	return fmt.Sprintf("%s %s %s", r.Method, r.Path, body)
 }

@@ -156,6 +156,9 @@ func checkCompat(t *testing.T, tc compatCase) {
 	key := types.NamespacedName{Namespace: ns.Name, Name: obj.GetName()}
 
 	synced := reconcileUntilCurrent(t, r, key, tc.newObj)
+	if !isSynced(synced) {
+		t.Logf("writes during the first reconcile:\n%s", formatRequests(tc.proxy.writes(read)))
+	}
 	requireSynced(t, synced, "first reconcile")
 	if tc.verify != nil {
 		tc.verify(t)
@@ -205,6 +208,15 @@ func reconcileUntilCurrent(
 	}
 	t.Fatalf("status never reached generation for %s", key)
 	return nil
+}
+
+func isSynced(obj ctrlcommon.ConfigResource) bool {
+	for _, c := range *obj.GetConditions() {
+		if c.Type == engine.ConditionSynced {
+			return c.Status == metav1.ConditionTrue
+		}
+	}
+	return false
 }
 
 func requireSynced(t *testing.T, obj ctrlcommon.ConfigResource, stage string) {

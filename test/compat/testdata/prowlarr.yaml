@@ -1,0 +1,81 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: ProwlarrConfig
+metadata:
+  name: prowlarr
+spec:
+  connection:
+    url: ${URL}
+    apiKeySecretRef:
+      name: compat-credentials
+      key: api-key
+  appProfiles:
+    - name: Compat Profile
+      enableRss: true
+      enableAutomaticSearch: true
+      enableInteractiveSearch: false
+      minimumSeeders: 2
+  tags:
+    - label: tv
+  applications:
+    - name: Sonarr
+      syncLevel: fullSync
+      implementation: Sonarr
+      configContract: SonarrSettings
+      prowlarrUrl: ${PROWLARR_URL}
+      baseUrl: ${SONARR_URL}
+      apiKeySecretRef:
+        name: compat-credentials
+        key: sonarr-api-key
+      syncCategories: [5000, 5040]
+  indexers:
+    - name: Compat Torznab
+      implementation: Torznab
+      enable: true
+      appProfileName: Compat Profile
+      priority: 20
+      tags: [tv]
+      fields:
+        - name: baseUrl
+          value: ${FAKES}/torznab
+        - name: apiPath
+          value: /api
+        - name: apiKey
+          valueFrom:
+            name: compat-credentials
+            key: api-key
+  downloadClients:
+    - name: qBittorrent
+      enable: true
+      protocol: torrent
+      implementation: QBittorrent
+      priority: 1
+      fields:
+        - name: host
+          value: ${HOST}
+        - name: port
+          value: ${QBITTORRENT_PORT}
+        - name: username
+          valueFrom:
+            name: compat-credentials
+            key: qbittorrent-username
+        - name: password
+          valueFrom:
+            name: compat-credentials
+            key: qbittorrent-password
+      categories:
+        - clientCategory: tv
+          categories: [5000, 5040]
+  notifications:
+    - name: Compat Webhook
+      implementation: Webhook
+      onGrab: true
+      onHealthIssue: true
+      onHealthRestored: true
+      onApplicationUpdate: true
+      includeHealthWarnings: true
+      tagLabels: [tv]
+      fields:
+        - name: url
+          value: ${FAKES}/webhook
+        - name: method
+          value: 1
