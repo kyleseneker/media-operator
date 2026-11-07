@@ -245,3 +245,24 @@ func TestDeleteManagedResourcesRespectsOwnershipAndDependencyOrder(t *testing.T)
 		})
 	}
 }
+
+// Observe mode reports what differs in the result, so status can say so; a
+// masked secret it never saw written is not one of them.
+func TestReconcileAppReportsObservedDrift(t *testing.T) {
+	var writes []string
+	hc := maskingServer(t, "qbit", &writes)
+	def := AppDefinition{Resources: []ResourceEndpoint{{
+		Name: "downloadClients", Path: "/api/v3/downloadclient", MatchField: "name", Policy: CreateOrUpdate,
+	}}}
+	observe := SyncPolicy{Observe: true}
+
+	matching := ReconcileApp(context.Background(), hc, def, nil,
+		map[string][]map[string]any{"downloadClients": {desiredWithPassword("qbit", "never-written")}}, observe, nil)
+	assert.Empty(t, matching.Drift, "a masked password observe never wrote is not drift")
+
+	missing := ReconcileApp(context.Background(), hc, def, nil,
+		map[string][]map[string]any{"downloadClients": {desiredWithPassword("sab", "pw")}}, observe, nil)
+	assert.Equal(t, []string{"downloadClients(sab)"}, missing.Drift)
+	assert.Empty(t, missing.Synced, "a difference is not reported as synced")
+	assert.Empty(t, writes, "observe wrote to the app")
+}

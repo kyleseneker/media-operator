@@ -54,17 +54,6 @@ func Policy(rc *commonv1alpha1.ReconcileConfig) engine.SyncPolicy {
 	return engine.SyncPolicy{Prune: PruneEnabled(rc), Observe: ObserveOnly(rc)}
 }
 
-// RejectUnsupportedObserve prevents controllers without a read-only comparison
-// path from silently enforcing a spec whose policy explicitly forbids writes.
-func RejectUnsupportedObserve(ctx context.Context, sw client.SubResourceWriter, obj ConfigResource) bool {
-	if !ObserveOnly(obj.GetReconcileConfig()) {
-		return false
-	}
-	UpdateStatusUnreachable(ctx, sw, obj, engine.ReasonInvalidConfig,
-		"driftPolicy observe is not supported by this integration; no application requests were made")
-	return true
-}
-
 // UpdateObservationStatus reports comparison results without claiming drift was
 // corrected. Read failures take precedence over any differences already found.
 func UpdateObservationStatus(ctx context.Context, sw client.SubResourceWriter, obj ConfigResource, drift bool, err error) {
@@ -75,6 +64,20 @@ func UpdateObservationStatus(ctx context.Context, sw client.SubResourceWriter, o
 	} else {
 		UpdateStatus(ctx, sw, obj, true, "Observed", "observable configuration matches; no application writes performed")
 	}
+}
+
+// UpdateResultStatus reports an engine reconcile: what was applied or, under
+// the observe policy, whether anything differs.
+func UpdateResultStatus(ctx context.Context, sw client.SubResourceWriter, obj ConfigResource, result engine.ReconcileResult) {
+	if ObserveOnly(obj.GetReconcileConfig()) {
+		var err error
+		if !result.Success() {
+			err = fmt.Errorf("%v", result.Errors)
+		}
+		UpdateObservationStatus(ctx, sw, obj, len(result.Drift) > 0, err)
+		return
+	}
+	UpdateStatus(ctx, sw, obj, result.Success(), ResultReason(result), result.Message())
 }
 
 // ResultReason returns the appropriate status reason for a reconcile result.

@@ -264,6 +264,7 @@ func planSabnzbd(
 	current map[string]any, spec downloadsv1alpha1.SabnzbdConfigSpec, servers map[string]map[string]string, owner string,
 ) []sabWrite {
 	var writes []sabWrite
+	observe := ctrlcommon.ObserveOnly(spec.Reconcile)
 
 	misc := map[string]string{}
 	if spec.Folders != nil {
@@ -292,14 +293,14 @@ func planSabnzbd(
 			continue
 		}
 		key := fmt.Sprintf("sabnzbd/%s/server/%q", owner, srv.Name)
-		if w, needed := planNamed(current, "servers", srv.Name, vals, key); needed {
+		if w, needed := planNamed(current, "servers", srv.Name, vals, key, observe); needed {
 			w.resourceType = "servers"
 			writes = append(writes, w)
 		}
 	}
 
 	for _, cat := range spec.Categories {
-		if w, needed := planNamed(current, "categories", cat.Name, sabnzbdCategoryValues(cat), ""); needed {
+		if w, needed := planNamed(current, "categories", cat.Name, sabnzbdCategoryValues(cat), "", observe); needed {
 			w.resourceType = "categories"
 			writes = append(writes, w)
 		}
@@ -309,7 +310,7 @@ func planSabnzbd(
 
 // planNamed decides whether a server or category needs writing. Passwords read
 // back masked, so a change there is noticed through the remembered digest.
-func planNamed(current map[string]any, section, name string, vals map[string]string, secretKey string) (sabWrite, bool) {
+func planNamed(current map[string]any, section, name string, vals map[string]string, secretKey string, observe bool) (sabWrite, bool) {
 	w := sabWrite{section: section, name: name, values: vals, secretKey: secretKey}
 	entries, _ := current[section].([]any)
 	for _, e := range entries {
@@ -326,7 +327,7 @@ func planNamed(current map[string]any, section, name string, vals map[string]str
 			return w, true
 		}
 		w.secretDigest = out.SecretDigest
-		return w, out.Changed || reconciler.SecretsChangedSince(secretKey, out.SecretDigest)
+		return w, out.Changed || reconciler.SecretsDiffer(secretKey, out.SecretDigest, observe)
 	}
 	// A new entry reads back with its password masked; remember what is
 	// written now, or the next pass rewrites it once.

@@ -815,6 +815,7 @@ func Reconcile(ctx context.Context, client *engine.HTTPClient, apiVersion string
 func mergeResult(dst *engine.ReconcileResult, src engine.ReconcileResult) {
 	dst.Synced = append(dst.Synced, src.Synced...)
 	dst.Errors = append(dst.Errors, src.Errors...)
+	dst.Drift = append(dst.Drift, src.Drift...)
 	dst.Pruned = append(dst.Pruned, src.Pruned...)
 	// Each stage receives the preceding snapshot, including successful deletions.
 	// Appending snapshots duplicates ownership and resurrects pruned entries.

@@ -102,6 +102,21 @@ func TestSecretsChangedSinceIgnoresEmptyDigest(t *testing.T) {
 	assert.False(t, SecretsChangedSince("app|type|name", ""))
 }
 
+// Observe mode never writes, so after a restart it has no record of what a
+// masked secret holds. Counting that as drift would report every masked
+// credential as differing forever.
+func TestSecretsDifferOnlyFromARecordUnderObserve(t *testing.T) {
+	const key = "radarr|downloadClients|qbit"
+	written := digestOf([]string{"pw-v1"})
+
+	assert.False(t, SecretsDiffer(key, written, true), "nothing recorded: unverifiable, not drift")
+	assert.True(t, SecretsDiffer(key, written, false), "enforce still sends it once")
+
+	RecordSecrets(key, written)
+	assert.False(t, SecretsDiffer(key, written, true))
+	assert.True(t, SecretsDiffer(key, digestOf([]string{"pw-v2"}), true), "a rotation away from what was written is drift")
+}
+
 func TestDigestOfIsOrderIndependent(t *testing.T) {
 	assert.Equal(t, digestOf([]string{"a", "b"}), digestOf([]string{"b", "a"}))
 	assert.NotEqual(t, digestOf([]string{"a"}), digestOf([]string{"b"}))

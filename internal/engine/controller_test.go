@@ -28,7 +28,7 @@ func TestReconcileSetting_NoChange(t *testing.T) {
 	}
 
 	hc := newTestServer(t, handler)
-	err := reconcileSetting(context.Background(), hc, "/api/v3/config/naming", map[string]any{
+	_, err := reconcileSetting(context.Background(), hc, "/api/v3/config/naming", map[string]any{
 		"rename": true, "createEmpty": false,
 	}, false)
 	assert.NoError(t, err)
@@ -53,7 +53,7 @@ func TestReconcileSetting_WithChange(t *testing.T) {
 	}
 
 	hc := newTestServer(t, handler)
-	err := reconcileSetting(context.Background(), hc, "/api/v3/config/naming", map[string]any{
+	_, err := reconcileSetting(context.Background(), hc, "/api/v3/config/naming", map[string]any{
 		"rename": true,
 	}, false)
 	require.NoError(t, err)
@@ -66,7 +66,7 @@ func TestReconcileSetting_NoID(t *testing.T) {
 	hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"rename": true})
 	})
-	err := reconcileSetting(context.Background(), hc, "/api/v3/config/naming", map[string]any{"rename": true}, false)
+	_, err := reconcileSetting(context.Background(), hc, "/api/v3/config/naming", map[string]any{"rename": true}, false)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no id")
 }

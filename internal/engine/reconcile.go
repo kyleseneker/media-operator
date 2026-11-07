@@ -36,8 +36,10 @@ type PrunedResource struct {
 
 // ReconcileResult holds the outcome of a reconciliation pass.
 type ReconcileResult struct {
-	Synced  []string
-	Errors  []string
+	Synced []string
+	Errors []string
+	// Drift lists what observe mode found differing and left alone.
+	Drift   []string
 	Pruned  []PrunedResource
 	Managed map[string][]string
 }
@@ -81,11 +83,15 @@ func ReconcileApp(ctx context.Context, client *HTTPClient, def AppDefinition, se
 		if !ok || desired == nil || isNilInterface(desired) {
 			continue
 		}
-		if err := reconcileSetting(ctx, client, s.Path, desired, policy.Observe); err != nil {
+		drift, err := reconcileSetting(ctx, client, s.Path, desired, policy.Observe)
+		switch {
+		case err != nil:
 			logger.Error(err, "failed to reconcile setting", "section", s.Name)
 			logAPIErrorDetail(ctx, err)
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", s.Name, err))
-		} else {
+		case drift:
+			result.Drift = append(result.Drift, s.Name)
+		default:
 			result.Synced = append(result.Synced, s.Name)
 		}
 	}
@@ -98,7 +104,11 @@ func ReconcileApp(ctx context.Context, client *HTTPClient, def AppDefinition, se
 		}
 		failed := false
 		for _, item := range items {
-			created, err := reconcileResourceTracked(ctx, client, r, item, policy.Observe)
+			created, drift, err := reconcileResourceTracked(ctx, client, r, item, policy.Observe)
+			if drift {
+				result.Drift = append(result.Drift, fmt.Sprintf("%s(%v)", r.Name, r.resourceKey(item)))
+				continue
+			}
 			if err != nil {
 				failed = true
 				matchVal := r.resourceKey(item)
@@ -204,55 +214,59 @@ func pruneResources(ctx context.Context, client *HTTPClient, endpoint ResourceEn
 	return pruned, nil
 }
 
-// reconcileSetting handles a singleton config endpoint: GET, merge, PUT.
-func reconcileSetting(ctx context.Context, client *HTTPClient, path string, desired any, observe bool) error {
+// reconcileSetting handles a singleton config endpoint: GET, merge, PUT. In
+// observe mode it reports a difference instead of writing it.
+func reconcileSetting(ctx context.Context, client *HTTPClient, path string, desired any, observe bool) (bool, error) {
 	current, err := client.GetJSON(ctx, path)
 	if err != nil {
-		return fmt.Errorf("getting current: %w", err)
+		return false, fmt.Errorf("getting current: %w", err)
 	}
 
 	id, ok := current["id"].(float64)
 	if !ok {
-		return fmt.Errorf("config at %s has no id", path)
+		return false, fmt.Errorf("config at %s has no id", path)
 	}
 
 	out, err := reconciler.MergeDesired(current, desired)
 	if err != nil {
-		return fmt.Errorf("merging: %w", err)
+		return false, fmt.Errorf("merging: %w", err)
 	}
 	key := client.secretKey("setting", path)
-	if !out.Changed && !reconciler.SecretsChangedSince(key, out.SecretDigest) {
-		return nil
+	if !out.Changed && !reconciler.SecretsDiffer(key, out.SecretDigest, observe) {
+		return false, nil
 	}
 
 	if observe {
 		metrics.DriftObservedTotal.WithLabelValues(client.AppLabel(), "setting", path).Inc()
-		return nil
+		return true, nil
 	}
 	metrics.DriftCorrectedTotal.WithLabelValues(client.AppLabel(), "setting", path).Inc()
 	if err := client.PutJSON(ctx, fmt.Sprintf("%s/%d", path, int(id)), out.Merged); err != nil {
-		return err
+		return false, err
 	}
 	reconciler.RecordSecrets(key, out.SecretDigest)
-	return nil
+	return false, nil
 }
 
 // reconcileResource handles a list-based resource endpoint.
 func reconcileResource(ctx context.Context, client *HTTPClient, endpoint ResourceEndpoint, desired map[string]any, observe bool) error {
-	_, err := reconcileResourceTracked(ctx, client, endpoint, desired, observe)
+	_, _, err := reconcileResourceTracked(ctx, client, endpoint, desired, observe)
 	return err
 }
 
-// reconcileResourceTracked reports creation separately from updates and adoption.
-func reconcileResourceTracked(ctx context.Context, client *HTTPClient, endpoint ResourceEndpoint, desired map[string]any, observe bool) (bool, error) {
+// reconcileResourceTracked reports creation separately from updates and
+// adoption, and in observe mode reports a difference instead of writing it.
+func reconcileResourceTracked(
+	ctx context.Context, client *HTTPClient, endpoint ResourceEndpoint, desired map[string]any, observe bool,
+) (created, drift bool, err error) {
 	existing, err := client.GetJSONList(ctx, endpoint.Path)
 	if err != nil {
-		return false, fmt.Errorf("listing: %w", err)
+		return false, false, fmt.Errorf("listing: %w", err)
 	}
 
 	desiredMatch := endpoint.resourceKey(desired)
 	if desiredMatch == "" {
-		return false, fmt.Errorf("resource has no identity")
+		return false, false, fmt.Errorf("resource has no identity")
 	}
 
 	for _, e := range existing {
@@ -261,30 +275,30 @@ func reconcileResourceTracked(ctx context.Context, client *HTTPClient, endpoint 
 			// Found existing resource
 			switch endpoint.Policy {
 			case CreateOnly:
-				return false, nil // exists, don't update
+				return false, false, nil // exists, don't update
 			case CreateOrUpdate, UpdateAlways:
 				id, ok := e["id"].(float64)
 				if !ok {
-					return false, fmt.Errorf("resource %q has no id", desiredMatch)
+					return false, false, fmt.Errorf("resource %q has no id", desiredMatch)
 				}
 				out, err := reconciler.MergeDesired(e, desired)
 				if err != nil {
-					return false, err
+					return false, false, err
 				}
 				key := client.secretKey(endpoint.Name, desiredMatch)
-				if !out.Changed && !reconciler.SecretsChangedSince(key, out.SecretDigest) {
-					return false, nil
+				if !out.Changed && !reconciler.SecretsDiffer(key, out.SecretDigest, observe) {
+					return false, false, nil
 				}
 				if observe {
 					metrics.DriftObservedTotal.WithLabelValues(client.AppLabel(), endpoint.Name, desiredMatch).Inc()
-					return false, nil
+					return false, true, nil
 				}
 				metrics.DriftCorrectedTotal.WithLabelValues(client.AppLabel(), endpoint.Name, desiredMatch).Inc()
 				if err := client.PutJSON(ctx, fmt.Sprintf("%s/%d", endpoint.Path, int(id)), out.Merged); err != nil {
-					return false, err
+					return false, false, err
 				}
 				reconciler.RecordSecrets(key, out.SecretDigest)
-				return false, nil
+				return false, false, nil
 			}
 		}
 	}
@@ -292,21 +306,21 @@ func reconcileResourceTracked(ctx context.Context, client *HTTPClient, endpoint 
 	// Not found — create
 	if observe {
 		metrics.DriftObservedTotal.WithLabelValues(client.AppLabel(), endpoint.Name, desiredMatch).Inc()
-		return false, nil
+		return false, true, nil
 	}
 	body, err := client.Do(ctx, http.MethodPost, endpoint.Path, desired)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	// The created resource comes back with its secrets masked, like any later
 	// read. Remember what was written now, or the next pass rewrites it once.
-	var created map[string]any
-	if json.Unmarshal(body, &created) == nil {
-		if out, err := reconciler.MergeDesired(created, desired); err == nil {
+	var stored map[string]any
+	if json.Unmarshal(body, &stored) == nil {
+		if out, err := reconciler.MergeDesired(stored, desired); err == nil {
 			reconciler.RecordSecrets(client.secretKey(endpoint.Name, desiredMatch), out.SecretDigest)
 		}
 	}
-	return true, nil
+	return true, false, nil
 }
 
 // secretKey isolates last-written secrets by target and Kubernetes owner. Quoted

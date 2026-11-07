@@ -151,22 +151,29 @@ func TestObservationStatus(t *testing.T) {
 	}
 }
 
-func TestRejectUnsupportedObserve(t *testing.T) {
-	for _, policy := range []string{"enforce", DriftPolicyObserve} {
-		t.Run(policy, func(t *testing.T) {
+func TestUpdateResultStatusReportsObservedDrift(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		policy string
+		result engine.ReconcileResult
+		status metav1.ConditionStatus
+		reason string
+	}{
+		{"enforce", "enforce", engine.ReconcileResult{Synced: []string{"naming"}}, metav1.ConditionTrue, engine.ReasonSynced},
+		{"observe drift", DriftPolicyObserve, engine.ReconcileResult{Drift: []string{"naming"}}, metav1.ConditionFalse, "DriftDetected"},
+		{"observe match", DriftPolicyObserve, engine.ReconcileResult{Synced: []string{"naming"}}, metav1.ConditionTrue, "Observed"},
+		{"observe error", DriftPolicyObserve, engine.ReconcileResult{Errors: []string{"x"}}, metav1.ConditionFalse, engine.ReasonSyncFailed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			obj := newConfig("", 0)
-			obj.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &policy}
+			obj.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &tc.policy}
 			c := testClient(obj).WithStatusSubresource(obj).Build()
-			rejected := RejectUnsupportedObserve(context.Background(), c.Status(), obj)
-			assert.Equal(t, policy == DriftPolicyObserve, rejected)
+			UpdateResultStatus(context.Background(), c.Status(), obj, tc.result)
 			require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(obj), obj))
 			condition := meta.FindStatusCondition(obj.Status.Conditions, "Synced")
-			if rejected {
-				require.NotNil(t, condition)
-				assert.Equal(t, engine.ReasonInvalidConfig, condition.Reason)
-			} else {
-				assert.Nil(t, condition)
-			}
+			require.NotNil(t, condition)
+			assert.Equal(t, tc.status, condition.Status)
+			assert.Equal(t, tc.reason, condition.Reason)
 		})
 	}
 }

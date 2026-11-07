@@ -131,11 +131,12 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	rest := engine.ReconcileApp(ctx, hc, def, nil, resources, policy, result.Managed)
 	result.Synced = append(result.Synced, rest.Synced...)
 	result.Errors = append(result.Errors, rest.Errors...)
+	result.Drift = append(result.Drift, rest.Drift...)
 	result.Pruned = append(result.Pruned, rest.Pruned...)
 	result.Managed = rest.Managed
 	ctrlcommon.UpdateStatusManaged(&config, result.Managed)
 	ctrlcommon.EmitPruneEvents(r.Recorder, &config, result.Pruned)
-	ctrlcommon.UpdateStatus(ctx, r.Status(), &config, result.Success(), ctrlcommon.ResultReason(result), result.Message())
+	ctrlcommon.UpdateResultStatus(ctx, r.Status(), &config, result)
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }

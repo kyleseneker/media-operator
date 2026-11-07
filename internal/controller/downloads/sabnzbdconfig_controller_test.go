@@ -164,6 +164,24 @@ func TestSabnzbdPlanSkipsWhatAlreadyMatches(t *testing.T) {
 	assert.Len(t, planSabnzbd(current, sabnzbdSpec(), servers, "plan-matches"), 1, "a rotated password must be written")
 }
 
+// Observe mode has no record of a masked password it never wrote, so a server
+// that otherwise matches is not drift after a restart.
+func TestSabnzbdObservePlanDoesNotCountAnUnseenPassword(t *testing.T) {
+	vals := sabnzbdServerValues(sabnzbdSpec().Servers[0])
+	vals["password"] = "s3cret"
+	current := map[string]any{
+		"misc": map[string]any{"complete_dir": "/done"},
+		"servers": []any{map[string]any{
+			"name": "Primary", "host": "news.example.com", "port": float64(563), "ssl": float64(1),
+			"password": "**********", "timeout": float64(60),
+		}},
+		"categories": []any{map[string]any{"name": "tv", "dir": "tv", "priority": float64(0), "order": float64(2)}},
+	}
+	spec := sabnzbdSpec()
+	spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: new("observe")}
+	assert.Empty(t, planSabnzbd(current, spec, map[string]map[string]string{"Primary": vals}, "observe-unseen"))
+}
+
 func TestSabnzbdObserveReportsDriftWithoutWriting(t *testing.T) {
 	app := &fakeSabnzbd{}
 	cfg := sabnzbdConfig(app.serve(t))

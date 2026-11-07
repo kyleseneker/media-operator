@@ -111,7 +111,7 @@ func (r *LidarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 	ctrlcommon.UpdateStatusManaged(&config, result.Managed)
 	ctrlcommon.EmitPruneEvents(r.Recorder, &config, result.Pruned)
-	ctrlcommon.UpdateStatus(ctx, r.Status(), &config, result.Success(), ctrlcommon.ResultReason(result), result.Message())
+	ctrlcommon.UpdateResultStatus(ctx, r.Status(), &config, result)
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }

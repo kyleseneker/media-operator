@@ -50,6 +50,24 @@ func SecretsChangedSince(key, digest string) bool {
 	return !seen || prev != digest
 }
 
+// SecretsDiffer reports whether masked secrets count as a difference. Enforce
+// mode rewrites them when nothing has been recorded yet, so the first pass after
+// a restart sends them once. Observe mode never writes, so it cannot know a
+// secret it has not seen written: only a recorded digest that no longer matches
+// is a difference, or every masked credential would read as drift forever.
+func SecretsDiffer(key, digest string, observe bool) bool {
+	if !observe {
+		return SecretsChangedSince(key, digest)
+	}
+	if digest == "" {
+		return false
+	}
+	secretDigest.Lock()
+	defer secretDigest.Unlock()
+	prev, seen := secretDigest.hashes[key]
+	return seen && prev != digest
+}
+
 // RecordSecrets stores the digest written for key.
 func RecordSecrets(key, digest string) {
 	if digest == "" {
