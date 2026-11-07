@@ -19,6 +19,8 @@ const (
 	// renovate: datasource=docker
 	flaresolverrImage = "ghcr.io/flaresolverr/flaresolverr:v3.5.2"
 	// renovate: datasource=docker
+	autobrrImage = "ghcr.io/autobrr/autobrr:v1.90.0"
+	// renovate: datasource=docker
 	bazarrImage = "lscr.io/linuxserver/bazarr:v1.6.2-ls371"
 	// renovate: datasource=docker
 	jellyfinImage = "docker.io/jellyfin/jellyfin:12.4"

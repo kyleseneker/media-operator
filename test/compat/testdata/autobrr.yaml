@@ -1,0 +1,46 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: AutobrrConfig
+metadata:
+  name: autobrr
+spec:
+  connection:
+    url: ${URL}
+    apiKeySecretRef:
+      name: compat-credentials
+      key: api-key
+  downloadClients:
+    - name: qBittorrent
+      type: qBittorrent
+      enable: true
+      host: http://${HOST}
+      port: ${QBITTORRENT_PORT}
+      usernameSecretRef:
+        name: compat-credentials
+        key: qbittorrent-username
+      passwordSecretRef:
+        name: compat-credentials
+        key: qbittorrent-password
+  ircNetworks:
+    - name: Compat IRC
+      enable: false
+      server: irc.example.invalid
+      port: 6697
+      tls: true
+      nick: compat-bot
+      authMechanism: None
+      channels:
+        - name: "#announce"
+  filters:
+    - name: TV - 1080p
+      enable: true
+      priority: 1
+      resolutions:
+        - 1080p
+      sources:
+        - WEB-DL
+      actions:
+        - name: Send to qBittorrent
+          type: qBittorrent
+          enable: true
+          clientRef: qBittorrent
+          category: tv
