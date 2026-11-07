@@ -15,21 +15,6 @@ import (
 	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
 
-// Maintainerr's ServarrAction, in id order.
-var maintainerrArrActions = []string{
-	"delete", "unmonitorDeleteAll", "unmonitorDeleteExisting", "unmonitor",
-	"doNothing", "deleteShowIfEmpty", "unmonitorShowIfEmpty", "changeQualityProfile",
-}
-
-// Maintainerr's RulePossibility, in id order.
-var maintainerrComparisons = []string{
-	"BIGGER", "SMALLER", "EQUALS", "NOT_EQUALS", "CONTAINS", "BEFORE", "AFTER", "IN_LAST", "IN_NEXT",
-	"NOT_CONTAINS", "CONTAINS_PARTIAL", "NOT_CONTAINS_PARTIAL", "CONTAINS_ALL", "NOT_CONTAINS_ALL",
-	"COUNT_EQUALS", "COUNT_NOT_EQUALS", "COUNT_BIGGER", "COUNT_SMALLER", "EXISTS", "NOT_EXISTS",
-}
-
-var maintainerrOperators = map[string]int{"AND": 0, "OR": 1}
-
 // The collection types Maintainerr stores for a rule group.
 const (
 	dataMovie   = "movie"
@@ -221,7 +206,7 @@ func buildRuleGroup(
 	if err != nil {
 		return nil, nil, err
 	}
-	action := slices.Index(maintainerrArrActions, g.ArrAction)
+	action := slices.Index(maintainerrclient.ArrActions, g.ArrAction)
 	if action < 0 {
 		return nil, nil, fmt.Errorf("unknown arrAction %q", g.ArrAction)
 	}
@@ -295,9 +280,9 @@ func buildRules(sections []curationv1alpha1.MaintainerrRuleSection, env ruleEnv)
 			var operator any
 			switch {
 			case ri > 0:
-				operator = maintainerrOperators[rule.Operator]
+				operator = slices.Index(maintainerrclient.Operators, rule.Operator)
 			case si > 0:
-				operator = maintainerrOperators[section.Operator]
+				operator = slices.Index(maintainerrclient.Operators, section.Operator)
 			}
 			s, c, err := buildRule(rule, si, operator, env)
 			if err != nil {
@@ -317,7 +302,7 @@ func operatorPlacement(what string, index int) string {
 }
 
 func buildRule(rule curationv1alpha1.MaintainerrRule, section int, operator any, env ruleEnv) (send, compare map[string]any, err error) {
-	action := slices.Index(maintainerrComparisons, rule.Action)
+	action := slices.Index(maintainerrclient.Comparisons, rule.Action)
 	if action < 0 {
 		return nil, nil, fmt.Errorf("unknown action %q", rule.Action)
 	}

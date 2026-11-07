@@ -50,6 +50,7 @@ func TestMaintainerr(t *testing.T) {
 
 	checkCompat(t, compatCase{
 		fixture: "maintainerr.yaml",
+		export:  "maintainerr",
 		vars: map[string]string{
 			"URL": proxy.url(), "HOST": hostIP, "FAKES": fakes,
 			"JELLYFIN_PORT": strconv.Itoa(jf.port), "RADARR_PORT": strconv.Itoa(radarr.port),

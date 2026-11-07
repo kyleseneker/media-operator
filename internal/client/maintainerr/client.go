@@ -19,6 +19,22 @@ type Client struct {
 	hc *engine.HTTPClient
 }
 
+// ArrActions are Maintainerr's ServarrAction names, in id order.
+var ArrActions = []string{
+	"delete", "unmonitorDeleteAll", "unmonitorDeleteExisting", "unmonitor",
+	"doNothing", "deleteShowIfEmpty", "unmonitorShowIfEmpty", "changeQualityProfile",
+}
+
+// Comparisons are Maintainerr's RulePossibility names, in id order.
+var Comparisons = []string{
+	"BIGGER", "SMALLER", "EQUALS", "NOT_EQUALS", "CONTAINS", "BEFORE", "AFTER", "IN_LAST", "IN_NEXT",
+	"NOT_CONTAINS", "CONTAINS_PARTIAL", "NOT_CONTAINS_PARTIAL", "CONTAINS_ALL", "NOT_CONTAINS_ALL",
+	"COUNT_EQUALS", "COUNT_NOT_EQUALS", "COUNT_BIGGER", "COUNT_SMALLER", "EXISTS", "NOT_EXISTS",
+}
+
+// Operators are the rule operators, in id order.
+var Operators = []string{"AND", "OR"}
+
 // NewClient creates a new Maintainerr API client.
 func NewClient(hc *engine.HTTPClient) *Client {
 	return &Client{hc: hc}

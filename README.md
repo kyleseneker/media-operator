@@ -114,12 +114,11 @@ doesn't matter, the operator just reads them and re-reconciles when they change.
 ### Starting from an app you already run
 
 `media-operator export` reads a running app and prints a config that describes
-it, with a Secret for its credentials. It supports Sonarr, Radarr, Lidarr,
-Readarr, Prowlarr, FlareSolverr, Bazarr, qBittorrent, SABnzbd, Jellyfin, Plex,
-Seerr, Tdarr and Autobrr so far. qBittorrent and Jellyfin take `--username` and `--password`, and
-Plex `--token`, instead of `--api-key`. Get it from the `media-operator-cli`
-release archives, or run it in the cluster from the
-`ghcr.io/kyleseneker/media-operator-cli` image:
+it, with a Secret for its credentials. It covers every app the operator manages.
+Most take `--api-key`; qBittorrent and Jellyfin take `--username` and
+`--password`, Plex `--token`, and FlareSolverr and Maintainerr nothing. Get it
+from the `media-operator-cli` release archives, or run it in the cluster from
+the `ghcr.io/kyleseneker/media-operator-cli` image:
 
 ```bash
 media-operator export sonarr --url http://localhost:8989 --api-key "$SONARR_API_KEY" \
@@ -129,9 +128,10 @@ kubectl run export --rm -i --quiet --restart=Never --image ghcr.io/kyleseneker/m
   -- export sonarr --url http://sonarr.media:8989 --api-key "$SONARR_API_KEY" --namespace media > sonarr.yaml
 ```
 
-Apps never return passwords and API keys, so those keys are left empty in the
-Secret; the command lists them, and warns about anything the config can't
-express. Provider fields still at the app's defaults are left out. Leave out whatever another tool manages with `--exclude`, such as
+Credentials an app shows go into the Secret; ones it hides are left empty, and
+the command lists them. It also warns about anything the config can't express or
+the app doesn't report. Provider fields still at the app's defaults are left
+out. Leave out whatever another tool manages with `--exclude`, such as
 `indexers` when Prowlarr syncs them or `customFormats,qualityProfiles` when
 Recyclarr does. Apply the result with `driftPolicy: observe` first: it should
 report `Observed`, meaning the config matches the app.

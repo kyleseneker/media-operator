@@ -20,6 +20,7 @@ import (
 
 	automationv1alpha1 "github.com/kyleseneker/media-operator/api/automation/v1alpha1"
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
+	curationv1alpha1 "github.com/kyleseneker/media-operator/api/curation/v1alpha1"
 	downloadsv1alpha1 "github.com/kyleseneker/media-operator/api/downloads/v1alpha1"
 	indexersv1alpha1 "github.com/kyleseneker/media-operator/api/indexers/v1alpha1"
 	mediaserversv1alpha1 "github.com/kyleseneker/media-operator/api/mediaservers/v1alpha1"
@@ -118,6 +119,10 @@ var apps = map[string]app{
 		auth: engine.AuthAPIKey, apiKey: true, export: exportAutobrr,
 		options: []engine.HTTPClientOption{engine.WithAPIKeyHeader("X-API-Token")},
 		newObj:  func() client.Object { return &automationv1alpha1.AutobrrConfig{} },
+	},
+	"maintainerr": {
+		auth: engine.AuthNone, export: exportMaintainerr,
+		newObj: func() client.Object { return &curationv1alpha1.MaintainerrConfig{} },
 	},
 	"bazarr": {
 		auth: engine.AuthFormEncoded, apiKey: true, export: exportBazarr,
