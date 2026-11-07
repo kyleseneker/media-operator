@@ -174,8 +174,14 @@ func CleanupApp(ctx context.Context, c client.Reader, recorder events.EventRecor
 	if err != nil {
 		return err
 	}
-	deleted, err := engine.DeleteManagedResources(ctx, hc, def, managed)
+	deleted, kept, err := engine.DeleteManagedResources(ctx, hc, def, managed)
 	EmitPruneEvents(recorder, obj, deleted)
+	if recorder != nil {
+		for _, k := range kept {
+			recorder.Eventf(obj, nil, corev1.EventTypeWarning, "ResourceKept", "Cleanup",
+				"Kept %s %q, which the operator created: %s refused to delete it: %s", k.Type, k.Name, app, k.Reason)
+		}
+	}
 	return err
 }
 

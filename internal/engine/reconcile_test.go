@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -256,7 +257,7 @@ func TestDeleteManagedResourcesRespectsOwnershipAndDependencyOrder(t *testing.T)
 				{Name: "profiles", Path: "/profiles", MatchField: "name", Prunable: true},
 			}}
 			managed := map[string][]string{"tags": {"owned"}, "formats": {"owned"}, "profiles": {"owned"}}
-			pruned, err := DeleteManagedResources(context.Background(), hc, def, managed)
+			pruned, _, err := DeleteManagedResources(context.Background(), hc, def, managed)
 			if fail {
 				require.Error(t, err)
 				assert.Equal(t, []string{"/profiles/1"}, deleted)
@@ -268,6 +269,47 @@ func TestDeleteManagedResourcesRespectsOwnershipAndDependencyOrder(t *testing.T)
 			}
 		})
 	}
+}
+
+func TestDeleteManagedResourcesKeepsWhatTheAppRefusesAndCarriesOn(t *testing.T) {
+	var deleted []string
+	hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			if r.URL.Path == "/profiles/1" {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"message":"Profile [Music] is in use."}`))
+				return
+			}
+			deleted = append(deleted, r.URL.Path)
+			return
+		}
+		_ = json.NewEncoder(w).Encode([]map[string]any{{"id": 1, "name": "owned"}})
+	})
+	def := AppDefinition{Resources: []ResourceEndpoint{
+		{Name: "formats", Path: "/formats", MatchField: "name", Prunable: true},
+		{Name: "profiles", Path: "/profiles", MatchField: "name", Prunable: true},
+	}}
+	pruned, kept, err := DeleteManagedResources(context.Background(), hc, def,
+		map[string][]string{"formats": {"owned"}, "profiles": {"owned"}})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"/formats/1"}, deleted)
+	require.Len(t, pruned, 1)
+	require.Len(t, kept, 1)
+	assert.Equal(t, "profiles", kept[0].Type)
+	assert.Equal(t, "Profile [Music] is in use.", kept[0].Reason)
+}
+
+func TestRefusalLeavesRetryableFailuresOut(t *testing.T) {
+	for status, refused := range map[int]bool{
+		http.StatusBadRequest: true, http.StatusConflict: true, http.StatusUnauthorized: false,
+		http.StatusNotFound: false, http.StatusTooManyRequests: false, http.StatusInternalServerError: false,
+	} {
+		_, got := Refusal(&APIError{StatusCode: status})
+		assert.Equal(t, refused, got, "status %d", status)
+	}
+	_, got := Refusal(errors.New("connection refused"))
+	assert.False(t, got)
 }
 
 // Observe mode reports what differs in the result, so status can say so; a

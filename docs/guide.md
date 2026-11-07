@@ -99,9 +99,11 @@ Deleting a resource leaves the app unchanged. With
 created, the same kinds prune covers. Everything else is kept.
 
 `delete` is supported for the apps in the prune table, and not in observe mode;
-Jellyfin and Plex reject it with `InvalidConfig`. If
-cleanup keeps failing, the operator gives up after 10 minutes, records a
-warning event and removes the finalizer.
+Jellyfin and Plex reject it with `InvalidConfig`. An item the app won't delete
+because something still uses it, such as a Lidarr or Readarr quality profile a
+root folder defaults to, is kept and named in a `ResourceKept` warning event. If
+cleanup keeps failing for another reason, the operator gives up after 10
+minutes, records a warning event and removes the finalizer.
 
 ## Credentials
 

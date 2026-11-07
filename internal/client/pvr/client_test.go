@@ -1035,7 +1035,7 @@ func TestRemotePathMappingLifecycle(t *testing.T) {
 	require.Empty(t, result.Errors)
 	require.Len(t, result.Managed["remotePathMappings"], 1)
 	require.Len(t, app.items["remotepathmapping"], 2)
-	_, err = engine.DeleteManagedResources(ctx, hc, Definition("v3"), result.Managed)
+	_, _, err = engine.DeleteManagedResources(ctx, hc, Definition("v3"), result.Managed)
 	require.NoError(t, err)
 	require.Len(t, app.items["remotepathmapping"], 1)
 	require.Equal(t, "manual", app.items["remotepathmapping"][0]["host"])

@@ -166,6 +166,9 @@ func pruneResources(ctx context.Context, client *HTTPClient, endpoint ResourceEn
 	for _, c := range candidates {
 		logger.Info("pruning unmanaged resource", "type", endpoint.Name, "match", c.Name, "id", c.ID)
 		if err := client.DeleteJSON(ctx, fmt.Sprintf("%s/%d", endpoint.Path, c.ID)); err != nil {
+			if reason, refused := Refusal(err); refused {
+				return pruned, fmt.Errorf("deleting %s %q (id=%d): the app refused: %s", endpoint.Name, c.Name, c.ID, reason)
+			}
 			return pruned, fmt.Errorf("deleting %s %q (id=%d): %w", endpoint.Name, c.Name, c.ID, err)
 		}
 		metrics.ResourcesPrunedTotal.WithLabelValues(client.AppLabel(), endpoint.Name).Inc()
@@ -364,20 +367,69 @@ func ObserveDifference(app, resourceType, name string, current map[string]any, d
 	return drift, nil
 }
 
+// KeptResource is an owned resource the app refused to delete.
+type KeptResource struct {
+	PrunedResource
+	Reason string
+}
+
 // DeleteManagedResources removes only tracked, prunable resources. Reverse
 // declaration order removes dependents (for example profiles) before resources
 // they reference (custom formats). Settings, root folders and tags are retained.
-func DeleteManagedResources(ctx context.Context, client *HTTPClient, def AppDefinition, managed map[string][]string) ([]PrunedResource, error) {
+// A resource the app refuses to delete, such as a quality profile a root folder
+// still uses, is kept and returned; any other failure stops the cleanup so it
+// can be retried.
+func DeleteManagedResources(
+	ctx context.Context, client *HTTPClient, def AppDefinition, managed map[string][]string,
+) ([]PrunedResource, []KeptResource, error) {
 	var deleted []PrunedResource
+	var kept []KeptResource
 	for _, endpoint := range slices.Backward(def.Resources) {
 		if !endpoint.Prunable || len(managed[endpoint.Name]) == 0 {
 			continue
 		}
-		pruned, err := pruneResources(ctx, client, endpoint, nil, managed[endpoint.Name])
-		deleted = append(deleted, pruned...)
+		candidates, err := pruneCandidates(ctx, client, endpoint, nil, managed[endpoint.Name])
 		if err != nil {
-			return deleted, fmt.Errorf("cleaning up %s: %w", endpoint.Name, err)
+			return deleted, kept, fmt.Errorf("cleaning up %s: %w", endpoint.Name, err)
+		}
+		for _, c := range candidates {
+			err := client.DeleteJSON(ctx, fmt.Sprintf("%s/%d", endpoint.Path, c.ID))
+			if reason, refused := Refusal(err); refused {
+				kept = append(kept, KeptResource{PrunedResource: c, Reason: reason})
+				continue
+			}
+			if err != nil && !isNotFound(err) {
+				return deleted, kept, fmt.Errorf("cleaning up %s %q (id=%d): %w", endpoint.Name, c.Name, c.ID, err)
+			}
+			metrics.ResourcesPrunedTotal.WithLabelValues(client.AppLabel(), endpoint.Name).Inc()
+			deleted = append(deleted, c)
 		}
 	}
-	return deleted, nil
+	return deleted, kept, nil
+}
+
+// Refusal reports whether err is the app declining a request it understood,
+// with the reason it gave. Authentication failures, rate limits and timeouts
+// are not refusals; they may succeed on a retry.
+func Refusal(err error) (string, bool) {
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode < 400 || apiErr.StatusCode >= 500 {
+		return "", false
+	}
+	switch apiErr.StatusCode {
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusRequestTimeout, http.StatusTooManyRequests:
+		return "", false
+	}
+	var body struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(apiErr.Body, &body) == nil && body.Message != "" {
+		return body.Message, true
+	}
+	return fmt.Sprintf("status %d", apiErr.StatusCode), true
+}
+
+func isNotFound(err error) bool {
+	var apiErr *APIError
+	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound
 }
