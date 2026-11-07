@@ -67,12 +67,13 @@ func (r *FlareSolverrConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	owned := engine.NewOwnership("flaresolverr", config.Status.ManagedResources)
 	if ctrlcommon.ObserveOnly(config.Spec.Reconcile) {
-		drift, count, err := observeFlareSolverrSessions(ctx, fc, config.Spec.Sessions,
-			ctrlcommon.PruneEnabled(config.Spec.Reconcile), owned)
+		observed := &engine.Writes{App: "flaresolverr", Observe: true}
+		count, err := observeFlareSolverrSessions(ctx, fc, config.Spec.Sessions,
+			ctrlcommon.PruneEnabled(config.Spec.Reconcile), owned, observed)
 		if err == nil {
 			config.Status.ActiveSessions = count
 		}
-		ctrlcommon.UpdateObservationStatus(ctx, r.Client, &config, drift, err)
+		ctrlcommon.UpdateObservationStatus(ctx, r.Client, &config, observed.Drift(), err)
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
 
@@ -144,32 +145,24 @@ func (r *FlareSolverrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error 
 }
 
 func observeFlareSolverrSessions(
-	ctx context.Context, fc *flaresolverrclient.Client, desired []indexersv1alpha1.FlareSolverrSession, prune bool, owned *engine.Ownership,
-) (bool, int, error) {
+	ctx context.Context, fc *flaresolverrclient.Client, desired []indexersv1alpha1.FlareSolverrSession, prune bool,
+	owned *engine.Ownership, w *engine.Writes,
+) (int, error) {
 	existing, err := fc.ListSessions(ctx)
 	if err != nil {
-		return false, 0, fmt.Errorf("listing sessions: %w", err)
+		return 0, fmt.Errorf("listing sessions: %w", err)
 	}
-	drift := false
 	for _, session := range desired {
-		changed, err := engine.ObserveDifference("flaresolverr", "sessions", session.Name,
+		err := w.Compare("sessions", session.Name,
 			map[string]any{"exists": slices.Contains(existing, session.Name)}, map[string]any{"exists": true})
 		if err != nil {
-			return drift, len(existing), err
+			return len(existing), err
 		}
-		drift = drift || changed
 	}
 	if prune {
-		for _, name := range owned.Candidates("sessions", sessionNames(desired), existing) {
-			changed, err := engine.ObserveDifference("flaresolverr", "sessions", name,
-				map[string]any{"exists": true}, map[string]any{"exists": false})
-			if err != nil {
-				return drift, len(existing), err
-			}
-			drift = drift || changed
-		}
+		return len(existing), w.Prune(owned, "sessions", sessionNames(desired), existing, nil)
 	}
-	return drift, len(existing), nil
+	return len(existing), nil
 }
 
 func cleanupFlareSolverrSessions(ctx context.Context, c client.Reader, config *indexersv1alpha1.FlareSolverrConfig) error {

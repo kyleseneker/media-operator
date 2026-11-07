@@ -114,15 +114,17 @@ func TestEmitPruneEvents(t *testing.T) {
 
 func TestObservationStatus(t *testing.T) {
 	for _, tt := range []struct {
-		name   string
-		drift  bool
-		err    error
-		reason string
-		synced metav1.ConditionStatus
+		name    string
+		drift   []string
+		err     error
+		reason  string
+		synced  metav1.ConditionStatus
+		message string
 	}{
-		{"matching", false, nil, "Observed", metav1.ConditionTrue},
-		{"drift", true, nil, "DriftDetected", metav1.ConditionFalse},
-		{"error precedes drift", true, fmt.Errorf("read failed"), engine.ReasonSyncFailed, metav1.ConditionFalse},
+		{"matching", nil, nil, "Observed", metav1.ConditionTrue, ""},
+		{"drift", []string{"indexers(Torznab)", "naming", "indexers(Torznab)"}, nil, "DriftDetected", metav1.ConditionFalse,
+			"differs: indexers(Torznab), naming; observe policy prevents application writes"},
+		{"error precedes drift", []string{"naming"}, fmt.Errorf("read failed"), engine.ReasonSyncFailed, metav1.ConditionFalse, ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			obj := newConfig("", 0)
@@ -133,6 +135,9 @@ func TestObservationStatus(t *testing.T) {
 			require.NotNil(t, condition)
 			assert.Equal(t, tt.reason, condition.Reason)
 			assert.Equal(t, tt.synced, condition.Status)
+			if tt.message != "" {
+				assert.Equal(t, tt.message, condition.Message)
+			}
 		})
 	}
 }
@@ -198,17 +203,18 @@ func TestUpdateSyncStatus(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		observe bool
-		drift   bool
+		drift   []string
 		errors  []string
 		status  metav1.ConditionStatus
 		reason  string
 		message string
 	}{
-		{"synced", false, false, nil, metav1.ConditionTrue, engine.ReasonSynced, "all configuration sections synced"},
-		{"partial failure", false, false, []string{"flow(a): x"}, metav1.ConditionFalse, engine.ReasonSyncFailed, "partial sync failure: [flow(a): x]"},
-		{"observe match", true, false, nil, metav1.ConditionTrue, "Observed", ""},
-		{"observe drift", true, true, nil, metav1.ConditionFalse, "DriftDetected", ""},
-		{"observe error precedes drift", true, true, []string{"x"}, metav1.ConditionFalse, engine.ReasonSyncFailed, "observation failed: [x]"},
+		{"synced", false, nil, nil, metav1.ConditionTrue, engine.ReasonSynced, "all configuration sections synced"},
+		{"partial failure", false, nil, []string{"flow(a): x"}, metav1.ConditionFalse, engine.ReasonSyncFailed, "partial sync failure: [flow(a): x]"},
+		{"observe match", true, nil, nil, metav1.ConditionTrue, "Observed", ""},
+		{"observe drift", true, []string{"flows(a)"}, nil, metav1.ConditionFalse, "DriftDetected",
+			"differs: flows(a); observe policy prevents application writes"},
+		{"observe error precedes drift", true, []string{"flows(a)"}, []string{"x"}, metav1.ConditionFalse, engine.ReasonSyncFailed, "observation failed: [x]"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			obj := newConfig("", 0)
@@ -404,4 +410,13 @@ func TestConfigSyncedGaugeTracksOutcome(t *testing.T) {
 	UpdateStatusUnreachable(context.Background(), cl, c, "AppUnreachable", "boom")
 	assert.Equal(t, 0.0, testutil.ToFloat64(metrics.ConfigSynced.WithLabelValues("SonarrConfig", "arr", "s")),
 		"expected gauge 0 after failure")
+}
+
+func TestDriftSummaryNamesTheFirstTen(t *testing.T) {
+	drift := make([]string, 0, 13)
+	for i := range 13 {
+		drift = append(drift, fmt.Sprintf("indexers(%d)", i))
+	}
+	assert.Equal(t, "indexers(0), indexers(1), indexers(2), indexers(3), indexers(4), indexers(5), "+
+		"indexers(6), indexers(7), indexers(8), indexers(9) and 3 more", driftSummary(drift))
 }

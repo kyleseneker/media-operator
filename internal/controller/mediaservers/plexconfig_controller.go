@@ -78,7 +78,7 @@ func (r *PlexConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	syncErrors := reconcilePlexPreferences(ctx, pc, writes, string(config.UID), buildPlexPreferences(config.Spec))
 	syncErrors = append(syncErrors, reconcilePlexLibraries(ctx, pc, writes, config.Spec.Libraries)...)
 
-	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, writes.Observe, len(writes.Drift()) > 0, syncErrors)
+	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, writes.Observe, writes.Drift(), syncErrors)
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
 

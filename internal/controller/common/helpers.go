@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -60,11 +61,11 @@ func Policy(rc *commonv1alpha1.ReconcileConfig) engine.SyncPolicy {
 
 // UpdateObservationStatus reports comparison results without claiming drift was
 // corrected. Read failures take precedence over any differences already found.
-func UpdateObservationStatus(ctx context.Context, c client.Client, obj ConfigResource, drift bool, err error) {
+func UpdateObservationStatus(ctx context.Context, c client.Client, obj ConfigResource, drift []string, err error) {
 	if err != nil {
 		UpdateStatus(ctx, c, obj, false, engine.ReasonSyncFailed, "observation failed: "+err.Error())
-	} else if drift {
-		UpdateStatus(ctx, c, obj, false, "DriftDetected", "configuration differs; observe policy prevents application writes")
+	} else if len(drift) > 0 {
+		UpdateStatus(ctx, c, obj, false, "DriftDetected", "differs: "+driftSummary(drift)+"; observe policy prevents application writes")
 	} else {
 		UpdateStatus(ctx, c, obj, true, "Observed", "observable configuration matches; no application writes performed")
 	}
@@ -74,7 +75,7 @@ func UpdateObservationStatus(ctx context.Context, c client.Client, obj ConfigRes
 // the observe policy, whether anything differs.
 func UpdateResultStatus(ctx context.Context, c client.Client, obj ConfigResource, result engine.ReconcileResult) {
 	if ObserveOnly(obj.GetReconcileConfig()) {
-		UpdateObservationStatus(ctx, c, obj, len(result.Drift) > 0, syncError(result.Errors))
+		UpdateObservationStatus(ctx, c, obj, result.Drift, syncError(result.Errors))
 		return
 	}
 	UpdateStatus(ctx, c, obj, result.Success(), ResultReason(result), result.Message())
@@ -83,7 +84,7 @@ func UpdateResultStatus(ctx context.Context, c client.Client, obj ConfigResource
 // UpdateSyncStatus reports a pass of an integration that writes through its
 // own client: under the observe policy, whether anything differs; otherwise
 // what failed.
-func UpdateSyncStatus(ctx context.Context, c client.Client, obj ConfigResource, observe, drift bool, syncErrors []string) {
+func UpdateSyncStatus(ctx context.Context, c client.Client, obj ConfigResource, observe bool, drift, syncErrors []string) {
 	switch {
 	case observe:
 		UpdateObservationStatus(ctx, c, obj, drift, syncError(syncErrors))
@@ -92,6 +93,22 @@ func UpdateSyncStatus(ctx context.Context, c client.Client, obj ConfigResource, 
 	default:
 		UpdateStatus(ctx, c, obj, true, engine.ReasonSynced, "all configuration sections synced")
 	}
+}
+
+// maxDriftListed caps how many differences a status message names.
+const maxDriftListed = 10
+
+func driftSummary(drift []string) string {
+	var unique []string
+	for _, d := range drift {
+		if !slices.Contains(unique, d) {
+			unique = append(unique, d)
+		}
+	}
+	if len(unique) <= maxDriftListed {
+		return strings.Join(unique, ", ")
+	}
+	return fmt.Sprintf("%s and %d more", strings.Join(unique[:maxDriftListed], ", "), len(unique)-maxDriftListed)
 }
 
 func syncError(syncErrors []string) error {

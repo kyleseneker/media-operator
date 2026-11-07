@@ -41,7 +41,7 @@ func TestWritesApplyObserveRecordsInsteadOfWriting(t *testing.T) {
 		return nil
 	}))
 
-	assert.Equal(t, []string{"settings/main"}, w.Drift())
+	assert.Equal(t, []string{"settings(main)"}, w.Drift())
 	assert.Equal(t, beforeObserved+1, testutil.ToFloat64(observed), "drift_observed_total")
 	assert.Equal(t, beforeCorrected, testutil.ToFloat64(corrected), "drift_corrected_total moved in observe mode")
 }
@@ -54,7 +54,7 @@ func TestWritesRecordDrift(t *testing.T) {
 	w.RecordDrift("action", "a")
 	w.RecordDrift("action", "b")
 
-	assert.Equal(t, []string{"action/a", "action/b"}, w.Drift())
+	assert.Equal(t, []string{"action(a)", "action(b)"}, w.Drift())
 	assert.Equal(t, before+1, testutil.ToFloat64(observed), "drift_observed_total for action/a")
 }
 
@@ -67,7 +67,7 @@ func TestWritesPruneObserveRecordsWhatItWouldDelete(t *testing.T) {
 		return nil
 	}))
 
-	assert.Equal(t, []string{"feeds/old"}, w.Drift())
+	assert.Equal(t, []string{"feeds(old)"}, w.Drift())
 	assert.Equal(t, map[string][]string{"feeds": {"old", "kept"}}, owned.Managed(), "observe mode changed ownership")
 }
 

@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -353,9 +354,10 @@ func TestQBObserveReportsACategoryPruneWouldDelete(t *testing.T) {
 	got := runQB(t, cfg)
 
 	assert.Empty(t, app.removed)
-	assert.True(t, slices.ContainsFunc(got.Status.Conditions, func(c metav1.Condition) bool {
-		return c.Type == "Synced" && c.Reason == "DriftDetected"
-	}), "%+v", got.Status.Conditions)
+	synced := meta.FindStatusCondition(got.Status.Conditions, "Synced")
+	require.NotNil(t, synced)
+	assert.Equal(t, "DriftDetected", synced.Reason)
+	assert.Equal(t, "differs: categories(old); observe policy prevents application writes", synced.Message)
 }
 
 func TestQBDeletionPolicyRemovesWhatItCreated(t *testing.T) {

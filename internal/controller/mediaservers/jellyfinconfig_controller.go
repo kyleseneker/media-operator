@@ -84,8 +84,9 @@ func (r *JellyfinConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	if !setupComplete && ctrlcommon.ObserveOnly(config.Spec.Reconcile) {
 		config.Status.Initialized = &setupComplete
-		drift, err := engine.ObserveDifference("jellyfin", "settings", "initialization", nil, map[string]any{"initialized": true})
-		ctrlcommon.UpdateObservationStatus(ctx, r.Client, &config, drift, err)
+		observed := &engine.Writes{App: "jellyfin", Observe: true}
+		err := observed.Compare("settings", "initialization", nil, map[string]any{"initialized": true})
+		ctrlcommon.UpdateObservationStatus(ctx, r.Client, &config, observed.Drift(), err)
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
 
@@ -125,8 +126,9 @@ func (r *JellyfinConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	if ctrlcommon.ObserveOnly(config.Spec.Reconcile) {
-		drift, err := observeJellyfinConfig(ctx, jf, config.Spec)
-		ctrlcommon.UpdateObservationStatus(ctx, r.Client, &config, drift, err)
+		observed := &engine.Writes{App: "jellyfin", Observe: true}
+		err := observeJellyfinConfig(ctx, jf, config.Spec, observed)
+		ctrlcommon.UpdateObservationStatus(ctx, r.Client, &config, observed.Drift(), err)
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
 
@@ -277,7 +279,7 @@ func (r *JellyfinConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func observeJellyfinConfig(ctx context.Context, jf *jellyfinclient.Client, spec mediaserversv1alpha1.JellyfinConfigSpec) (bool, error) {
+func observeJellyfinConfig(ctx context.Context, jf *jellyfinclient.Client, spec mediaserversv1alpha1.JellyfinConfigSpec, w *engine.Writes) error {
 	sections := map[string]any{}
 	if spec.Encoding != nil {
 		sections["/System/Configuration/encoding"] = spec.Encoding
@@ -288,28 +290,25 @@ func observeJellyfinConfig(ctx context.Context, jf *jellyfinclient.Client, spec 
 	for path, section := range sections {
 		desired, err := jellyfinSettings(section)
 		if err != nil {
-			return false, err
+			return err
 		}
 		sections[path] = desired
 	}
-	drift := false
 	for path, desired := range sections {
 		current, err := jf.GetConfig(ctx, path)
 		if err != nil {
-			return drift, fmt.Errorf("reading %s: %w", path, err)
+			return fmt.Errorf("reading %s: %w", path, err)
 		}
-		changed, err := engine.ObserveDifference("jellyfin", "settings", path, current, desired)
-		if err != nil {
-			return drift, err
+		if err := w.Compare("settings", path, current, desired); err != nil {
+			return err
 		}
-		drift = drift || changed
 	}
 	if len(spec.Libraries) == 0 {
-		return drift, nil
+		return nil
 	}
 	libraries, err := jf.ListLibraries(ctx)
 	if err != nil {
-		return drift, fmt.Errorf("listing libraries: %w", err)
+		return fmt.Errorf("listing libraries: %w", err)
 	}
 	for _, library := range spec.Libraries {
 		var current map[string]any
@@ -320,11 +319,9 @@ func observeJellyfinConfig(ctx context.Context, jf *jellyfinclient.Client, spec 
 			}
 		}
 		// Libraries are create-only, so only existence matters.
-		changed, err := engine.ObserveDifference("jellyfin", "libraries", library.Name, current, map[string]any{"Name": library.Name})
-		if err != nil {
-			return drift, err
+		if err := w.Compare("libraries", library.Name, current, map[string]any{"Name": library.Name}); err != nil {
+			return err
 		}
-		drift = drift || changed
 	}
-	return drift, nil
+	return nil
 }

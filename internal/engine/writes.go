@@ -46,10 +46,20 @@ func (w *Writes) Prune(owned *Ownership, kind string, declared, existing []strin
 // withhold, such as one that depends on a resource observe did not create.
 func (w *Writes) RecordDrift(kind, name string) {
 	metrics.DriftObservedTotal.WithLabelValues(w.App, kind, name).Inc()
-	w.drift = append(w.drift, kind+"/"+name)
+	w.drift = append(w.drift, kind+"("+name+")")
 }
 
-// Drift lists the differences observe mode recorded, as kind/name.
+// Compare records a difference between current and desired, compared as
+// ObserveDifference compares them.
+func (w *Writes) Compare(kind, name string, current map[string]any, desired any) error {
+	changed, err := ObserveDifference(w.App, kind, name, current, desired)
+	if changed {
+		w.drift = append(w.drift, kind+"("+name+")")
+	}
+	return err
+}
+
+// Drift lists the differences observe mode recorded, as kind(name).
 func (w *Writes) Drift() []string {
 	return w.drift
 }

@@ -46,7 +46,8 @@ get` shows both. The `Synced` reason is one of:
 ## Observe mode
 
 `spec.reconcile.driftPolicy: observe` compares without writing to the app.
-Differences set `Synced` to `False` with reason `DriftDetected` and increment
+Differences set `Synced` to `False` with reason `DriftDetected`, are listed in
+the condition's message (the first ten), and increment
 `media_operator_drift_observed_total`.
 
 Some things can't be compared by reading:

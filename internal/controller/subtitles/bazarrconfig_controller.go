@@ -98,7 +98,7 @@ func (r *BazarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		for key := range changes {
 			metrics.DriftObservedTotal.WithLabelValues("bazarr", bazarrSettingSection(key), key).Inc()
 		}
-		ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, true, len(changes) > 0, problems)
+		ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, true, bazarrDrift(changes), problems)
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
 
@@ -119,7 +119,7 @@ func (r *BazarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	ctrlcommon.UpdateStatusManaged(&config, owned.Managed())
 	ctrlcommon.EmitPruneEvents(r.Recorder, &config, owned.Pruned())
-	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, false, false, problems)
+	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, false, nil, problems)
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
@@ -234,6 +234,19 @@ func bazarrChanges(desired url.Values, settings map[string]any, profiles []map[s
 		}
 	}
 	return changes
+}
+
+func bazarrDrift(changes url.Values) []string {
+	drift := make([]string, 0, len(changes))
+	for key := range changes {
+		_, name, _ := strings.Cut(strings.TrimPrefix(key, "settings-"), "-")
+		if key == profilesField {
+			name = "profiles"
+		}
+		drift = append(drift, bazarrSettingSection(key)+"("+name+")")
+	}
+	slices.Sort(drift)
+	return drift
 }
 
 func bazarrSettingSection(key string) string {

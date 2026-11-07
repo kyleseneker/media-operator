@@ -77,8 +77,9 @@ func (r *QBittorrentConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	owned := engine.NewOwnership("qbittorrent", config.Status.ManagedResources)
 	prune := ctrlcommon.PruneEnabled(config.Spec.Reconcile)
 	if ctrlcommon.ObserveOnly(config.Spec.Reconcile) {
-		drift, err := observeQBConfig(ctx, qb, config.Spec, prune, owned)
-		ctrlcommon.UpdateObservationStatus(ctx, r.Client, &config, drift, err)
+		observed := &engine.Writes{App: "qbittorrent", Observe: true}
+		err := observeQBConfig(ctx, qb, config.Spec, prune, owned, observed)
+		ctrlcommon.UpdateObservationStatus(ctx, r.Client, &config, observed.Drift(), err)
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
 
@@ -98,7 +99,7 @@ func (r *QBittorrentConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	ctrlcommon.UpdateStatusManaged(&config, owned.Managed())
 	ctrlcommon.EmitPruneEvents(r.Recorder, &config, owned.Pruned())
-	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, false, false, syncErrors)
+	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, false, nil, syncErrors)
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
@@ -288,50 +289,39 @@ func (r *QBittorrentConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func observeQBConfig(
-	ctx context.Context, qb *qbclient.Client, spec downloadsv1alpha1.QBittorrentConfigSpec, prune bool, owned *engine.Ownership,
-) (bool, error) {
-	drift := false
+	ctx context.Context, qb *qbclient.Client, spec downloadsv1alpha1.QBittorrentConfigSpec, prune bool,
+	owned *engine.Ownership, w *engine.Writes,
+) error {
 	if spec.Preferences != nil {
 		desired, err := qbPreferencePayload(spec.Preferences)
 		if err != nil {
-			return false, err
+			return err
 		}
 		if len(desired) > 0 {
 			current, err := qb.GetPreferences(ctx)
 			if err != nil {
-				return false, fmt.Errorf("reading preferences: %w", err)
+				return fmt.Errorf("reading preferences: %w", err)
 			}
-			drift, err = engine.ObserveDifference("qbittorrent", "settings", "preferences", current, desired)
-			if err != nil {
-				return false, err
+			if err := w.Compare("settings", "preferences", current, desired); err != nil {
+				return err
 			}
 		}
 	}
 	if len(spec.Categories) == 0 {
-		return drift, nil
+		return nil
 	}
 	categories, err := qb.ListCategories(ctx)
 	if err != nil {
-		return drift, fmt.Errorf("listing categories: %w", err)
+		return fmt.Errorf("listing categories: %w", err)
 	}
 	for _, category := range spec.Categories {
 		current, _ := categories[category.Name].(map[string]any)
-		changed, err := engine.ObserveDifference("qbittorrent", "categories", category.Name, current, map[string]any{"savePath": qbPath(category.SavePath)})
-		if err != nil {
-			return drift, err
+		if err := w.Compare("categories", category.Name, current, map[string]any{"savePath": qbPath(category.SavePath)}); err != nil {
+			return err
 		}
-		drift = drift || changed
 	}
 	if !prune {
-		return drift, nil
+		return nil
 	}
-	for _, name := range owned.Candidates("categories", qbCategoryNames(spec.Categories), slices.Collect(maps.Keys(categories))) {
-		changed, err := engine.ObserveDifference("qbittorrent", "categories", name,
-			map[string]any{"exists": true}, map[string]any{"exists": false})
-		if err != nil {
-			return drift, err
-		}
-		drift = drift || changed
-	}
-	return drift, nil
+	return w.Prune(owned, "categories", qbCategoryNames(spec.Categories), slices.Collect(maps.Keys(categories)), nil)
 }

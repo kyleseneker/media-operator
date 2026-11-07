@@ -76,14 +76,14 @@ func (r *SabnzbdConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	owned := engine.NewOwnership("sabnzbd", config.Status.ManagedResources)
 	prune := ctrlcommon.PruneEnabled(config.Spec.Reconcile)
 	if ctrlcommon.ObserveOnly(config.Spec.Reconcile) {
-		for _, w := range writes {
-			metrics.DriftObservedTotal.WithLabelValues("sabnzbd", w.resourceType, w.name).Inc()
-		}
 		observed := &engine.Writes{App: "sabnzbd", Observe: true}
+		for _, w := range writes {
+			observed.RecordDrift(w.resourceType, w.name)
+		}
 		if prune {
 			syncErrors = append(syncErrors, pruneSabnzbd(ctx, sc, current, config.Spec, owned, observed)...)
 		}
-		ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, true, len(writes) > 0 || len(observed.Drift()) > 0, syncErrors)
+		ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, true, observed.Drift(), syncErrors)
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
 
@@ -107,7 +107,7 @@ func (r *SabnzbdConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	ctrlcommon.UpdateStatusManaged(&config, owned.Managed())
 	ctrlcommon.EmitPruneEvents(r.Recorder, &config, owned.Pruned())
-	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, false, false, syncErrors)
+	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, false, nil, syncErrors)
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
 

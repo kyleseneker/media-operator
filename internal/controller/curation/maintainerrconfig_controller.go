@@ -82,7 +82,7 @@ func (r *MaintainerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	syncErrors := sync.run(ctx, &config.Spec)
 	ctrlcommon.UpdateStatusManaged(&config, sync.owned.Managed())
 	ctrlcommon.EmitPruneEvents(r.Recorder, &config, sync.owned.Pruned())
-	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, sync.Observe, len(sync.Drift()) > 0, syncErrors)
+	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, sync.Observe, sync.Drift(), syncErrors)
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }

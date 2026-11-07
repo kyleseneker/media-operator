@@ -66,4 +66,5 @@ Prowlarr syncs them, or `customFormats,qualityProfiles` when Recyclarr does.
 
 Set `spec.reconcile.driftPolicy: observe` before the first apply. The resource
 should report `Synced` with reason `Observed`. If it reports `DriftDetected`
-instead, compare the export with the app before removing observe mode.
+instead, the condition's message lists what differs; resolve those before
+removing observe mode.
