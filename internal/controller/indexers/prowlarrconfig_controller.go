@@ -79,6 +79,16 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 		indexers[i].Fields = f
 	}
+	downloadClients := make([]indexersv1alpha1.ProwlarrDownloadClient, len(config.Spec.DownloadClients))
+	copy(downloadClients, config.Spec.DownloadClients)
+	for i := range downloadClients {
+		f, ferr := ctrlcommon.ResolveProwlarrFields(ctx, r.Client, config.Namespace, "download client "+downloadClients[i].Name, downloadClients[i].Fields)
+		if ferr != nil {
+			ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSecretNotFound, ferr.Error())
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		downloadClients[i].Fields = f
+	}
 
 	// Tags and sync profiles must exist before their IDs can be referenced.
 	policy := ctrlcommon.Policy(config.Spec.Reconcile)
@@ -98,6 +108,12 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
+	notifications, nerr := ctrlcommon.ResolveNotificationSecrets(ctx, r.Client, config.Namespace, resolved.Notifications)
+	if nerr != nil {
+		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSecretNotFound, nerr.Error())
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+
 	appPayloads, aerr := r.buildApplicationPayloads(ctx, config.Namespace, config.Spec.Applications, tagIDs)
 	if aerr != nil {
 		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSecretNotFound, aerr.Error())
@@ -108,8 +124,8 @@ func (r *ProwlarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		Applications:    appPayloads,
 		Indexers:        indexers,
 		Proxies:         config.Spec.Proxies,
-		DownloadClients: config.Spec.DownloadClients,
-		Notifications:   resolved.Notifications,
+		DownloadClients: downloadClients,
+		Notifications:   notifications,
 	}, tagIDs)
 
 	rest := engine.ReconcileApp(ctx, hc, def, nil, resources, policy, result.Managed)
@@ -144,15 +160,8 @@ func (r *ProwlarrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return ctrlcommon.FindConfigsBySecret(ctx, r.Client, obj, &indexersv1alpha1.ProwlarrConfigList{}, func(list *indexersv1alpha1.ProwlarrConfigList) []reconcile.Request {
 				var reqs []reconcile.Request
 				for _, c := range list.Items {
-					if c.Spec.Connection.APIKeySecretRef.Name == obj.GetName() {
+					if prowlarrReferencesSecret(c.Spec, obj.GetName()) {
 						reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&c)})
-						continue
-					}
-					for _, app := range c.Spec.Applications {
-						if app.APIKeySecretRef.Name == obj.GetName() {
-							reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&c)})
-							break
-						}
 					}
 				}
 				return reqs
@@ -160,4 +169,28 @@ func (r *ProwlarrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		})).
 		Named("prowlarrconfig").
 		Complete(r)
+}
+
+// prowlarrReferencesSecret reports whether a spec reads anything from the named
+// Secret, so rotating any referenced credential reconciles immediately.
+func prowlarrReferencesSecret(spec indexersv1alpha1.ProwlarrConfigSpec, name string) bool {
+	if spec.Connection.APIKeySecretRef.Name == name {
+		return true
+	}
+	for _, app := range spec.Applications {
+		if app.APIKeySecretRef.Name == name {
+			return true
+		}
+	}
+	for _, idx := range spec.Indexers {
+		if ctrlcommon.ProwlarrFieldsReferenceSecret(idx.Fields, name) {
+			return true
+		}
+	}
+	for _, dc := range spec.DownloadClients {
+		if ctrlcommon.ProwlarrFieldsReferenceSecret(dc.Fields, name) {
+			return true
+		}
+	}
+	return ctrlcommon.ListsReferenceSecret(nil, spec.Notifications, nil, name)
 }

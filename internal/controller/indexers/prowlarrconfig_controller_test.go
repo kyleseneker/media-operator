@@ -337,3 +337,46 @@ func TestProwlarrMissingTagNeverBecomesEmptyAssociation(t *testing.T) {
 	runProwlarr(t, cfg, prowlarrSecret())
 	require.Empty(t, app.postsTo("/api/v1/indexer"))
 }
+
+// A credential from a Secret must reach the app on download clients and
+// notifications too, not only on indexers: these used to be sent empty.
+func TestProwlarrResolvesDownloadClientAndNotificationSecrets(t *testing.T) {
+	app := &fakeProwlarr{}
+	url := app.serve(t)
+
+	ref := &commonv1alpha1.SecretKeyRef{Name: "prowlarr-credentials", Key: "qbit-password"}
+	cfg := prowlarrConfig(url)
+	cfg.Spec.DownloadClients = []indexersv1alpha1.ProwlarrDownloadClient{{
+		Name: "qBittorrent", Implementation: "QBittorrent", Protocol: "torrent",
+		Fields: []indexersv1alpha1.ProwlarrField{{Name: "password", ValueFrom: ref}},
+	}}
+	cfg.Spec.Notifications = []commonv1alpha1.Notification{{
+		Name: "hook", Implementation: "Webhook",
+		Fields: []commonv1alpha1.ConfigField{{Name: "password", ValueFrom: ref}},
+	}}
+	secret := prowlarrSecret()
+	secret.Data["qbit-password"] = []byte("s3cret")
+	runProwlarr(t, cfg, secret)
+
+	for _, path := range []string{"/api/v1/downloadclient", "/api/v1/notification"} {
+		posts := app.postsTo(path)
+		require.Len(t, posts, 1, path)
+		raw, _ := json.Marshal(posts[0]["fields"])
+		require.Contains(t, string(raw), `"s3cret"`, "%s was sent without its Secret value", path)
+	}
+}
+
+func TestProwlarrSecretWatchCoversEveryReference(t *testing.T) {
+	ref := &commonv1alpha1.SecretKeyRef{Name: "trackers", Key: "k"}
+	field := []indexersv1alpha1.ProwlarrField{{Name: "apiKey", ValueFrom: ref}}
+	for name, spec := range map[string]indexersv1alpha1.ProwlarrConfigSpec{
+		"indexer":         {Indexers: []indexersv1alpha1.ProwlarrIndexer{{Name: "x", Fields: field}}},
+		"download client": {DownloadClients: []indexersv1alpha1.ProwlarrDownloadClient{{Name: "x", Fields: field}}},
+		"notification": {Notifications: []commonv1alpha1.Notification{{
+			Name: "x", Fields: []commonv1alpha1.ConfigField{{Name: "token", ValueFrom: ref}},
+		}}},
+	} {
+		require.True(t, prowlarrReferencesSecret(spec, "trackers"), name)
+		require.False(t, prowlarrReferencesSecret(spec, "other"), name)
+	}
+}
