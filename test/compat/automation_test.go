@@ -34,6 +34,7 @@ func TestAutobrr(t *testing.T) {
 
 	checkCompat(t, compatCase{
 		fixture: "autobrr.yaml",
+		export:  "autobrr",
 		vars: map[string]string{
 			"URL": proxy.url(), "HOST": hostIP, "QBITTORRENT_PORT": strconv.Itoa(qbit.port),
 		},

@@ -446,17 +446,8 @@ func (r *AutobrrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-// autobrrTypes maps the CRD's client and action names to Autobrr's constants,
-// which are all Autobrr accepts ("invalid download client type" otherwise).
-var autobrrTypes = map[string]string{
-	"qBittorrent": "QBITTORRENT", "Deluge": "DELUGE_V2", "Transmission": "TRANSMISSION",
-	"rTorrent": "RTORRENT", "SABnzbd": "SABNZBD", "Sonarr": "SONARR", "Radarr": "RADARR",
-	"Lidarr": "LIDARR", "Readarr": "READARR", "Whisparr": "WHISPARR",
-	"Webhook": "WEBHOOK", "Exec": "EXEC", "WatchFolder": "WATCH_FOLDER",
-}
-
 func autobrrType(name string) string {
-	if t, ok := autobrrTypes[name]; ok {
+	if t, ok := autobrrclient.Types[name]; ok {
 		return t
 	}
 	return name
@@ -555,13 +546,9 @@ func jsonValue(v any) (any, error) {
 	return out, json.Unmarshal(raw, &out)
 }
 
-// autobrrIRCAuth maps the CRD's mechanism names to Autobrr's constants.
 func autobrrIRCAuth(mechanism string) string {
-	switch mechanism {
-	case "None":
-		return "NONE"
-	case "NickServ":
-		return "NICKSERV"
+	if m, ok := autobrrclient.IRCAuthMechanisms[mechanism]; ok {
+		return m
 	}
 	return mechanism
 }

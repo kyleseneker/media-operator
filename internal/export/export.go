@@ -18,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
+	automationv1alpha1 "github.com/kyleseneker/media-operator/api/automation/v1alpha1"
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	downloadsv1alpha1 "github.com/kyleseneker/media-operator/api/downloads/v1alpha1"
 	indexersv1alpha1 "github.com/kyleseneker/media-operator/api/indexers/v1alpha1"
@@ -112,6 +113,11 @@ var apps = map[string]app{
 		auth: engine.AuthAPIKey, apiKey: true, export: exportTdarr,
 		options: []engine.HTTPClientOption{engine.WithAPIKeyHeader("x-api-key")},
 		newObj:  func() client.Object { return &transcodev1alpha1.TdarrConfig{} },
+	},
+	"autobrr": {
+		auth: engine.AuthAPIKey, apiKey: true, export: exportAutobrr,
+		options: []engine.HTTPClientOption{engine.WithAPIKeyHeader("X-API-Token")},
+		newObj:  func() client.Object { return &automationv1alpha1.AutobrrConfig{} },
 	},
 	"bazarr": {
 		auth: engine.AuthFormEncoded, apiKey: true, export: exportBazarr,

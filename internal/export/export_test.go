@@ -11,7 +11,7 @@ import (
 
 func TestRunRejectsAnUnsupportedApp(t *testing.T) {
 	_, err := Run(context.Background(), Options{App: "nope", URL: "http://x"})
-	require.ErrorContains(t, err, `unsupported app "nope"; supported: bazarr, flaresolverr, jellyfin, lidarr, plex, prowlarr, qbittorrent, radarr, readarr, sabnzbd, seerr, sonarr, tdarr`)
+	require.ErrorContains(t, err, `unsupported app "nope"; supported: autobrr, bazarr, flaresolverr, jellyfin, lidarr, plex, prowlarr, qbittorrent, radarr, readarr, sabnzbd, seerr, sonarr, tdarr`)
 }
 
 func TestRunRejectsAnExcludeTheSpecLacks(t *testing.T) {
