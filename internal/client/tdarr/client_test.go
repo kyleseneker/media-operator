@@ -128,19 +128,15 @@ func TestStepWorkerLimitPayloadShape(t *testing.T) {
 	assert.Equal(t, "N4DY4iKvA", data["nodeID"])
 	assert.Equal(t, "transcodegpu", data["workerType"])
 	assert.Equal(t, "increase", data["process"])
-	if _, bad := data["limit"]; bad {
-		t.Error("Tdarr takes a direction, not an absolute limit")
-	}
+	assert.NotContains(t, data, "limit", "Tdarr takes a direction, not an absolute limit")
 }
 
 func TestCrudDBOmitsNilObj(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
 		data := payload["data"].(map[string]any)
-		if _, present := data["obj"]; present {
-			t.Error("Tdarr answers 400 when obj is present but null; it must be omitted")
-		}
+		assert.NotContains(t, data, "obj", "Tdarr answers 400 when obj is present but null; it must be omitted")
 		_ = json.NewEncoder(w).Encode(map[string]any{"_id": "lib1"})
 	})
 	_, err := c.GetByID(context.Background(), "LibrarySettingsJSONDB", "lib1")
@@ -151,7 +147,7 @@ func TestUpsertUpdatesExistingDoc(t *testing.T) {
 	var modes []string
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
 		data := payload["data"].(map[string]any)
 		modes = append(modes, data["mode"].(string))
 		if data["mode"] == "getById" {
@@ -169,7 +165,7 @@ func TestUpsertDoesNotInsertWhenLookupFails(t *testing.T) {
 	var modes []string
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
 		modes = append(modes, payload["data"].(map[string]any)["mode"].(string))
 		w.WriteHeader(http.StatusBadRequest)
 	})

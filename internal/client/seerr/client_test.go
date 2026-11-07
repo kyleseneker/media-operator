@@ -132,8 +132,6 @@ func TestAuthenticateJellyfinPayload(t *testing.T) {
 	assert.Equal(t, "jf.svc", body["hostname"])
 	assert.Equal(t, float64(8096), body["port"])
 	assert.Equal(t, float64(2), body["serverType"])
-	if _, ok := body["urlBase"]; !ok {
-		t.Error("urlBase must be sent; Seerr concatenates it and builds host:port+undefined without it")
-	}
+	assert.Contains(t, body, "urlBase", "urlBase must be sent; Seerr concatenates it and builds host:port+undefined without it")
 	assert.Equal(t, false, body["useSsl"])
 }

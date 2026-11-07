@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -235,19 +234,12 @@ func TestSetters(t *testing.T) {
 func TestSSRFDialErrorDistinguishesBlockedFromUnreachable(t *testing.T) {
 	// localhost resolves only to loopback, which is genuinely blocked.
 	_, err := ssrfSafeDialContext(context.Background(), "tcp", "localhost:9")
-	if err == nil {
-		t.Fatal("expected an error dialing loopback")
-	}
-	if !strings.Contains(err.Error(), "no allowed IP addresses") {
-		t.Errorf("loopback should report as blocked, got: %v", err)
-	}
+	require.Error(t, err, "expected an error dialing loopback")
+	assert.ErrorContains(t, err, "no allowed IP addresses", "loopback should report as blocked")
 
 	// A routable address that refuses the connection must report the dial error.
 	_, err = ssrfSafeDialContext(context.Background(), "tcp", "192.0.2.1:9")
-	if err == nil {
-		t.Fatal("expected an error dialing an unreachable host")
-	}
-	if strings.Contains(err.Error(), "no allowed IP addresses") {
-		t.Errorf("an unreachable but allowed address must not be reported as blocked, got: %v", err)
-	}
+	require.Error(t, err, "expected an error dialing an unreachable host")
+	assert.NotContains(t, err.Error(), "no allowed IP addresses",
+		"an unreachable but allowed address must not be reported as blocked")
 }

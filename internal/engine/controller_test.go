@@ -23,7 +23,7 @@ func TestReconcileSetting_NoChange(t *testing.T) {
 				"id": 1, "rename": true, "createEmpty": false,
 			})
 		case http.MethodPut:
-			t.Error("PUT should not be called when nothing changed")
+			assert.Fail(t, "PUT should not be called when nothing changed")
 		}
 	}
 
@@ -124,9 +124,9 @@ func TestReconcileResource_CreateOnly(t *testing.T) {
 				{"id": float64(1), "path": "/tv"},
 			})
 		case http.MethodPut:
-			t.Error("PUT should not be called for CreateOnly policy")
+			assert.Fail(t, "PUT should not be called for CreateOnly policy")
 		case http.MethodPost:
-			t.Error("POST should not be called when resource exists with CreateOnly")
+			assert.Fail(t, "POST should not be called when resource exists with CreateOnly")
 		}
 	}
 
@@ -180,7 +180,7 @@ func TestPruneResources_SafetyThreshold(t *testing.T) {
 		case http.MethodGet:
 			_ = json.NewEncoder(w).Encode(existing)
 		case http.MethodDelete:
-			t.Error("DELETE should not be called when safety threshold exceeded")
+			assert.Fail(t, "DELETE should not be called when safety threshold exceeded")
 		}
 	}
 
@@ -252,7 +252,7 @@ func TestReconcileApp(t *testing.T) {
 
 func TestReconcileApp_SkipsNilSections(t *testing.T) {
 	hc := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		t.Errorf("no HTTP calls expected, got %s %s", r.Method, r.URL.Path)
+		assert.Failf(t, "no HTTP calls expected", "got %s %s", r.Method, r.URL.Path)
 	})
 
 	def := AppDefinition{
@@ -301,7 +301,7 @@ func TestPruneIsNoOpOnFirstReconcile(t *testing.T) {
 				{"id": float64(1), "name": "pre-existing"},
 			})
 		case http.MethodDelete:
-			t.Error("nothing may be deleted when the operator has no recorded managed set")
+			assert.Fail(t, "nothing may be deleted when the operator has no recorded managed set")
 		}
 	}
 	hc := newTestServer(t, handler)

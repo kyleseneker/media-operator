@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
@@ -130,12 +131,8 @@ func prowlarrSecret() *corev1.Secret {
 func runProwlarr(t *testing.T, cfg *indexersv1alpha1.ProwlarrConfig, objs ...client.Object) client.Client {
 	t.Helper()
 	scheme := runtime.NewScheme()
-	if err := clientgoscheme.AddToScheme(scheme); err != nil {
-		t.Fatalf("adding client-go scheme: %v", err)
-	}
-	if err := indexersv1alpha1.AddToScheme(scheme); err != nil {
-		t.Fatalf("adding indexers scheme: %v", err)
-	}
+	require.NoError(t, clientgoscheme.AddToScheme(scheme), "adding client-go scheme")
+	require.NoError(t, indexersv1alpha1.AddToScheme(scheme), "adding indexers scheme")
 	b := fake.NewClientBuilder().WithScheme(scheme).
 		WithStatusSubresource(&indexersv1alpha1.ProwlarrConfig{}).WithObjects(cfg)
 	for _, o := range objs {
@@ -143,11 +140,10 @@ func runProwlarr(t *testing.T, cfg *indexersv1alpha1.ProwlarrConfig, objs ...cli
 	}
 	c := b.Build()
 	r := &ProwlarrConfigReconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(50)}
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
 		Name: "prowlarr", Namespace: "media",
-	}); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
+	})
+	require.NoError(t, err, "reconcile")
 	return c
 }
 
@@ -179,13 +175,9 @@ func TestProwlarrResolvesTagLabelsToIDs(t *testing.T) {
 	runProwlarr(t, cfg, prowlarrSecret())
 
 	posts := app.postsTo("/api/v1/indexer")
-	if len(posts) == 0 {
-		t.Fatal("indexer was never created")
-	}
+	require.NotEmpty(t, posts, "indexer was never created")
 	tags, _ := posts[0]["tags"].([]any)
-	if len(tags) != 1 || tags[0] != float64(5) {
-		t.Errorf("indexer tags = %v, want [5] resolved from label %q", tags, "flare")
-	}
+	assert.Equal(t, []any{float64(5)}, tags, "indexer tags should be [5] resolved from label %q", "flare")
 }
 
 func TestProwlarrCreatesDeclaredIndexer(t *testing.T) {
@@ -198,16 +190,12 @@ func TestProwlarrCreatesDeclaredIndexer(t *testing.T) {
 	}}
 	c := runProwlarr(t, cfg, prowlarrSecret())
 
-	if len(app.postsTo("/api/v1/indexer")) == 0 {
-		t.Error("indexer was never created")
-	}
+	assert.NotEmpty(t, app.postsTo("/api/v1/indexer"), "indexer was never created")
 	var got indexersv1alpha1.ProwlarrConfig
-	if err := c.Get(context.Background(), types.NamespacedName{Name: "prowlarr", Namespace: "media"}, &got); err != nil {
-		t.Fatalf("fetching config: %v", err)
-	}
-	if len(got.Status.ManagedResources["indexers"]) == 0 {
-		t.Errorf("indexer not recorded as managed: %+v", got.Status.ManagedResources)
-	}
+	require.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "prowlarr", Namespace: "media"}, &got),
+		"fetching config")
+	assert.NotEmpty(t, got.Status.ManagedResources["indexers"],
+		"indexer not recorded as managed: %+v", got.Status.ManagedResources)
 }
 
 func TestProwlarrPruneLeavesUnmanagedIndexerAlone(t *testing.T) {
@@ -224,12 +212,8 @@ func TestProwlarrPruneLeavesUnmanagedIndexerAlone(t *testing.T) {
 	}}
 	runProwlarr(t, cfg, prowlarrSecret())
 
-	if len(app.postsTo("/api/v1/indexer")) == 0 {
-		t.Fatal("reconcile never reached the app, so the DELETE check is meaningless")
-	}
-	if app.sawPrefix("DELETE", "/api/v1/indexer") {
-		t.Error("prune deleted an indexer the operator never created")
-	}
+	require.NotEmpty(t, app.postsTo("/api/v1/indexer"), "reconcile never reached the app, so the DELETE check is meaningless")
+	assert.False(t, app.sawPrefix("DELETE", "/api/v1/indexer"), "prune deleted an indexer the operator never created")
 }
 
 func TestProwlarrMissingSecretDoesNotContactApp(t *testing.T) {
@@ -238,9 +222,7 @@ func TestProwlarrMissingSecretDoesNotContactApp(t *testing.T) {
 
 	runProwlarr(t, prowlarrConfig(url)) // no Secret
 
-	if app.sawPrefix("GET", "/api/v1/") {
-		t.Error("contacted the app despite failing to resolve its API key")
-	}
+	assert.False(t, app.sawPrefix("GET", "/api/v1/"), "contacted the app despite failing to resolve its API key")
 }
 
 func TestProwlarrDeletePolicyCleansTrackedResources(t *testing.T) {
@@ -253,15 +235,10 @@ func TestProwlarrDeletePolicyCleansTrackedResources(t *testing.T) {
 	now := metav1.Now()
 	cfg.DeletionTimestamp = &now
 	c := runProwlarr(t, cfg, prowlarrSecret())
-	if !app.sawPrefix("DELETE", "/api/v1/indexer/7") {
-		t.Fatal("owned indexer was not deleted")
-	}
-	if app.sawPrefix("DELETE", "/api/v1/indexer/8") {
-		t.Fatal("manual indexer was deleted")
-	}
-	if err := c.Get(context.Background(), client.ObjectKeyFromObject(cfg), &indexersv1alpha1.ProwlarrConfig{}); !apierrors.IsNotFound(err) {
-		t.Fatalf("finalizer not released: %v", err)
-	}
+	assert.True(t, app.sawPrefix("DELETE", "/api/v1/indexer/7"), "owned indexer was not deleted")
+	assert.False(t, app.sawPrefix("DELETE", "/api/v1/indexer/8"), "manual indexer was deleted")
+	err := c.Get(context.Background(), client.ObjectKeyFromObject(cfg), &indexersv1alpha1.ProwlarrConfig{})
+	assert.True(t, apierrors.IsNotFound(err), "finalizer not released: %v", err)
 }
 
 func TestProwlarrProfileCreatedBeforeIndexer(t *testing.T) {

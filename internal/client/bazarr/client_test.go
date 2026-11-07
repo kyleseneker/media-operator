@@ -230,9 +230,7 @@ func TestSettingNameConvertsCamelCaseAndHonoursOverrides(t *testing.T) {
 		{"radarr", "syncInterval", "movies_sync"},
 	}
 	for _, c := range cases {
-		if got := settingName(c.section, c.in); got != c.want {
-			t.Errorf("settingName(%q, %q) = %q, want %q", c.section, c.in, got, c.want)
-		}
+		assert.Equal(t, c.want, settingName(c.section, c.in), "settingName(%q, %q)", c.section, c.in)
 	}
 }
 
@@ -246,9 +244,7 @@ func TestBuildLanguageProfilesMatchesBazarrSchema(t *testing.T) {
 	p := out[0]
 
 	for _, k := range []string{"profileId", "name", "items", "cutoff", "mustContain", "mustNotContain", "originalFormat"} {
-		if _, ok := p[k]; !ok {
-			t.Errorf("profile missing %q; Bazarr indexes it unconditionally and raises KeyError", k)
-		}
+		assert.Contains(t, p, k, "Bazarr indexes %q unconditionally and raises KeyError", k)
 	}
 	assert.Equal(t, 1, p["profileId"], "profileId defaults to a 1-based index")
 

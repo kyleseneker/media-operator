@@ -125,9 +125,7 @@ func TestMergePreservesUnmanagedFieldEntries(t *testing.T) {
 	    {"name":"additionalParameters","value":"&freeleech=1","order":3,"type":"textbox"}
 	  ]}`
 	var current map[string]any
-	if err := json.Unmarshal([]byte(currentJSON), &current); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, json.Unmarshal([]byte(currentJSON), &current))
 
 	desired := map[string]any{
 		"name": "TorrentLeech",
@@ -137,29 +135,21 @@ func TestMergePreservesUnmanagedFieldEntries(t *testing.T) {
 	}
 
 	merged, changed, err := MergeDesiredOverCurrent(current, desired)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	fields, ok := merged["fields"].([]any)
-	if !ok {
-		t.Fatalf("fields missing from merged output")
-	}
-	if len(fields) != 4 {
-		t.Fatalf("expected 4 field entries preserved, got %d", len(fields))
-	}
+	require.True(t, ok, "fields missing from merged output")
+	require.Len(t, fields, 4, "expected 4 field entries preserved")
 	for _, f := range fields {
 		m := f.(map[string]any)
-		if m["name"] == "minimumSeeders" && m["value"] != float64(5) {
-			t.Errorf("minimumSeeders was clobbered: %v", m["value"])
+		if m["name"] == "minimumSeeders" {
+			assert.Equal(t, float64(5), m["value"], "minimumSeeders was clobbered")
 		}
-		if m["name"] == "baseUrl" && m["order"] != float64(0) {
-			t.Errorf("baseUrl lost its API metadata: %v", m)
+		if m["name"] == "baseUrl" {
+			assert.Equal(t, float64(0), m["order"], "baseUrl lost its API metadata: %v", m)
 		}
 	}
-	if changed {
-		t.Errorf("declaring an already-matching value reported changed=true; this re-PUTs forever")
-	}
+	assert.False(t, changed, "declaring an already-matching value reported changed=true; this re-PUTs forever")
 }
 
 func TestMergeAppliesFieldValueChange(t *testing.T) {
@@ -175,19 +165,11 @@ func TestMergeAppliesFieldValueChange(t *testing.T) {
 		},
 	}
 	merged, changed, err := MergeDesiredOverCurrent(current, desired)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !changed {
-		t.Fatal("a real value change must report changed=true")
-	}
+	require.NoError(t, err)
+	require.True(t, changed, "a real value change must report changed=true")
 	f := merged["fields"].([]any)[0].(map[string]any)
-	if f["value"] != float64(9) {
-		t.Errorf("value not applied: %v", f["value"])
-	}
-	if f["order"] != float64(1) {
-		t.Errorf("metadata lost while applying a change: %v", f)
-	}
+	assert.Equal(t, float64(9), f["value"], "value not applied")
+	assert.Equal(t, float64(1), f["order"], "metadata lost while applying a change: %v", f)
 }
 
 func TestMergeAppendsNewFieldEntry(t *testing.T) {
@@ -202,12 +184,8 @@ func TestMergeAppendsNewFieldEntry(t *testing.T) {
 		},
 	}
 	merged, _, err := MergeDesiredOverCurrent(current, desired)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := len(merged["fields"].([]any)); got != 2 {
-		t.Errorf("expected existing + appended = 2 entries, got %d", got)
-	}
+	require.NoError(t, err)
+	assert.Len(t, merged["fields"].([]any), 2, "expected existing + appended = 2 entries")
 }
 
 // Prowlarr field values are strings in the CRD; the app reads them back typed.
@@ -221,15 +199,10 @@ func TestStringMatchingTheAppsTypedValueIsNotDrift(t *testing.T) {
 		map[string]any{"name": "useSsl", "value": "false"},
 	}}
 	_, changed, err := MergeDesiredOverCurrent(current, desired)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if changed {
-		t.Error("a quoted 8080 is the app's 8080; comparing types rewrites it on every pass")
-	}
+	require.NoError(t, err)
+	assert.False(t, changed, "a quoted 8080 is the app's 8080; comparing types rewrites it on every pass")
 
 	desired["fields"].([]any)[0].(map[string]any)["value"] = "9090"
-	if _, changed, _ = MergeDesiredOverCurrent(current, desired); !changed {
-		t.Error("a different value must still be drift")
-	}
+	_, changed, _ = MergeDesiredOverCurrent(current, desired)
+	assert.True(t, changed, "a different value must still be drift")
 }
