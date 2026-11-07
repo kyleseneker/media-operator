@@ -1,0 +1,187 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: RadarrConfig
+metadata:
+  name: radarr
+spec:
+  connection:
+    url: ${URL}
+    apiKeySecretRef:
+      name: compat-credentials
+      key: api-key
+  mediaManagement:
+    autoUnmonitorPreviouslyDownloadedMovies: true
+    createEmptyMovieFolders: false
+    autoRenameFolders: true
+    copyUsingHardlinks: true
+    deleteEmptyFolders: true
+    importExtraFiles: true
+    extraFileExtensions: srt
+    downloadPropersAndRepacks: doNotPrefer
+    enableMediaInfo: true
+    rescanAfterRefresh: always
+    minimumFreeSpaceWhenImporting: 100
+    skipFreeSpaceCheckWhenImporting: false
+  naming:
+    renameMovies: true
+    replaceIllegalCharacters: true
+    colonReplacementFormat: smart
+    standardMovieFormat: "{Movie CleanTitle} {(Release Year)} [tmdbid-{TmdbId}] - {Edition Tags }{[Quality Full]}{-Release Group}"
+    movieFolderFormat: "{Movie CleanTitle} ({Release Year}) [tmdbid-{TmdbId}]"
+  indexerConfig:
+    minimumAge: 0
+    maximumSize: 0
+    retention: 0
+    rssSyncInterval: 15
+    availabilityDelay: 0
+    allowHardcodedSubs: true
+  downloadClientConfig:
+    enableCompletedDownloadHandling: true
+    autoRedownloadFailed: true
+    checkForFinishedDownloadInterval: 1
+  ui:
+    firstDayOfWeek: 1
+    shortDateFormat: "MMM D YYYY"
+    longDateFormat: "dddd, MMMM D YYYY"
+    timeFormat: "h(:mm)a"
+    showRelativeDates: true
+    theme: dark
+    enableColorImpairedMode: false
+    movieRuntimeFormat: hoursMinutes
+    uiLanguage: 1
+    movieInfoLanguage: 1
+  rootFolders:
+    - path: /data/media/movies
+  remotePathMappings:
+    - host: ${HOST}
+      remotePath: /downloads/movies
+      localPath: /data/media/movies
+  tags:
+    - label: uhd
+    - label: kids
+  downloadClients:
+    - name: qBittorrent
+      protocol: torrent
+      implementation: QBittorrent
+      host: ${HOST}
+      port: ${QBITTORRENT_PORT}
+      category: movies
+      priority: 1
+      removeCompletedDownloads: true
+      removeFailedDownloads: true
+      tagLabels:
+        - uhd
+      usernameSecretRef:
+        name: compat-credentials
+        key: qbittorrent-username
+      passwordSecretRef:
+        name: compat-credentials
+        key: qbittorrent-password
+  customFormats:
+    - name: x265 (HD)
+      includeCustomFormatWhenRenaming: false
+      specifications:
+        - name: x265
+          implementation: ReleaseTitleSpecification
+          negate: false
+          required: true
+          fields:
+            - name: value
+              value: "[xh]\\.?265|HEVC"
+        - name: Not 4K
+          implementation: ResolutionSpecification
+          negate: true
+          required: true
+          fields:
+            - name: value
+              value: 2160
+  qualityProfiles:
+    - name: HD-1080p
+      upgradeAllowed: true
+      cutoff: Bluray-1080p
+      minFormatScore: 0
+      cutoffFormatScore: 10000
+      minUpgradeFormatScore: 1
+      items:
+        - quality:
+            id: 0
+            name: Unknown
+          allowed: false
+        - name: WEB 1080p
+          allowed: true
+          items:
+            - quality:
+                id: 3
+                name: WEBDL-1080p
+            - quality:
+                id: 15
+                name: WEBRip-1080p
+        - quality:
+            id: 7
+            name: Bluray-1080p
+          allowed: true
+        - quality:
+            id: 30
+            name: Remux-1080p
+          allowed: true
+      formatItems:
+        - name: x265 (HD)
+          score: -5000
+  indexers:
+    - name: Compat Torznab
+      protocol: torrent
+      implementation: Torznab
+      enableRss: true
+      enableAutomaticSearch: true
+      enableInteractiveSearch: true
+      priority: 10
+      tagLabels:
+        - kids
+      fields:
+        - name: baseUrl
+          value: ${FAKES}/torznab
+        - name: apiPath
+          value: /api
+        - name: apiKey
+          valueFrom:
+            name: compat-credentials
+            key: api-key
+        - name: categories
+          value: [2000, 2040]
+        - name: minimumSeeders
+          value: 1
+  notifications:
+    - name: Compat Webhook
+      implementation: Webhook
+      onGrab: true
+      onDownload: true
+      onUpgrade: true
+      onRename: true
+      onMovieAdded: true
+      onMovieDelete: true
+      onMovieFileDelete: true
+      onMovieFileDeleteForUpgrade: true
+      onHealthIssue: true
+      onHealthRestored: true
+      includeHealthWarnings: true
+      onApplicationUpdate: true
+      onManualInteractionRequired: true
+      tagLabels:
+        - uhd
+      fields:
+        - name: url
+          value: ${FAKES}/webhook
+        - name: method
+          value: 1
+  importLists:
+    - name: Compat List
+      implementation: ${RADARR_LIST}
+      enable: true
+      enableAutomaticAdd: false
+      monitor: movieOnly
+      qualityProfileName: HD-1080p
+      rootFolderPath: /data/media/movies
+      minimumAvailability: released
+      searchOnAdd: false
+      fields:
+        - name: url
+          value: ${FAKES}/lists/radarr

@@ -87,6 +87,11 @@ test-envtest: manifests generate setup-envtest ## Apply every sample to a real k
 	KUBEBUILDER_ASSETS="$$('$(ENVTEST)' use $(ENVTEST_K8S_VERSION) --bin-dir '$(LOCALBIN)' -p path)" \
 		go test ./test/envtest/... -count=1
 
+.PHONY: test-compat
+test-compat: manifests generate setup-envtest ## Reconcile every integration against pinned application containers (needs docker, or CONTAINER_TOOL=podman). Narrow with COMPAT_RUN=TestSonarr.
+	KUBEBUILDER_ASSETS="$$('$(ENVTEST)' use $(ENVTEST_K8S_VERSION) --bin-dir '$(LOCALBIN)' -p path)" \
+		CONTAINER_TOOL=$(CONTAINER_TOOL) go test -tags=compat ./test/compat/... -count=1 -v -timeout 45m -run '$(COMPAT_RUN)'
+
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
 # CertManager is installed by default; skip with:

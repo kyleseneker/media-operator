@@ -1,0 +1,15 @@
+//go:build compat
+
+package compat
+
+// Application versions the suite runs against; README's compatibility table
+// lists the same versions. Renovate updates each pin, and the compat workflow
+// then proves the new version before it merges.
+const (
+	// renovate: datasource=docker
+	sonarrImage = "lscr.io/linuxserver/sonarr:4.0.20.3014-ls2"
+	// renovate: datasource=docker
+	radarrImage = "lscr.io/linuxserver/radarr:6.4.4.10685-ls325"
+	// renovate: datasource=docker
+	qbittorrentImage = "lscr.io/linuxserver/qbittorrent:5.3.0_v2.1.2-ls486"
+)
