@@ -12,7 +12,6 @@ import (
 
 	curationv1alpha1 "github.com/kyleseneker/media-operator/api/curation/v1alpha1"
 	maintainerrclient "github.com/kyleseneker/media-operator/internal/client/maintainerr"
-	"github.com/kyleseneker/media-operator/internal/metrics"
 	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
 
@@ -81,7 +80,20 @@ type ruleProp struct {
 func (s *maintainerrSync) ruleGroups(
 	ctx context.Context, groups []curationv1alpha1.MaintainerrRuleGroup, servers map[maintainerrclient.Arr]map[string]int,
 ) []string {
-	fail := func(err error) []string { return []string{fmt.Sprintf("ruleGroups: %v", err)} }
+	// Rule groups resolve against the media server and the apps configured
+	// before them. When observe mode has found those differing, a group that
+	// cannot be resolved is counted as differing too, not as a failure: on a
+	// fresh Maintainerr nothing it refers to exists yet.
+	unresolvable := s.observe && len(s.drift) > 0
+	fail := func(err error) []string {
+		if unresolvable {
+			for i := range groups {
+				s.recordDrift("ruleGroup", groups[i].Name)
+			}
+			return nil
+		}
+		return []string{fmt.Sprintf("ruleGroups: %v", err)}
+	}
 	// Read after the media server and the other apps are configured: rule
 	// properties exist only for configured apps.
 	settings, err := s.mc.GetSettings(ctx)
@@ -107,7 +119,12 @@ func (s *maintainerrSync) ruleGroups(
 
 	var errs []string
 	for i := range groups {
-		if err := s.ruleGroup(ctx, &groups[i], env, stored); err != nil {
+		err := s.ruleGroup(ctx, &groups[i], env, stored)
+		switch {
+		case err == nil:
+		case unresolvable:
+			s.recordDrift("ruleGroup", groups[i].Name)
+		default:
 			errs = append(errs, fmt.Sprintf("ruleGroup(%s): %v", groups[i].Name, err))
 		}
 	}
@@ -137,7 +154,7 @@ func (s *maintainerrSync) ruleGroup(
 		match = e
 	}
 	if match == nil {
-		return s.mc.CreateRuleGroup(ctx, newRuleGroupBody(send))
+		return s.apply("ruleGroup", g.Name, func() error { return s.mc.CreateRuleGroup(ctx, newRuleGroupBody(send)) })
 	}
 
 	current := storedRuleGroup(match)
@@ -146,8 +163,7 @@ func (s *maintainerrSync) ruleGroup(
 	}
 	// An update deletes and recreates every rule and writes a collection log
 	// entry, so it is sent only when something differs.
-	metrics.DriftCorrectedTotal.WithLabelValues(maintainerrApp, "ruleGroup", g.Name).Inc()
-	return s.mc.UpdateRuleGroup(ctx, overlayRuleGroup(current, send))
+	return s.apply("ruleGroup", g.Name, func() error { return s.mc.UpdateRuleGroup(ctx, overlayRuleGroup(current, send)) })
 }
 
 // qualityProfile resolves the profile changeQualityProfile switches to, in the

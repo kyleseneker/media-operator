@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,6 +28,7 @@ import (
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	curationv1alpha1 "github.com/kyleseneker/media-operator/api/curation/v1alpha1"
+	"github.com/kyleseneker/media-operator/internal/engine"
 )
 
 const conditionTrue = "True"
@@ -455,22 +455,53 @@ func TestMaintainerrMarksUnhealthyAppNotReady(t *testing.T) {
 	assert.NotEqual(t, conditionTrue, string(run.condition(t, "Ready").Status), "Ready = True for an app failing its health check")
 }
 
-func TestMaintainerrObserveRejectedBeforeApplicationAccess(t *testing.T) {
-	scheme := runtime.NewScheme()
-	require.NoError(t, curationv1alpha1.AddToScheme(scheme))
-	policy := "observe"
-	cfg := &curationv1alpha1.MaintainerrConfig{Name: "observe", Namespace: "media"}
-	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &policy}
-	// No URL or Secrets: rejection must happen before application access or authentication.
-	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(cfg).WithObjects(cfg).Build()
-	r := &MaintainerrConfigReconciler{Client: c, Scheme: scheme}
-	key := types.NamespacedName{Namespace: cfg.Namespace, Name: cfg.Name}
-	_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
-	require.NoError(t, err)
-	require.NoError(t, c.Get(context.Background(), key, cfg))
-	require.True(t, slices.ContainsFunc(cfg.Status.Conditions, func(condition metav1.Condition) bool {
-		return condition.Type == "Synced" && condition.Reason == "InvalidConfig" && condition.Status == metav1.ConditionFalse
-	}), "expected explicit unsupported-policy status, got %+v", cfg.Status.Conditions)
+func observeSpec(spec curationv1alpha1.MaintainerrConfigSpec) curationv1alpha1.MaintainerrConfigSpec {
+	spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: new("observe")}
+	return spec
+}
+
+// A fresh Maintainerr has none of the config, and the rule groups cannot be
+// resolved before the media server and Radarr exist: all of it is drift, and
+// none of it is written.
+func TestMaintainerrObserveReportsAFreshInstallWithoutWriting(t *testing.T) {
+	app := newFakeMaintainerr()
+	run := newMaintainerrRun(t, observeSpec(jellyfinSpec(app.serve(t))))
+
+	run.reconcile(t)
+	assert.Empty(t, app.writes(), "observe mode wrote to Maintainerr")
+	synced := run.condition(t, "Synced")
+	assert.Equal(t, metav1.ConditionFalse, synced.Status)
+	assert.Equal(t, "DriftDetected", synced.Reason, synced.Message)
+}
+
+func TestMaintainerrObserveMatchesAConfiguredInstall(t *testing.T) {
+	app := newFakeMaintainerr()
+	url := app.serve(t)
+	newMaintainerrRun(t, jellyfinSpec(url)).reconcile(t)
+	app.resetRequests()
+
+	run := newMaintainerrRun(t, observeSpec(jellyfinSpec(url)))
+	run.reconcile(t)
+	assert.Empty(t, app.writes())
+	synced := run.condition(t, "Synced")
+	assert.Equal(t, metav1.ConditionTrue, synced.Status, synced.Message)
+	assert.Equal(t, "Observed", synced.Reason)
+}
+
+// Once the prerequisites match, a rule group that cannot be resolved is a
+// configuration error again, not drift.
+func TestMaintainerrObserveReportsUnresolvableGroupsOnceTheRestMatches(t *testing.T) {
+	app := newFakeMaintainerr()
+	url := app.serve(t)
+	newMaintainerrRun(t, jellyfinSpec(url)).reconcile(t)
+
+	spec := observeSpec(jellyfinSpec(url))
+	spec.RuleGroups[0].Sections[0].Rules[0].FirstValue = "Jellyfin.nope"
+	run := newMaintainerrRun(t, spec)
+	run.reconcile(t)
+	synced := run.condition(t, "Synced")
+	assert.Equal(t, engine.ReasonSyncFailed, synced.Reason)
+	assert.Contains(t, synced.Message, `no Jellyfin property "nope"`)
 }
 
 func TestMaintainerrSecretWatchCoversEveryReference(t *testing.T) {

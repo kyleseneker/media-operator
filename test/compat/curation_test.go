@@ -61,7 +61,8 @@ func TestMaintainerr(t *testing.T) {
 		reconciler: func(c client.Client) reconcile.Reconciler {
 			return &curation.MaintainerrConfigReconciler{Client: c, Scheme: c.Scheme(), Recorder: events.NewFakeRecorder(100)}
 		},
-		proxy: proxy,
+		proxy:   proxy,
+		observe: true,
 		verify: func(t *testing.T) {
 			hc := directClient(t, maintainerr.url(), "")
 			settings, err := hc.GetJSON(ctx, "/api/settings")

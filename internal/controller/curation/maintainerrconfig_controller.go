@@ -55,10 +55,6 @@ func (r *MaintainerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
-	if ctrlcommon.RejectUnsupportedObserve(ctx, r.Status(), &config) {
-		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
-	}
-
 	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
 	if err != nil {
 		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
@@ -80,8 +76,17 @@ func (r *MaintainerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
-	syncErrors := (&maintainerrSync{c: r.Client, mc: mc, namespace: config.Namespace}).run(ctx, &config.Spec)
-	if len(syncErrors) > 0 {
+	sync := &maintainerrSync{
+		c: r.Client, mc: mc, namespace: config.Namespace, observe: ctrlcommon.ObserveOnly(config.Spec.Reconcile),
+	}
+	syncErrors := sync.run(ctx, &config.Spec)
+	if sync.observe {
+		var observeErr error
+		if len(syncErrors) > 0 {
+			observeErr = fmt.Errorf("%v", syncErrors)
+		}
+		ctrlcommon.UpdateObservationStatus(ctx, r.Status(), &config, len(sync.drift) > 0, observeErr)
+	} else if len(syncErrors) > 0 {
 		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync failure: %v", syncErrors))
 	} else {
 		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, true, engine.ReasonSynced, "all configuration sections synced")
@@ -93,10 +98,28 @@ func (r *MaintainerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 // maintainerrSync applies one MaintainerrConfig in dependency order: the media
 // server and the Sonarr and Radarr servers before the rule groups that refer to
 // them, since Maintainerr resolves rule properties only for configured apps.
+// With observe set it only reads, and records what it would have written.
 type maintainerrSync struct {
 	c         client.Reader
 	mc        *maintainerrclient.Client
 	namespace string
+	observe   bool
+	drift     []string
+}
+
+// apply writes a difference, or in observe mode records it instead.
+func (s *maintainerrSync) apply(resource, name string, write func() error) error {
+	if s.observe {
+		s.recordDrift(resource, name)
+		return nil
+	}
+	metrics.DriftCorrectedTotal.WithLabelValues(maintainerrApp, resource, name).Inc()
+	return write()
+}
+
+func (s *maintainerrSync) recordDrift(resource, name string) {
+	metrics.DriftObservedTotal.WithLabelValues(maintainerrApp, resource, name).Inc()
+	s.drift = append(s.drift, resource+"/"+name)
 }
 
 func (s *maintainerrSync) run(ctx context.Context, spec *curationv1alpha1.MaintainerrConfigSpec) []string {
@@ -192,8 +215,7 @@ func (s *maintainerrSync) jellyfin(ctx context.Context, jf *curationv1alpha1.Mai
 	if jf.UserID != "" {
 		conn["jellyfin_user_id"] = jf.UserID
 	}
-	metrics.DriftCorrectedTotal.WithLabelValues(maintainerrApp, "mediaServer", mediaJellyfin).Inc()
-	return s.mc.SaveJellyfin(ctx, conn)
+	return s.apply("mediaServer", mediaJellyfin, func() error { return s.mc.SaveJellyfin(ctx, conn) })
 }
 
 func (s *maintainerrSync) plex(ctx context.Context, plex *curationv1alpha1.MaintainerrPlex, settings map[string]any, fresh bool) error {
@@ -202,15 +224,16 @@ func (s *maintainerrSync) plex(ctx context.Context, plex *curationv1alpha1.Maint
 		return fmt.Errorf("resolving Plex token: %w", err)
 	}
 	if fresh {
-		if err := s.mc.SetMediaServerType(ctx, mediaPlex); err != nil {
+		err := s.apply("mediaServer", "type", func() error { return s.mc.SetMediaServerType(ctx, mediaPlex) })
+		if err != nil {
 			return fmt.Errorf("setting Plex as the media server: %w", err)
 		}
 	}
 	// Maintainerr reads the token back masked only, and refuses server fields
 	// until a token is stored, so the token goes first.
 	if stored, _ := settings["plex_auth_token"].(string); stored != maskPlexToken(token) {
-		metrics.DriftCorrectedTotal.WithLabelValues(maintainerrApp, "mediaServer", "plexToken").Inc()
-		if err := s.mc.SavePlexToken(ctx, token); err != nil {
+		err := s.apply("mediaServer", "plexToken", func() error { return s.mc.SavePlexToken(ctx, token) })
+		if err != nil {
 			return fmt.Errorf("saving Plex token: %w", err)
 		}
 	}
@@ -218,8 +241,7 @@ func (s *maintainerrSync) plex(ctx context.Context, plex *curationv1alpha1.Maint
 	if reconciler.Covers(settings, mustJSON(desired)) {
 		return nil
 	}
-	metrics.DriftCorrectedTotal.WithLabelValues(maintainerrApp, "mediaServer", mediaPlex).Inc()
-	return s.mc.UpdateSettings(ctx, desired)
+	return s.apply("mediaServer", mediaPlex, func() error { return s.mc.UpdateSettings(ctx, desired) })
 }
 
 // plexFields renders the Plex server settings as Maintainerr stores them: a
@@ -319,7 +341,7 @@ func (s *maintainerrSync) arrServer(
 		match = e
 	}
 	if match == nil {
-		return true, s.mc.AddArr(ctx, kind, desired)
+		return !s.observe, s.apply(string(kind), server.Name, func() error { return s.mc.AddArr(ctx, kind, desired) })
 	}
 	if reconciler.Covers(match, mustJSON(desired)) {
 		return false, nil
@@ -328,8 +350,7 @@ func (s *maintainerrSync) arrServer(
 	if !ok {
 		return false, fmt.Errorf("server %q has no valid id", server.Name)
 	}
-	metrics.DriftCorrectedTotal.WithLabelValues(maintainerrApp, string(kind), server.Name).Inc()
-	return false, s.mc.UpdateArr(ctx, kind, int(id), desired)
+	return false, s.apply(string(kind), server.Name, func() error { return s.mc.UpdateArr(ctx, kind, int(id), desired) })
 }
 
 func (s *maintainerrSync) service(
@@ -347,8 +368,7 @@ func (s *maintainerrSync) service(
 	if reconciler.Covers(stored, mustJSON(desired)) {
 		return nil
 	}
-	metrics.DriftCorrectedTotal.WithLabelValues(maintainerrApp, string(svc), string(svc)).Inc()
-	return s.mc.SaveService(ctx, svc, desired)
+	return s.apply(string(svc), string(svc), func() error { return s.mc.SaveService(ctx, svc, desired) })
 }
 
 func (s *maintainerrSync) jobs(ctx context.Context, jobs *curationv1alpha1.MaintainerrJobs, settings map[string]any) error {
@@ -356,8 +376,7 @@ func (s *maintainerrSync) jobs(ctx context.Context, jobs *curationv1alpha1.Maint
 	if len(desired) == 0 || reconciler.Covers(settings, mustJSON(desired)) {
 		return nil
 	}
-	metrics.DriftCorrectedTotal.WithLabelValues(maintainerrApp, "jobs", "jobs").Inc()
-	return s.mc.UpdateSettings(ctx, desired)
+	return s.apply("jobs", "jobs", func() error { return s.mc.UpdateSettings(ctx, desired) })
 }
 
 // buildMaintainerrJobs renders the job schedules under Maintainerr's names.
