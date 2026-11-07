@@ -54,9 +54,9 @@ type FlareSolverrConnection struct {
 
 // FlareSolverrSession defines a named browser session to maintain in FlareSolverr.
 type FlareSolverrSession struct {
-	// name is the session identifier. Must be unique across sessions.
-	// This name is used when making requests through Prowlarr or other tools
-	// to reuse the same browser session.
+	// name is the session identifier. Must be unique across sessions. A client
+	// reuses the session by sending this name with its requests; Prowlarr's
+	// FlareSolverr proxy doesn't.
 	// +required
 	Name string `json:"name"`
 }

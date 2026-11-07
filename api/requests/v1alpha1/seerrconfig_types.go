@@ -64,7 +64,7 @@ type SeerrConfigSpec struct {
 type SeerrNotificationAgent struct {
 	// agent is the notification agent type.
 	// Supported values: discord, slack, telegram, pushover, email, webhook,
-	// gotify, lunasea, pushbullet, webpush.
+	// gotify, ntfy, pushbullet, webpush.
 	// +required
 	Agent string `json:"agent"`
 
