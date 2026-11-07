@@ -236,12 +236,49 @@ archives:
 
 changelog:
   sort: asc
+  abbrev: 7
+  format: '{{ .SHA }} {{ replace (replace .Message "<" "&lt;") ">" "&gt;" }}'
   filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
-      - "^ci:"
+    include:
+      - '^.*?\w+(\([^)]*\))?!:.+$'
+      - '^.*?(feat|fix)(\([^)]*\))?:.+$'
+      - '^.*?chore\(deps\):.+$'
+  groups:
+    - title: Breaking changes
+      regexp: '^.*?\w+(\([^)]*\))?!:.+$'
+      order: 0
+    - title: Features
+      regexp: '^.*?feat(\([^)]*\))?:.+$'
+      order: 1
+    - title: Fixes
+      regexp: '^.*?fix(\([^)]*\))?:.+$'
+      order: 2
+    - title: Dependencies
+      regexp: '^.*?chore\(deps\):.+$'
+      order: 3
 
 release:
+  name_template: "{{ .TagSubject }}"
+  header: |
+    {{ with .TagBody }}## Upgrade notes
+
+    {{ . }}
+    {{ end }}
+  footer: |
+    {{ if isEnvSet "CHANGED_CRDS" }}## CRD changes
+
+    Helm installs a chart's CRDs on first install and never upgrades them. Apply the changed ones for the operators you run before upgrading their charts:
+
+    ```bash
+    for crd in {{ .Env.CHANGED_CRDS }}; do
+      kubectl apply --server-side --force-conflicts -f https://github.com/kyleseneker/media-operator/releases/download/{{ .Tag }}/media-operator.dev_${crd}.yaml
+    done
+    ```
+    {{ end }}
+    ## Install
+
+    - Charts: `oci://ghcr.io/kyleseneker/media-operator/media-operator-<operator>`, version `{{ .Version }}`
+    - Images: `ghcr.io/kyleseneker/media-operator-<operator>:{{ .Version }}`
+    - Tested app versions: [compatibility table](https://github.com/kyleseneker/media-operator/blob/{{ .Tag }}/README.md#compatibility)
   extra_files:
     - glob: config/crd/bases/*.yaml

@@ -49,3 +49,29 @@ Renovate (`renovate.json`) opens PRs on Saturday mornings; none automerge. The
 Kubernetes libraries and controller-runtime arrive as one PR. A controller-tools
 PR needs `make manifests generate sync-crds` run and committed on its branch
 before `verify-crds` passes.
+
+## Commit messages and releases
+
+Commits use [Conventional Commits](https://www.conventionalcommits.org/) with
+the app as the scope: `fix(tdarr): ...`, `feat(prowlarr): ...`. Release notes
+are generated from them, so `feat` and `fix` subjects should read as a change a
+user would notice. `chore(deps)` commits are listed as dependencies. `test`,
+`docs`, `refactor`, `style`, `ci` and other `chore` commits are left out. Mark
+anything that needs action on upgrade with `!` (`feat(maintainerr)!: ...`) and
+it is listed under Breaking changes.
+
+A release is an annotated tag on `main`:
+
+```bash
+git tag -a v0.37.0 -F- <<'EOF'
+v0.37.0: one-line summary, used as the release title
+
+Optional upgrade notes: what a user has to do or check before upgrading.
+EOF
+git push origin v0.37.0
+```
+
+Anything after the subject's blank line goes under Upgrade notes. Git strips
+lines starting with `#` from tag messages, so use plain paragraphs or `-`
+bullets, not headings. The notes also list `kubectl apply` commands for any CRD
+that changed since the previous tag, because Helm never upgrades CRDs.

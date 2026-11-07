@@ -24,6 +24,12 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: List CRDs changed since the previous tag
+        run: |
+          prev=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^") || exit 0
+          crds=$(git diff --name-only --diff-filter=d --relative=config/crd/bases "$prev" "$GITHUB_REF_NAME" \
+            | sed 's/^media-operator\.dev_//; s/\.yaml$//' | paste -sd' ' -)
+          if [ -n "$crds" ]; then echo "CHANGED_CRDS=$crds" >> "$GITHUB_ENV"; fi
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           version: v2.19.0
