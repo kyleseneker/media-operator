@@ -205,7 +205,3 @@ func (c *PlexConfig) GetObservedGeneration() *int64                       { retu
 func (c *PlexConfig) GetLastSyncTime() **metav1.Time                      { return &c.Status.LastSyncTime }
 func (c *PlexConfig) GetReconcileConfig() *commonv1alpha1.ReconcileConfig { return c.Spec.Reconcile }
 func (c *PlexConfig) GetManagedResources() *map[string][]string           { return &c.Status.ManagedResources }
-
-func init() {
-	SchemeBuilder.Register(&PlexConfig{}, &PlexConfigList{})
-}

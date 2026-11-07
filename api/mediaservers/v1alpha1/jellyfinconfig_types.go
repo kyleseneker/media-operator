@@ -269,7 +269,3 @@ func (c *JellyfinConfig) GetReconcileConfig() *commonv1alpha1.ReconcileConfig {
 func (c *JellyfinConfig) GetManagedResources() *map[string][]string {
 	return &c.Status.ManagedResources
 }
-
-func init() {
-	SchemeBuilder.Register(&JellyfinConfig{}, &JellyfinConfigList{})
-}

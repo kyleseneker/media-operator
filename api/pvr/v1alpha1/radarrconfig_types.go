@@ -348,7 +348,3 @@ func (c *RadarrConfig) GetObservedGeneration() *int64                       { re
 func (c *RadarrConfig) GetLastSyncTime() **metav1.Time                      { return &c.Status.LastSyncTime }
 func (c *RadarrConfig) GetReconcileConfig() *commonv1alpha1.ReconcileConfig { return c.Spec.Reconcile }
 func (c *RadarrConfig) GetManagedResources() *map[string][]string           { return &c.Status.ManagedResources }
-
-func init() {
-	SchemeBuilder.Register(&RadarrConfig{}, &RadarrConfigList{})
-}

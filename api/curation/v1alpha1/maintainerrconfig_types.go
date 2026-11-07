@@ -207,7 +207,3 @@ func (c *MaintainerrConfig) GetReconcileConfig() *commonv1alpha1.ReconcileConfig
 func (c *MaintainerrConfig) GetManagedResources() *map[string][]string {
 	return &c.Status.ManagedResources
 }
-
-func init() {
-	SchemeBuilder.Register(&MaintainerrConfig{}, &MaintainerrConfigList{})
-}

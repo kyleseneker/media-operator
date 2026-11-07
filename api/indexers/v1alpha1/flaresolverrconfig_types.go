@@ -128,7 +128,3 @@ func (c *FlareSolverrConfig) GetReconcileConfig() *commonv1alpha1.ReconcileConfi
 func (c *FlareSolverrConfig) GetManagedResources() *map[string][]string {
 	return &c.Status.ManagedResources
 }
-
-func init() {
-	SchemeBuilder.Register(&FlareSolverrConfig{}, &FlareSolverrConfigList{})
-}

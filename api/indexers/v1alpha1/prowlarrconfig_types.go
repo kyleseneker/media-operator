@@ -327,7 +327,3 @@ func (c *ProwlarrConfig) GetReconcileConfig() *commonv1alpha1.ReconcileConfig {
 func (c *ProwlarrConfig) GetManagedResources() *map[string][]string {
 	return &c.Status.ManagedResources
 }
-
-func init() {
-	SchemeBuilder.Register(&ProwlarrConfig{}, &ProwlarrConfigList{})
-}

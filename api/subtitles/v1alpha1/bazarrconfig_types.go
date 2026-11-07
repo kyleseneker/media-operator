@@ -312,7 +312,3 @@ func (c *BazarrConfig) GetObservedGeneration() *int64                       { re
 func (c *BazarrConfig) GetLastSyncTime() **metav1.Time                      { return &c.Status.LastSyncTime }
 func (c *BazarrConfig) GetReconcileConfig() *commonv1alpha1.ReconcileConfig { return c.Spec.Reconcile }
 func (c *BazarrConfig) GetManagedResources() *map[string][]string           { return &c.Status.ManagedResources }
-
-func init() {
-	SchemeBuilder.Register(&BazarrConfig{}, &BazarrConfigList{})
-}

@@ -240,7 +240,3 @@ func (c *TdarrConfig) GetObservedGeneration() *int64                       { ret
 func (c *TdarrConfig) GetLastSyncTime() **metav1.Time                      { return &c.Status.LastSyncTime }
 func (c *TdarrConfig) GetReconcileConfig() *commonv1alpha1.ReconcileConfig { return c.Spec.Reconcile }
 func (c *TdarrConfig) GetManagedResources() *map[string][]string           { return &c.Status.ManagedResources }
-
-func init() {
-	SchemeBuilder.Register(&TdarrConfig{}, &TdarrConfigList{})
-}

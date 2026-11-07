@@ -411,7 +411,3 @@ func (c *AutobrrConfig) GetObservedGeneration() *int64                       { r
 func (c *AutobrrConfig) GetLastSyncTime() **metav1.Time                      { return &c.Status.LastSyncTime }
 func (c *AutobrrConfig) GetReconcileConfig() *commonv1alpha1.ReconcileConfig { return c.Spec.Reconcile }
 func (c *AutobrrConfig) GetManagedResources() *map[string][]string           { return &c.Status.ManagedResources }
-
-func init() {
-	SchemeBuilder.Register(&AutobrrConfig{}, &AutobrrConfigList{})
-}

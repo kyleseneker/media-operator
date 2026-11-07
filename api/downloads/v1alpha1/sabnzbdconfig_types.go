@@ -192,7 +192,3 @@ func (c *SabnzbdConfig) GetObservedGeneration() *int64                       { r
 func (c *SabnzbdConfig) GetLastSyncTime() **metav1.Time                      { return &c.Status.LastSyncTime }
 func (c *SabnzbdConfig) GetReconcileConfig() *commonv1alpha1.ReconcileConfig { return c.Spec.Reconcile }
 func (c *SabnzbdConfig) GetManagedResources() *map[string][]string           { return &c.Status.ManagedResources }
-
-func init() {
-	SchemeBuilder.Register(&SabnzbdConfig{}, &SabnzbdConfigList{})
-}

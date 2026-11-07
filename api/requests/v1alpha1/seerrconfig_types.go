@@ -309,7 +309,3 @@ func (c *SeerrConfig) GetObservedGeneration() *int64                       { ret
 func (c *SeerrConfig) GetLastSyncTime() **metav1.Time                      { return &c.Status.LastSyncTime }
 func (c *SeerrConfig) GetReconcileConfig() *commonv1alpha1.ReconcileConfig { return c.Spec.Reconcile }
 func (c *SeerrConfig) GetManagedResources() *map[string][]string           { return &c.Status.ManagedResources }
-
-func init() {
-	SchemeBuilder.Register(&SeerrConfig{}, &SeerrConfigList{})
-}

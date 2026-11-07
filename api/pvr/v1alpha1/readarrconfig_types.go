@@ -253,7 +253,3 @@ func (c *ReadarrConfig) GetObservedGeneration() *int64                       { r
 func (c *ReadarrConfig) GetLastSyncTime() **metav1.Time                      { return &c.Status.LastSyncTime }
 func (c *ReadarrConfig) GetReconcileConfig() *commonv1alpha1.ReconcileConfig { return c.Spec.Reconcile }
 func (c *ReadarrConfig) GetManagedResources() *map[string][]string           { return &c.Status.ManagedResources }
-
-func init() {
-	SchemeBuilder.Register(&ReadarrConfig{}, &ReadarrConfigList{})
-}

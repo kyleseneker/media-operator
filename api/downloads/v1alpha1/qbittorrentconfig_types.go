@@ -223,7 +223,3 @@ func (c *QBittorrentConfig) GetReconcileConfig() *commonv1alpha1.ReconcileConfig
 func (c *QBittorrentConfig) GetManagedResources() *map[string][]string {
 	return &c.Status.ManagedResources
 }
-
-func init() {
-	SchemeBuilder.Register(&QBittorrentConfig{}, &QBittorrentConfigList{})
-}
