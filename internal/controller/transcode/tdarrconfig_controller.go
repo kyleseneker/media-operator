@@ -50,10 +50,6 @@ func (r *TdarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
-	if ctrlcommon.RejectUnsupportedObserve(ctx, r.Status(), &config) {
-		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
-	}
-
 	// Resolve API key
 	apiKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.APIKeySecretRef)
 	if err != nil {
@@ -82,33 +78,15 @@ func (r *TdarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
-	var syncErrors []string
-
-	// Reconcile libraries
-	for _, lib := range config.Spec.Libraries {
-		if err := reconcileTdarrLibrary(ctx, tc, lib); err != nil {
-			logger.Error(err, "failed to reconcile library", "id", lib.ID)
-			syncErrors = append(syncErrors, fmt.Sprintf("library(%s): %v", lib.ID, err))
+	sync := &tdarrSync{tc: tc, observe: ctrlcommon.ObserveOnly(config.Spec.Reconcile)}
+	syncErrors := sync.run(ctx, &config.Spec)
+	if sync.observe {
+		var observeErr error
+		if len(syncErrors) > 0 {
+			observeErr = fmt.Errorf("%v", syncErrors)
 		}
-	}
-
-	// Reconcile flows
-	for _, flow := range config.Spec.Flows {
-		if err := reconcileTdarrFlow(ctx, tc, flow); err != nil {
-			logger.Error(err, "failed to reconcile flow", "id", flow.ID)
-			syncErrors = append(syncErrors, fmt.Sprintf("flow(%s): %v", flow.ID, err))
-		}
-	}
-
-	// Reconcile workers
-	if config.Spec.Workers != nil {
-		if err := reconcileTdarrWorkers(ctx, tc, config.Spec.Workers); err != nil {
-			logger.Error(err, "failed to reconcile workers")
-			syncErrors = append(syncErrors, fmt.Sprintf("workers: %v", err))
-		}
-	}
-
-	if len(syncErrors) > 0 {
+		ctrlcommon.UpdateObservationStatus(ctx, r.Status(), &config, len(sync.drift) > 0, observeErr)
+	} else if len(syncErrors) > 0 {
 		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync failure: %v", syncErrors))
 	} else {
 		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, true, engine.ReasonSynced, "all configuration sections synced")
@@ -117,11 +95,54 @@ func (r *TdarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
 
-func reconcileTdarrLibrary(ctx context.Context, tc *tdarrclient.Client, lib transcodev1alpha1.TdarrLibrary) error {
-	if err := upsertTdarrDoc(ctx, tc, "LibrarySettingsJSONDB", lib.ID, buildTdarrLibraryDoc(lib)); err != nil {
+// tdarrSync applies one TdarrConfig. With observe set it only reads, and
+// records what it would have written.
+type tdarrSync struct {
+	tc      *tdarrclient.Client
+	observe bool
+	drift   []string
+}
+
+// apply writes a difference, or in observe mode records it instead.
+func (s *tdarrSync) apply(kind, name string, write func() error) error {
+	if s.observe {
+		metrics.DriftObservedTotal.WithLabelValues("tdarr", kind, name).Inc()
+		s.drift = append(s.drift, kind+"/"+name)
+		return nil
+	}
+	metrics.DriftCorrectedTotal.WithLabelValues("tdarr", kind, name).Inc()
+	return write()
+}
+
+func (s *tdarrSync) run(ctx context.Context, spec *transcodev1alpha1.TdarrConfigSpec) []string {
+	logger := log.FromContext(ctx)
+	var syncErrors []string
+	for _, lib := range spec.Libraries {
+		if err := s.library(ctx, lib); err != nil {
+			logger.Error(err, "failed to reconcile library", "id", lib.ID)
+			syncErrors = append(syncErrors, fmt.Sprintf("library(%s): %v", lib.ID, err))
+		}
+	}
+	for _, flow := range spec.Flows {
+		if err := s.flow(ctx, flow); err != nil {
+			logger.Error(err, "failed to reconcile flow", "id", flow.ID)
+			syncErrors = append(syncErrors, fmt.Sprintf("flow(%s): %v", flow.ID, err))
+		}
+	}
+	if spec.Workers != nil {
+		if err := s.workers(ctx, spec.Workers); err != nil {
+			logger.Error(err, "failed to reconcile workers")
+			syncErrors = append(syncErrors, fmt.Sprintf("workers: %v", err))
+		}
+	}
+	return syncErrors
+}
+
+func (s *tdarrSync) library(ctx context.Context, lib transcodev1alpha1.TdarrLibrary) error {
+	if err := s.upsertDoc(ctx, "LibrarySettingsJSONDB", lib.ID, buildTdarrLibraryDoc(lib)); err != nil {
 		return err
 	}
-	return reconcileTdarrLibraryVariables(ctx, tc, lib)
+	return s.libraryVariables(ctx, lib)
 }
 
 // variablesCollection holds Tdarr's user variables. Library variables are
@@ -134,13 +155,13 @@ func libraryVariableType(libraryID string) string {
 	return "library:" + libraryID
 }
 
-// reconcileTdarrLibraryVariables converges the VariablesJSONDB documents for a
-// library. Each variable is its own document rather than a field on the library,
-// so they are matched by key within the library's type tag.
-func reconcileTdarrLibraryVariables(ctx context.Context, tc *tdarrclient.Client, lib transcodev1alpha1.TdarrLibrary) error {
+// libraryVariables converges the VariablesJSONDB documents for a library. Each
+// variable is its own document rather than a field on the library, so they are
+// matched by key within the library's type tag.
+func (s *tdarrSync) libraryVariables(ctx context.Context, lib transcodev1alpha1.TdarrLibrary) error {
 	varType := libraryVariableType(lib.ID)
 
-	docs, err := tc.GetAll(ctx, variablesCollection)
+	docs, err := s.tc.GetAll(ctx, variablesCollection)
 	if err != nil {
 		return fmt.Errorf("listing variables: %w", err)
 	}
@@ -171,7 +192,10 @@ func reconcileTdarrLibraryVariables(ctx context.Context, tc *tdarrclient.Client,
 				"type":  varType,
 				"date":  time.Now().UnixMilli(),
 			}
-			if err := tc.Insert(ctx, variablesCollection, "", obj); err != nil {
+			err := s.apply(variablesCollection, lib.ID+"/"+key, func() error {
+				return s.tc.Insert(ctx, variablesCollection, "", obj)
+			})
+			if err != nil {
 				return fmt.Errorf("inserting variable %s: %w", key, err)
 			}
 			continue
@@ -187,7 +211,10 @@ func reconcileTdarrLibraryVariables(ctx context.Context, tc *tdarrclient.Client,
 			"type":  varType,
 			"date":  time.Now().UnixMilli(),
 		}
-		if err := tc.Update(ctx, variablesCollection, id, obj); err != nil {
+		err := s.apply(variablesCollection, lib.ID+"/"+key, func() error {
+			return s.tc.Update(ctx, variablesCollection, id, obj)
+		})
+		if err != nil {
 			return fmt.Errorf("updating variable %s: %w", key, err)
 		}
 	}
@@ -200,7 +227,10 @@ func reconcileTdarrLibraryVariables(ctx context.Context, tc *tdarrclient.Client,
 		if id == "" {
 			continue
 		}
-		if err := tc.Remove(ctx, variablesCollection, id); err != nil {
+		err := s.apply(variablesCollection, lib.ID+"/"+key, func() error {
+			return s.tc.Remove(ctx, variablesCollection, id)
+		})
+		if err != nil {
 			return fmt.Errorf("removing variable %s: %w", key, err)
 		}
 	}
@@ -297,7 +327,7 @@ func buildTdarrLibraryDoc(lib transcodev1alpha1.TdarrLibrary) map[string]any {
 	return obj
 }
 
-func reconcileTdarrFlow(ctx context.Context, tc *tdarrclient.Client, flow transcodev1alpha1.TdarrFlow) error {
+func (s *tdarrSync) flow(ctx context.Context, flow transcodev1alpha1.TdarrFlow) error {
 	obj := map[string]any{
 		"_id":  flow.ID,
 		"name": flow.Name,
@@ -318,19 +348,19 @@ func reconcileTdarrFlow(ctx context.Context, tc *tdarrclient.Client, flow transc
 	}
 	obj["flowEdges"] = edges
 
-	return upsertTdarrDoc(ctx, tc, "FlowsJSONDB", flow.ID, obj)
+	return s.upsertDoc(ctx, "FlowsJSONDB", flow.ID, obj)
 }
 
-// upsertTdarrDoc writes a library or flow only when Tdarr's stored document
-// does not already hold every declared value. Updating on every pass rewrote
-// each library and flow every few minutes, and Tdarr rescans on a library save.
-func upsertTdarrDoc(ctx context.Context, tc *tdarrclient.Client, collection, id string, obj map[string]any) error {
-	existing, err := tc.GetByID(ctx, collection, id)
+// upsertDoc writes a library or flow only when Tdarr's stored document does not
+// already hold every declared value. Updating on every pass rewrote each library
+// and flow every few minutes, and Tdarr rescans on a library save.
+func (s *tdarrSync) upsertDoc(ctx context.Context, collection, id string, obj map[string]any) error {
+	existing, err := s.tc.GetByID(ctx, collection, id)
 	if err != nil {
 		return fmt.Errorf("looking up %s/%s: %w", collection, id, err)
 	}
 	if len(existing) == 0 {
-		return tc.Insert(ctx, collection, id, obj)
+		return s.apply(collection, id, func() error { return s.tc.Insert(ctx, collection, id, obj) })
 	}
 	// Compare in JSON terms: the stored document decodes to float64s and []any.
 	raw, err := json.Marshal(obj)
@@ -344,8 +374,7 @@ func upsertTdarrDoc(ctx context.Context, tc *tdarrclient.Client, collection, id 
 	if reconciler.Covers(existing, desired) {
 		return nil
 	}
-	metrics.DriftCorrectedTotal.WithLabelValues("tdarr", collection, id).Inc()
-	return tc.Update(ctx, collection, id, obj)
+	return s.apply(collection, id, func() error { return s.tc.Update(ctx, collection, id, obj) })
 }
 
 // decodeRawList turns a list of raw JSON nodes into plain values. Tdarr stores
@@ -362,8 +391,8 @@ func decodeRawList(items []runtime.RawExtension) ([]any, error) {
 	return out, nil
 }
 
-func reconcileTdarrWorkers(ctx context.Context, tc *tdarrclient.Client, workers *transcodev1alpha1.TdarrWorkers) error {
-	nodes, err := tc.GetNodes(ctx)
+func (s *tdarrSync) workers(ctx context.Context, workers *transcodev1alpha1.TdarrWorkers) error {
+	nodes, err := s.tc.GetNodes(ctx)
 	if err != nil {
 		return fmt.Errorf("getting nodes: %w", err)
 	}
@@ -393,7 +422,7 @@ func reconcileTdarrWorkers(ctx context.Context, tc *tdarrclient.Client, workers 
 		if wl.limit == nil {
 			continue
 		}
-		if err := convergeWorkerLimit(ctx, tc, nodeID, wl.workerType, current[wl.workerType], *wl.limit); err != nil {
+		if err := s.convergeWorkerLimit(ctx, nodeID, wl.workerType, current[wl.workerType], *wl.limit); err != nil {
 			return fmt.Errorf("setting %s limit: %w", wl.workerType, err)
 		}
 	}
@@ -423,7 +452,7 @@ func currentWorkerLimits(node any) map[string]int {
 
 // convergeWorkerLimit steps a worker count toward target. Tdarr's endpoint only
 // increases or decreases by one, so reaching a target takes repeated calls.
-func convergeWorkerLimit(ctx context.Context, tc *tdarrclient.Client, nodeID, workerType string, current, target int) error {
+func (s *tdarrSync) convergeWorkerLimit(ctx context.Context, nodeID, workerType string, current, target int) error {
 	if target < 0 {
 		return fmt.Errorf("negative worker count %d", target)
 	}
@@ -432,12 +461,17 @@ func convergeWorkerLimit(ctx context.Context, tc *tdarrclient.Client, nodeID, wo
 	if steps < 0 {
 		process, steps = "decrease", -steps
 	}
-	for range steps {
-		if err := tc.StepWorkerLimit(ctx, nodeID, workerType, process); err != nil {
-			return err
-		}
+	if steps == 0 {
+		return nil
 	}
-	return nil
+	return s.apply("workers", workerType, func() error {
+		for range steps {
+			if err := s.tc.StepWorkerLimit(ctx, nodeID, workerType, process); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // SetupWithManager sets up the controller with the Manager.

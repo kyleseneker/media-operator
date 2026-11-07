@@ -391,20 +391,54 @@ func TestLibraryDocHealthCheckMode(t *testing.T) {
 	assert.Equal(t, false, got["ffmpegscan"], "quick must select handbrakescan")
 }
 
-func TestTdarrObserveRejectedBeforeApplicationAccess(t *testing.T) {
-	scheme := runtime.NewScheme()
-	require.NoError(t, transcodev1alpha1.AddToScheme(scheme))
-	policy := "observe"
-	cfg := &transcodev1alpha1.TdarrConfig{Name: "observe", Namespace: "media"}
-	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &policy}
-	// No URL or Secrets: rejection must happen before application access or authentication.
-	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(cfg).WithObjects(cfg).Build()
-	r := &TdarrConfigReconciler{Client: c, Scheme: scheme}
-	key := types.NamespacedName{Namespace: cfg.Namespace, Name: cfg.Name}
-	_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
+func observedTdarr(url string, lib transcodev1alpha1.TdarrLibrary) *transcodev1alpha1.TdarrConfig {
+	cfg := tdarrConfig(url)
+	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: new("observe")}
+	cfg.Spec.Libraries = []transcodev1alpha1.TdarrLibrary{lib}
+	return cfg
+}
+
+func tdarrSynced(t *testing.T, c client.Client) metav1.Condition {
+	t.Helper()
+	var cfg transcodev1alpha1.TdarrConfig
+	require.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "tdarr", Namespace: "media"}, &cfg))
+	i := slices.IndexFunc(cfg.Status.Conditions, func(c metav1.Condition) bool { return c.Type == "Synced" })
+	require.GreaterOrEqual(t, i, 0, "no Synced condition")
+	return cfg.Status.Conditions[i]
+}
+
+// A missing library and its variable are drift; observe mode reads them
+// through cruddb but never inserts.
+func TestTdarrObserveReportsMissingLibraryWithoutWriting(t *testing.T) {
+	app := &fakeTdarr{docFound: false}
+	lib := transcodev1alpha1.TdarrLibrary{
+		ID: "lib1", Name: "Movies", Folder: "/media/movies", Variables: map[string]string{"codec": "hevc"},
+	}
+	c := runTdarr(t, observedTdarr(app.serve(t), lib), true)
+
+	require.True(t, app.ranOp("getById"), "observe never read the library")
+	for _, op := range []string{"insert", "update", "removeOne"} {
+		assert.False(t, app.ranOp(op), "observe mode ran %s", op)
+	}
+	assert.Equal(t, "DriftDetected", tdarrSynced(t, c).Reason)
+}
+
+func TestTdarrObserveMatchesAStoredLibrary(t *testing.T) {
+	lib := transcodev1alpha1.TdarrLibrary{ID: "lib1", Name: "Movies", Folder: "/media/movies"}
+	app := &fakeTdarr{docFound: true, stored: mustJSONObject(t, buildTdarrLibraryDoc(lib))}
+	c := runTdarr(t, observedTdarr(app.serve(t), lib), true)
+
+	assert.False(t, app.ranOp("update"))
+	synced := tdarrSynced(t, c)
+	assert.Equal(t, metav1.ConditionTrue, synced.Status, synced.Message)
+	assert.Equal(t, "Observed", synced.Reason)
+}
+
+func mustJSONObject(t *testing.T, v any) map[string]any {
+	t.Helper()
+	raw, err := json.Marshal(v)
 	require.NoError(t, err)
-	require.NoError(t, c.Get(context.Background(), key, cfg))
-	require.True(t, slices.ContainsFunc(cfg.Status.Conditions, func(condition metav1.Condition) bool {
-		return condition.Type == "Synced" && condition.Reason == "InvalidConfig" && condition.Status == metav1.ConditionFalse
-	}), "expected explicit unsupported-policy status, got %+v", cfg.Status.Conditions)
+	var out map[string]any
+	require.NoError(t, json.Unmarshal(raw, &out))
+	return out
 }
