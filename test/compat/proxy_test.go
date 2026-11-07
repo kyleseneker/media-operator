@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // request is one call the operator made to an application. Before holds the
@@ -120,9 +122,7 @@ type recordingProxy struct {
 func newRecordingProxy(t *testing.T, target string) *recordingProxy {
 	t.Helper()
 	upstream, err := url.Parse(target)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	p := &recordingProxy{}
 	forward := httputil.NewSingleHostReverseProxy(upstream)
 	p.server = serveOnHostIP(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -190,9 +190,7 @@ func (p *recordingProxy) writes(read isRead) []request {
 func serveOnHostIP(t *testing.T, handler http.Handler) *httptest.Server {
 	t.Helper()
 	ln, err := net.Listen("tcp", net.JoinHostPort(hostIP, "0"))
-	if err != nil {
-		t.Fatalf("listening on %s: %v", hostIP, err)
-	}
+	require.NoError(t, err, "listening on %s", hostIP)
 	srv := httptest.NewUnstartedServer(handler)
 	_ = srv.Listener.Close()
 	srv.Listener = ln

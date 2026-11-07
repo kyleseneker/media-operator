@@ -8,6 +8,9 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -40,20 +43,13 @@ func TestQBittorrent(t *testing.T) {
 		verify: func(t *testing.T) {
 			hc := qbittorrentClient(t, qbit.url(), password)
 			prefs, err := hc.GetJSON(context.Background(), "/api/v2/app/preferences")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if prefs["max_ratio"] != 2.5 || prefs["dht"] != false || prefs["save_path"] != "/downloads/complete" {
-				t.Errorf("preferences did not reach qBittorrent: max_ratio=%v dht=%v save_path=%v",
-					prefs["max_ratio"], prefs["dht"], prefs["save_path"])
-			}
+			require.NoError(t, err)
+			assert.Equal(t, 2.5, prefs["max_ratio"])
+			assert.Equal(t, false, prefs["dht"])
+			assert.Equal(t, "/downloads/complete", prefs["save_path"])
 			categories, err := hc.GetJSON(context.Background(), "/api/v2/torrents/categories")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, ok := categories["movies"]; !ok {
-				t.Errorf("categories = %v", categories)
-			}
+			require.NoError(t, err)
+			assert.Contains(t, categories, "movies")
 		},
 	})
 }
@@ -62,13 +58,10 @@ func TestQBittorrent(t *testing.T) {
 func qbittorrentClient(t *testing.T, base, password string) *engine.HTTPClient {
 	t.Helper()
 	hc, err := engine.NewHTTPClient(base, engine.AuthNone, engine.WithAppLabel("compat"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := hc.DoForm(context.Background(), "/api/v2/auth/login",
-		url.Values{"username": {qbittorrentUser}, "password": {password}}); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+	_, err = hc.DoForm(context.Background(), "/api/v2/auth/login",
+		url.Values{"username": {qbittorrentUser}, "password": {password}})
+	require.NoError(t, err)
 	name, value := hc.CookieValuePrefix("QBT_SID_")
 	if value == "" {
 		name, value = "SID", hc.CookieValue("SID")

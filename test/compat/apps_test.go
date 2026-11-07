@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/kyleseneker/media-operator/internal/engine"
 )
 
@@ -41,9 +43,7 @@ func withEnv(base map[string]string, extra map[string]string) map[string]string 
 func directClient(t *testing.T, base, apiKey string) *engine.HTTPClient {
 	t.Helper()
 	hc, err := engine.NewHTTPClient(base, engine.AuthAPIKey, engine.WithAPIKey(apiKey), engine.WithAppLabel("compat"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return hc
 }
 
@@ -74,9 +74,7 @@ func startQBittorrent(t *testing.T) (*container, string) {
 	salt := make([]byte, 16)
 	_, _ = rand.Read(salt)
 	hash, err := pbkdf2.Key(sha512.New, password, salt, 100000, 64)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	conf := fmt.Sprintf(`[LegalNotice]
 Accepted=true
 

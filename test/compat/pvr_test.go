@@ -7,6 +7,9 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -42,23 +45,16 @@ func TestSonarr(t *testing.T) {
 		verify: func(t *testing.T) {
 			hc := directClient(t, sonarr.url(), key)
 			naming, err := hc.GetJSON(context.Background(), "/api/v3/config/naming")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if naming["seasonFolderFormat"] != "Season {season:00}" {
-				t.Errorf("seasonFolderFormat = %v", naming["seasonFolderFormat"])
-			}
+			require.NoError(t, err)
+			assert.Equal(t, "Season {season:00}", naming["seasonFolderFormat"])
 			requireNamed(t, hc, "/api/v3/downloadclient", "qBittorrent")
 			requireNamed(t, hc, "/api/v3/indexer", "Compat Torznab")
 			requireNamed(t, hc, "/api/v3/qualityprofile", "HD-1080p")
 			requireNamed(t, hc, "/api/v3/notification", "Compat Webhook")
 			lists, err := hc.GetJSONList(context.Background(), "/api/v3/importlist")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(lists) != 1 || lists[0]["shouldMonitor"] != "all" {
-				t.Errorf("import list monitor did not reach Sonarr: %v", lists)
-			}
+			require.NoError(t, err)
+			require.Len(t, lists, 1)
+			assert.Equal(t, "all", lists[0]["shouldMonitor"], "import list monitor did not reach Sonarr")
 		},
 	})
 }
@@ -89,23 +85,17 @@ func TestRadarr(t *testing.T) {
 		verify: func(t *testing.T) {
 			hc := directClient(t, radarr.url(), key)
 			naming, err := hc.GetJSON(context.Background(), "/api/v3/config/naming")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if naming["colonReplacementFormat"] != "smart" {
-				t.Errorf("colonReplacementFormat = %v", naming["colonReplacementFormat"])
-			}
+			require.NoError(t, err)
+			assert.Equal(t, "smart", naming["colonReplacementFormat"])
 			requireNamed(t, hc, "/api/v3/downloadclient", "qBittorrent")
 			requireNamed(t, hc, "/api/v3/indexer", "Compat Torznab")
 			requireNamed(t, hc, "/api/v3/qualityprofile", "HD-1080p")
 			requireNamed(t, hc, "/api/v3/notification", "Compat Webhook")
 			lists, err := hc.GetJSONList(context.Background(), "/api/v3/importlist")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(lists) != 1 || lists[0]["monitor"] != "movieOnly" || lists[0]["enabled"] != true {
-				t.Errorf("import list monitor/enabled did not reach Radarr: %v", lists)
-			}
+			require.NoError(t, err)
+			require.Len(t, lists, 1)
+			assert.Equal(t, "movieOnly", lists[0]["monitor"], "import list monitor did not reach Radarr")
+			assert.Equal(t, true, lists[0]["enabled"], "import list enabled did not reach Radarr")
 		},
 	})
 }
@@ -140,12 +130,9 @@ func TestLidarr(t *testing.T) {
 			requireNamed(t, hc, "/api/v1/qualityprofile", "Music")
 			requireNamed(t, hc, "/api/v1/notification", "Compat Webhook")
 			lists, err := hc.GetJSONList(context.Background(), "/api/v1/importlist")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(lists) != 1 || lists[0]["shouldMonitor"] != "entireArtist" {
-				t.Errorf("import list monitor did not reach Lidarr: %v", lists)
-			}
+			require.NoError(t, err)
+			require.Len(t, lists, 1)
+			assert.Equal(t, "entireArtist", lists[0]["shouldMonitor"], "import list monitor did not reach Lidarr")
 		},
 	})
 }
@@ -182,13 +169,10 @@ func requireNamed(t *testing.T, hc interface {
 }, path, name string) {
 	t.Helper()
 	items, err := hc.GetJSONList(context.Background(), path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+	names := make([]any, 0, len(items))
 	for _, item := range items {
-		if item["name"] == name {
-			return
-		}
+		names = append(names, item["name"])
 	}
-	t.Errorf("%s has no %q", path, name)
+	assert.Contains(t, names, name, "%s has no %q", path, name)
 }

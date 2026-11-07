@@ -19,6 +19,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/go-logr/logr/testr"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -138,20 +141,14 @@ func checkCompat(t *testing.T, tc compatCase) {
 	}
 
 	ns := &corev1.Namespace{GenerateName: "compat-"}
-	if err := k8s.Create(ctx, ns); err != nil {
-		t.Fatalf("creating namespace: %v", err)
-	}
+	require.NoError(t, k8s.Create(ctx, ns), "creating namespace")
 	secret := &corev1.Secret{Name: "compat-credentials", Namespace: ns.Name, StringData: tc.secrets}
-	if err := k8s.Create(ctx, secret); err != nil {
-		t.Fatalf("creating secret: %v", err)
-	}
+	require.NoError(t, k8s.Create(ctx, secret), "creating secret")
 
 	obj := tc.newObj()
 	loadFixture(t, tc.fixture, tc.vars, obj)
 	obj.SetNamespace(ns.Name)
-	if err := k8s.Create(ctx, obj); err != nil {
-		t.Fatalf("creating %s: %v", tc.fixture, err)
-	}
+	require.NoError(t, k8s.Create(ctx, obj), "creating %s", tc.fixture)
 	r := tc.reconciler(k8s)
 	key := types.NamespacedName{Namespace: ns.Name, Name: obj.GetName()}
 
@@ -166,23 +163,19 @@ func checkCompat(t *testing.T, tc compatCase) {
 
 	tc.proxy.reset()
 	requireSynced(t, reconcileUntilCurrent(t, r, key, tc.newObj), "second reconcile")
-	if writes := tc.proxy.writes(read); len(writes) > 0 {
-		t.Errorf("second reconcile wrote to the application; these settings do not read back as written:\n%s",
-			formatRequests(writes))
-	}
+	writes := tc.proxy.writes(read)
+	assert.Empty(t, writes, "second reconcile wrote to the application; these settings do not read back as written:\n%s",
+		formatRequests(writes))
 
 	if !tc.observe {
 		return
 	}
 	patch := client.RawPatch(types.MergePatchType, []byte(`{"spec":{"reconcile":{"driftPolicy":"observe"}}}`))
-	if err := k8s.Patch(ctx, synced, patch); err != nil {
-		t.Fatalf("switching to observe: %v", err)
-	}
+	require.NoError(t, k8s.Patch(ctx, synced, patch), "switching to observe")
 	tc.proxy.reset()
 	requireSynced(t, reconcileUntilCurrent(t, r, key, tc.newObj), "observe reconcile")
-	if writes := tc.proxy.writes(read); len(writes) > 0 {
-		t.Errorf("observe mode wrote to the application:\n%s", formatRequests(writes))
-	}
+	writes = tc.proxy.writes(read)
+	assert.Empty(t, writes, "observe mode wrote to the application:\n%s", formatRequests(writes))
 }
 
 // reconcileUntilCurrent reconciles until status describes the current generation;
@@ -195,18 +188,15 @@ func reconcileUntilCurrent(
 	// conditions omit because an application may echo credentials back.
 	ctx := logf.IntoContext(context.Background(), testr.NewWithOptions(t, testr.Options{Verbosity: 1}))
 	for range 5 {
-		if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: key}); err != nil {
-			t.Fatalf("reconcile: %v", err)
-		}
+		_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: key})
+		require.NoError(t, err, "reconcile")
 		obj := newObj()
-		if err := k8s.Get(ctx, key, obj); err != nil {
-			t.Fatalf("reading %s: %v", key, err)
-		}
+		require.NoError(t, k8s.Get(ctx, key, obj), "reading %s", key)
 		if observed := obj.GetObservedGeneration(); observed != nil && *observed == obj.GetGeneration() {
 			return obj
 		}
 	}
-	t.Fatalf("status never reached generation for %s", key)
+	require.FailNow(t, "status never reached the current generation", "%s", key)
 	return nil
 }
 
@@ -225,20 +215,16 @@ func requireSynced(t *testing.T, obj ctrlcommon.ConfigResource, stage string) {
 		if c.Type != engine.ConditionSynced {
 			continue
 		}
-		if c.Status != metav1.ConditionTrue {
-			t.Fatalf("%s: Synced=%s (%s): %s", stage, c.Status, c.Reason, c.Message)
-		}
+		require.Equal(t, metav1.ConditionTrue, c.Status, "%s: Synced=%s (%s): %s", stage, c.Status, c.Reason, c.Message)
 		return
 	}
-	t.Fatalf("%s: no Synced condition", stage)
+	require.FailNow(t, "no Synced condition", stage)
 }
 
 func loadFixture(t *testing.T, name string, vars map[string]string, into client.Object) {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join("testdata", name))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	missing := map[string]bool{}
 	expanded := os.Expand(string(raw), func(key string) string {
 		value, ok := vars[key]
@@ -247,12 +233,8 @@ func loadFixture(t *testing.T, name string, vars map[string]string, into client.
 		}
 		return value
 	})
-	if len(missing) > 0 {
-		t.Fatalf("%s references unset variables: %v", name, missing)
-	}
-	if err := yaml.UnmarshalStrict([]byte(expanded), into); err != nil {
-		t.Fatalf("decoding %s: %v", name, err)
-	}
+	require.Empty(t, missing, "%s references unset variables", name)
+	require.NoError(t, yaml.UnmarshalStrict([]byte(expanded), into), "decoding %s", name)
 }
 
 func formatRequests(rs []request) string {
@@ -274,5 +256,5 @@ func waitFor(t *testing.T, what string, timeout time.Duration, ready func() erro
 		}
 		time.Sleep(time.Second)
 	}
-	t.Fatalf("%s not ready after %s: %v", what, timeout, err)
+	require.NoError(t, err, "%s not ready after %s", what, timeout)
 }

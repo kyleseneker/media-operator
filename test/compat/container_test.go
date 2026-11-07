@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 // containerSpec describes one application container. Files are copied in before
@@ -62,9 +64,7 @@ func startContainer(t *testing.T, spec containerSpec) *container {
 	}
 	args = append(append(args, spec.image), spec.args...)
 	id, err := runTool(args...)
-	if err != nil {
-		t.Fatalf("creating %s: %v", spec.name, err)
-	}
+	require.NoError(t, err, "creating %s", spec.name)
 	t.Cleanup(func() {
 		if t.Failed() {
 			if logs, err := runTool("logs", "--tail", "80", id); err == nil {
@@ -82,34 +82,22 @@ func startContainer(t *testing.T, spec containerSpec) *container {
 		root := t.TempDir()
 		for path, content := range spec.files {
 			local := filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(path, "/")))
-			if err := os.MkdirAll(filepath.Dir(local), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(local, []byte(content), 0o644); err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, os.MkdirAll(filepath.Dir(local), 0o755))
+			require.NoError(t, os.WriteFile(local, []byte(content), 0o644))
 		}
-		if _, err := runTool("cp", root+"/.", id+":/"); err != nil {
-			t.Fatalf("seeding %s: %v", spec.name, err)
-		}
+		_, err := runTool("cp", root+"/.", id+":/")
+		require.NoError(t, err, "seeding %s", spec.name)
 	}
-	if _, err := runTool("start", id); err != nil {
-		t.Fatalf("starting %s: %v", spec.name, err)
-	}
+	_, err = runTool("start", id)
+	require.NoError(t, err, "starting %s", spec.name)
 
 	mapping, err := runTool("port", id, strconv.Itoa(spec.port))
-	if err != nil {
-		t.Fatalf("reading %s port: %v", spec.name, err)
-	}
+	require.NoError(t, err, "reading %s port", spec.name)
 	// "0.0.0.0:49153", possibly followed by an IPv6 line.
 	_, hostPort, err := net.SplitHostPort(strings.Fields(mapping)[0])
-	if err != nil {
-		t.Fatalf("parsing %s port mapping %q: %v", spec.name, mapping, err)
-	}
+	require.NoError(t, err, "parsing %s port mapping %q", spec.name, mapping)
 	port, err := strconv.Atoi(hostPort)
-	if err != nil {
-		t.Fatalf("parsing %s port %q: %v", spec.name, hostPort, err)
-	}
+	require.NoError(t, err, "parsing %s port %q", spec.name, hostPort)
 	return &container{id: id, port: port}
 }
 
@@ -117,9 +105,7 @@ func startContainer(t *testing.T, spec containerSpec) *container {
 func (c *container) exec(t *testing.T, script string) string {
 	t.Helper()
 	out, err := runTool("exec", c.id, "sh", "-c", script)
-	if err != nil {
-		t.Fatalf("exec %q: %v", script, err)
-	}
+	require.NoError(t, err, "exec %q", script)
 	return out
 }
 
