@@ -24,6 +24,16 @@
       "matchStrings": [
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\S+ \\?= (?<currentValue>\\S+)"
       ]
+    },
+    {
+      "customType": "regex",
+      "description": "Application images the compat suite runs against",
+      "managerFilePatterns": [
+        "/^test/compat/images_test\\.go$/"
+      ],
+      "matchStrings": [
+        "// renovate: datasource=(?<datasource>\\S+)\\n\\s*\\w+Image\\s*=\\s*\"(?<depName>[^:\"]+):(?<currentValue>[^\"]+)\""
+      ]
     }
   ],
   "packageRules": [
@@ -60,6 +70,47 @@
       "prBodyNotes": [
         "Run `make manifests generate sync-crds` on this branch and commit the result before merging; `make verify-crds` fails otherwise."
       ]
+    },
+    {
+      "description": "Compat images are pinned by tag, one PR per app so a failing suite names the app that broke",
+      "matchFileNames": [
+        "test/compat/images_test.go"
+      ],
+      "pinDigests": false,
+      "prBodyNotes": [
+        "Update the tested versions in the README compatibility table to match."
+      ]
+    },
+    {
+      "description": "linuxserver tags are <app version>-ls<build>; a new ls build is a revision, not a new compatibility line",
+      "matchFileNames": [
+        "test/compat/images_test.go"
+      ],
+      "matchPackageNames": [
+        "/^lscr\\.io\\/linuxserver\\//",
+        "!lscr.io/linuxserver/qbittorrent"
+      ],
+      "versioning": "regex:^(?<compatibility>[a-z]+-)?v?(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)(?:\\.(?<build>\\d+))?-ls(?<revision>\\d+)$"
+    },
+    {
+      "description": "linuxserver qBittorrent tags also name the libtorrent line, which must not change underneath the suite",
+      "matchFileNames": [
+        "test/compat/images_test.go"
+      ],
+      "matchPackageNames": [
+        "lscr.io/linuxserver/qbittorrent"
+      ],
+      "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)_v(?<compatibility>\\d+)\\.\\d+\\.\\d+-ls(?<revision>\\d+)$"
+    },
+    {
+      "description": "Plex tags end in a build hash",
+      "matchFileNames": [
+        "test/compat/images_test.go"
+      ],
+      "matchPackageNames": [
+        "docker.io/plexinc/pms-docker"
+      ],
+      "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)\\.(?<build>\\d+)-[0-9a-f]+$"
     }
   ]
 }
