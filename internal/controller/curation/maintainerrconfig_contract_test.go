@@ -9,17 +9,14 @@ import (
 	"github.com/kyleseneker/media-operator/internal/controller/internal/contract"
 )
 
-// Maintainerr answers 2xx for settings keys it does not use, so a spec field the
-// builder never maps is silently inert.
-func TestMaintainerrSettingsFieldsAllReachThePayload(t *testing.T) {
-	contract.AssertEveryFieldEmitted(t, &curationv1alpha1.MaintainerrSettings{},
-		func(s *curationv1alpha1.MaintainerrSettings) map[string]any {
-			return buildMaintainerrSettings(s)
-		})
+// Maintainerr strips settings keys it does not know without an error, so a spec
+// field the builder never maps is silently inert.
+func TestMaintainerrJobsFieldsAllReachThePayload(t *testing.T) {
+	contract.AssertEveryFieldEmitted(t, &curationv1alpha1.MaintainerrJobs{}, buildMaintainerrJobs)
 }
 
 // An empty spec must produce no payload, so the reconcile skips the write entirely
-// rather than clearing settings the CR does not manage.
-func TestMaintainerrEmptySettingsProduceNoPayload(t *testing.T) {
-	assert.Empty(t, buildMaintainerrSettings(&curationv1alpha1.MaintainerrSettings{}), "empty settings produced a payload")
+// rather than clearing schedules the CR does not manage.
+func TestMaintainerrEmptyJobsProduceNoPayload(t *testing.T) {
+	assert.Empty(t, buildMaintainerrJobs(&curationv1alpha1.MaintainerrJobs{}), "empty jobs produced a payload")
 }

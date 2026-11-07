@@ -3,6 +3,7 @@ package curation
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -15,11 +16,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	curationv1alpha1 "github.com/kyleseneker/media-operator/api/curation/v1alpha1"
 	maintainerrclient "github.com/kyleseneker/media-operator/internal/client/maintainerr"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/engine"
+	"github.com/kyleseneker/media-operator/internal/metrics"
 	"github.com/kyleseneker/media-operator/internal/reconciler"
+)
+
+const (
+	maintainerrApp = "maintainerr"
+	mediaPlex      = "plex"
+	mediaJellyfin  = "jellyfin"
 )
 
 // MaintainerrConfigReconciler reconciles a MaintainerrConfig object.
@@ -50,84 +59,28 @@ func (r *MaintainerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
 
-	// Resolve API key
-	apiKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.APIKeySecretRef)
-	if err != nil {
-		logger.Error(err, "failed to resolve API key secret")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-	}
-
 	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
 	if err != nil {
 		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonSecretNotFound, err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
-	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthAPIKey, engine.WithAPIKey(apiKey), engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("maintainerr"))
+	// Maintainerr has no API authentication.
+	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthNone,
+		engine.WithTLSConfig(tlsCfg), engine.WithAppLabel(maintainerrApp))
 	if err != nil {
 		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonInvalidConfig, err.Error())
 		return ctrl.Result{}, nil
 	}
 	mc := maintainerrclient.NewClient(hc)
 
-	// Health check
 	if err := mc.Ping(ctx); err != nil {
 		logger.Error(err, "Maintainerr unreachable")
 		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonAppUnreachable, err.Error())
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
-	var syncErrors []string
-
-	// Reconcile Plex connection
-	if config.Spec.PlexConnection != nil {
-		if err := reconcileMaintainerrPlex(ctx, r.Client, mc, config.Namespace, config.Spec.PlexConnection); err != nil {
-			logger.Error(err, "failed to reconcile Plex connection")
-			syncErrors = append(syncErrors, fmt.Sprintf("plex: %v", err))
-		}
-	}
-
-	// Reconcile Sonarr connection
-	if config.Spec.SonarrConnection != nil {
-		if err := reconcileMaintainerrArr(ctx, r.Client, mc, config.Namespace, "sonarr", config.Spec.SonarrConnection); err != nil {
-			logger.Error(err, "failed to reconcile Sonarr connection")
-			syncErrors = append(syncErrors, fmt.Sprintf("sonarr: %v", err))
-		}
-	}
-
-	// Reconcile Radarr connection
-	if config.Spec.RadarrConnection != nil {
-		if err := reconcileMaintainerrArr(ctx, r.Client, mc, config.Namespace, "radarr", config.Spec.RadarrConnection); err != nil {
-			logger.Error(err, "failed to reconcile Radarr connection")
-			syncErrors = append(syncErrors, fmt.Sprintf("radarr: %v", err))
-		}
-	}
-
-	// Reconcile Overseerr connection
-	if config.Spec.OverseerrConnection != nil {
-		if err := reconcileMaintainerrArr(ctx, r.Client, mc, config.Namespace, "overseerr", config.Spec.OverseerrConnection); err != nil {
-			logger.Error(err, "failed to reconcile Overseerr connection")
-			syncErrors = append(syncErrors, fmt.Sprintf("overseerr: %v", err))
-		}
-	}
-
-	// Reconcile settings
-	if config.Spec.Settings != nil {
-		if err := reconcileMaintainerrSettings(ctx, mc, config.Spec.Settings); err != nil {
-			logger.Error(err, "failed to reconcile settings")
-			syncErrors = append(syncErrors, fmt.Sprintf("settings: %v", err))
-		}
-	}
-
-	// Reconcile rules
-	for _, rule := range config.Spec.Rules {
-		if err := reconcileMaintainerrRule(ctx, mc, rule); err != nil {
-			logger.Error(err, "failed to reconcile rule", "name", rule.Name)
-			syncErrors = append(syncErrors, fmt.Sprintf("rule(%s): %v", rule.Name, err))
-		}
-	}
-
+	syncErrors := (&maintainerrSync{c: r.Client, mc: mc, namespace: config.Namespace}).run(ctx, &config.Spec)
 	if len(syncErrors) > 0 {
 		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync failure: %v", syncErrors))
 	} else {
@@ -137,122 +90,319 @@ func (r *MaintainerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
 
-func reconcileMaintainerrPlex(ctx context.Context, c client.Reader, mc *maintainerrclient.Client, namespace string, plex *curationv1alpha1.MaintainerrPlexConnection) error {
-	token, err := reconciler.ResolveSecretKeyRef(ctx, c, namespace, plex.TokenSecretRef)
+// maintainerrSync applies one MaintainerrConfig in dependency order: the media
+// server and the Sonarr and Radarr servers before the rule groups that refer to
+// them, since Maintainerr resolves rule properties only for configured apps.
+type maintainerrSync struct {
+	c         client.Reader
+	mc        *maintainerrclient.Client
+	namespace string
+}
+
+func (s *maintainerrSync) run(ctx context.Context, spec *curationv1alpha1.MaintainerrConfigSpec) []string {
+	logger := log.FromContext(ctx)
+	var syncErrors []string
+	fail := func(section string, err error) {
+		logger.Error(err, "failed to reconcile", "section", section)
+		syncErrors = append(syncErrors, fmt.Sprintf("%s: %v", section, err))
+	}
+
+	settings, err := s.mc.GetSettings(ctx)
+	if err != nil {
+		fail("settings", fmt.Errorf("reading settings: %w", err))
+		return syncErrors
+	}
+
+	if spec.MediaServer != nil {
+		if err := s.mediaServer(ctx, spec.MediaServer, settings); err != nil {
+			fail("mediaServer", err)
+		}
+	}
+
+	servers := map[maintainerrclient.Arr]map[string]int{}
+	for _, arr := range []struct {
+		kind     maintainerrclient.Arr
+		declared []curationv1alpha1.MaintainerrArrServer
+	}{{maintainerrclient.Sonarr, spec.Sonarr}, {maintainerrclient.Radarr, spec.Radarr}} {
+		ids, err := s.arrServers(ctx, arr.kind, arr.declared)
+		if err != nil {
+			fail(string(arr.kind), err)
+		}
+		servers[arr.kind] = ids
+	}
+
+	for _, svc := range []struct {
+		name maintainerrclient.Service
+		conn *curationv1alpha1.MaintainerrServiceConnection
+	}{{maintainerrclient.Seerr, spec.Seerr}, {maintainerrclient.Tautulli, spec.Tautulli}} {
+		if svc.conn == nil {
+			continue
+		}
+		if err := s.service(ctx, svc.name, svc.conn); err != nil {
+			fail(string(svc.name), err)
+		}
+	}
+
+	if spec.Jobs != nil {
+		if err := s.jobs(ctx, spec.Jobs, settings); err != nil {
+			fail("jobs", err)
+		}
+	}
+
+	if len(spec.RuleGroups) > 0 {
+		syncErrors = append(syncErrors, s.ruleGroups(ctx, spec.RuleGroups, servers)...)
+	}
+	return syncErrors
+}
+
+// mediaServer sets the media server on a fresh Maintainerr and keeps its
+// connection current. It never changes a media server that is already set:
+// Maintainerr deletes every collection when it switches.
+func (s *maintainerrSync) mediaServer(ctx context.Context, ms *curationv1alpha1.MaintainerrMediaServer, settings map[string]any) error {
+	want := mediaPlex
+	if ms.Jellyfin != nil {
+		want = mediaJellyfin
+	}
+	current, _ := settings["media_server_type"].(string)
+	if current != "" && current != want {
+		return fmt.Errorf("maintainerr uses %s; switching it to %s deletes every collection, "+
+			"so the operator leaves that to Maintainerr's settings page", current, want)
+	}
+	if ms.Jellyfin != nil {
+		return s.jellyfin(ctx, ms.Jellyfin)
+	}
+	return s.plex(ctx, ms.Plex, settings, current == "")
+}
+
+func (s *maintainerrSync) jellyfin(ctx context.Context, jf *curationv1alpha1.MaintainerrJellyfin) error {
+	key, err := reconciler.ResolveSecretKeyRef(ctx, s.c, s.namespace, jf.APIKeySecretRef)
+	if err != nil {
+		return fmt.Errorf("resolving Jellyfin API key: %w", err)
+	}
+	stored, err := s.mc.GetJellyfin(ctx)
+	if err != nil {
+		return fmt.Errorf("reading Jellyfin connection: %w", err)
+	}
+	url := serviceURL(jf.URL)
+	if stored["jellyfin_url"] == url && stored["jellyfin_api_key"] == key &&
+		(jf.UserID == "" || stored["jellyfin_user_id"] == jf.UserID) {
+		return nil
+	}
+	conn := map[string]any{"jellyfin_url": url, "jellyfin_api_key": key}
+	if jf.UserID != "" {
+		conn["jellyfin_user_id"] = jf.UserID
+	}
+	metrics.DriftCorrectedTotal.WithLabelValues(maintainerrApp, "mediaServer", mediaJellyfin).Inc()
+	return s.mc.SaveJellyfin(ctx, conn)
+}
+
+func (s *maintainerrSync) plex(ctx context.Context, plex *curationv1alpha1.MaintainerrPlex, settings map[string]any, fresh bool) error {
+	token, err := reconciler.ResolveSecretKeyRef(ctx, s.c, s.namespace, plex.TokenSecretRef)
 	if err != nil {
 		return fmt.Errorf("resolving Plex token: %w", err)
 	}
-
-	return mc.UpdatePlexSettings(ctx, map[string]any{
-		"url":   plex.URL,
-		"token": token,
-	})
-}
-
-func reconcileMaintainerrArr(ctx context.Context, c client.Reader, mc *maintainerrclient.Client, namespace, appType string, conn *curationv1alpha1.MaintainerrArrConnection) error {
-	apiKey, err := reconciler.ResolveSecretKeyRef(ctx, c, namespace, conn.APIKeySecretRef)
-	if err != nil {
-		return fmt.Errorf("resolving %s API key: %w", appType, err)
+	if fresh {
+		if err := s.mc.SetMediaServerType(ctx, mediaPlex); err != nil {
+			return fmt.Errorf("setting Plex as the media server: %w", err)
+		}
 	}
-
-	settings := map[string]any{
-		"url":    conn.URL,
-		"apiKey": apiKey,
+	// Maintainerr reads the token back masked only, and refuses server fields
+	// until a token is stored, so the token goes first.
+	if stored, _ := settings["plex_auth_token"].(string); stored != maskPlexToken(token) {
+		metrics.DriftCorrectedTotal.WithLabelValues(maintainerrApp, "mediaServer", "plexToken").Inc()
+		if err := s.mc.SavePlexToken(ctx, token); err != nil {
+			return fmt.Errorf("saving Plex token: %w", err)
+		}
 	}
-
-	switch appType {
-	case "sonarr":
-		return mc.UpdateSonarrSettings(ctx, settings)
-	case "radarr":
-		return mc.UpdateRadarrSettings(ctx, settings)
-	case "overseerr":
-		return mc.UpdateOverseerrSettings(ctx, settings)
-	default:
-		return fmt.Errorf("unknown app type: %s", appType)
-	}
-}
-
-func reconcileMaintainerrSettings(ctx context.Context, mc *maintainerrclient.Client, settings *curationv1alpha1.MaintainerrSettings) error {
-	obj := buildMaintainerrSettings(settings)
-	if len(obj) == 0 {
+	desired := plexFields(plex)
+	if reconciler.Covers(settings, mustJSON(desired)) {
 		return nil
 	}
-	return mc.UpdateSettings(ctx, obj)
+	metrics.DriftCorrectedTotal.WithLabelValues(maintainerrApp, "mediaServer", mediaPlex).Inc()
+	return s.mc.UpdateSettings(ctx, desired)
 }
 
-// buildMaintainerrSettings renders the settings payload Maintainerr stores.
-func buildMaintainerrSettings(settings *curationv1alpha1.MaintainerrSettings) map[string]any {
-	obj := make(map[string]any)
-	if settings.CollectionHandling != "" {
-		obj["collectionHandling"] = settings.CollectionHandling
+// plexFields renders the Plex server settings as Maintainerr stores them: a
+// lowercase host without a scheme, SSL forced on for port 443, and manual mode
+// on so Maintainerr does not swap in an address it discovers through plex.tv.
+func plexFields(plex *curationv1alpha1.MaintainerrPlex) map[string]any {
+	host := strings.ToLower(plex.Hostname)
+	host = strings.TrimPrefix(strings.TrimPrefix(host, "https://"), "http://")
+	port := plex.Port
+	if port == 0 {
+		port = 32400
 	}
-	if settings.DryRun != nil {
-		obj["dryRun"] = *settings.DryRun
+	ssl := 0
+	if (plex.SSL != nil && *plex.SSL) || port == 443 {
+		ssl = 1
 	}
-	return obj
+	return map[string]any{
+		"plex_hostname": host, "plex_port": port, "plex_ssl": ssl, "plex_manual_mode": 1,
+	}
 }
 
-func reconcileMaintainerrRule(ctx context.Context, mc *maintainerrclient.Client, rule curationv1alpha1.MaintainerrRule) error {
-	existing, err := mc.ListRules(ctx)
+// maskPlexToken reproduces how Maintainerr masks a secret on read: up to six
+// characters become "****", longer ones keep their first and last three.
+func maskPlexToken(token string) string {
+	switch {
+	case token == "":
+		return ""
+	case len(token) <= 6:
+		return "****"
+	}
+	return token[:3] + "..." + token[len(token)-3:]
+}
+
+// arrServers adds or updates the declared servers of a kind and returns every
+// server's id by name, for rule groups to refer to.
+func (s *maintainerrSync) arrServers(
+	ctx context.Context, kind maintainerrclient.Arr, declared []curationv1alpha1.MaintainerrArrServer,
+) (map[string]int, error) {
+	stored, err := s.mc.ListArr(ctx, kind)
 	if err != nil {
-		return fmt.Errorf("listing rules: %w", err)
+		return nil, fmt.Errorf("listing servers: %w", err)
 	}
-
-	obj := map[string]any{
-		"name":        rule.Name,
-		"enabled":     rule.Enable == nil || *rule.Enable,
-		"libraryName": rule.LibraryName,
-		"mediaType":   rule.MediaType,
-		"action":      rule.Action,
-	}
-	if rule.DeleteFromDisk != nil {
-		obj["deleteFromDisk"] = *rule.DeleteFromDisk
-	}
-
-	// Build conditions
-	if len(rule.Conditions) > 0 {
-		conditions := make([]map[string]any, 0, len(rule.Conditions))
-		for _, cond := range rule.Conditions {
-			conditions = append(conditions, map[string]any{
-				"field":    cond.Field,
-				"operator": cond.Operator,
-				"value":    cond.Value,
-			})
+	added := false
+	var errs []string
+	for _, server := range declared {
+		wasAdded, err := s.arrServer(ctx, kind, server, stored)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", server.Name, err))
 		}
-		obj["conditions"] = conditions
+		added = added || wasAdded
 	}
-
-	// Find existing by name
-	for _, e := range existing {
-		if name, _ := e["name"].(string); name == rule.Name {
-			id, ok := e["id"].(float64)
-			if !ok {
-				return fmt.Errorf("rule %q has no valid id", rule.Name)
-			}
-			obj["id"] = int(id)
-			return mc.UpdateRule(ctx, int(id), obj)
+	if added {
+		if stored, err = s.mc.ListArr(ctx, kind); err != nil {
+			return nil, fmt.Errorf("listing servers: %w", err)
 		}
 	}
+	ids := map[string]int{}
+	for _, e := range stored {
+		name, _ := e["serverName"].(string)
+		if id, ok := e["id"].(float64); ok {
+			ids[name] = int(id)
+		}
+	}
+	if len(errs) > 0 {
+		return ids, fmt.Errorf("%s", strings.Join(errs, "; "))
+	}
+	return ids, nil
+}
 
-	return mc.CreateRule(ctx, obj)
+func (s *maintainerrSync) arrServer(
+	ctx context.Context, kind maintainerrclient.Arr, server curationv1alpha1.MaintainerrArrServer, stored []map[string]any,
+) (bool, error) {
+	key, err := reconciler.ResolveSecretKeyRef(ctx, s.c, s.namespace, server.APIKeySecretRef)
+	if err != nil {
+		return false, fmt.Errorf("resolving API key: %w", err)
+	}
+	// Maintainerr lowercases the URL it stores.
+	desired := map[string]any{"serverName": server.Name, "url": strings.ToLower(serviceURL(server.URL)), "apiKey": key}
+	if server.TagExclusions != nil {
+		desired["tagExclusions"] = *server.TagExclusions
+	}
+	if server.ExclusionTag != "" {
+		desired["exclusionTag"] = server.ExclusionTag
+	}
+	if server.UntagOnUnexclude != nil {
+		desired["untagOnUnexclude"] = *server.UntagOnUnexclude
+	}
+
+	var match map[string]any
+	for _, e := range stored {
+		if e["serverName"] != server.Name {
+			continue
+		}
+		if match != nil {
+			return false, fmt.Errorf("maintainerr has more than one %s server named %q", kind, server.Name)
+		}
+		match = e
+	}
+	if match == nil {
+		return true, s.mc.AddArr(ctx, kind, desired)
+	}
+	if reconciler.Covers(match, mustJSON(desired)) {
+		return false, nil
+	}
+	id, ok := match["id"].(float64)
+	if !ok {
+		return false, fmt.Errorf("server %q has no valid id", server.Name)
+	}
+	metrics.DriftCorrectedTotal.WithLabelValues(maintainerrApp, string(kind), server.Name).Inc()
+	return false, s.mc.UpdateArr(ctx, kind, int(id), desired)
+}
+
+func (s *maintainerrSync) service(
+	ctx context.Context, svc maintainerrclient.Service, conn *curationv1alpha1.MaintainerrServiceConnection,
+) error {
+	key, err := reconciler.ResolveSecretKeyRef(ctx, s.c, s.namespace, conn.APIKeySecretRef)
+	if err != nil {
+		return fmt.Errorf("resolving API key: %w", err)
+	}
+	stored, err := s.mc.GetService(ctx, svc)
+	if err != nil {
+		return fmt.Errorf("reading connection: %w", err)
+	}
+	desired := map[string]any{"url": serviceURL(conn.URL), "api_key": key}
+	if reconciler.Covers(stored, mustJSON(desired)) {
+		return nil
+	}
+	metrics.DriftCorrectedTotal.WithLabelValues(maintainerrApp, string(svc), string(svc)).Inc()
+	return s.mc.SaveService(ctx, svc, desired)
+}
+
+func (s *maintainerrSync) jobs(ctx context.Context, jobs *curationv1alpha1.MaintainerrJobs, settings map[string]any) error {
+	desired := buildMaintainerrJobs(jobs)
+	if len(desired) == 0 || reconciler.Covers(settings, mustJSON(desired)) {
+		return nil
+	}
+	metrics.DriftCorrectedTotal.WithLabelValues(maintainerrApp, "jobs", "jobs").Inc()
+	return s.mc.UpdateSettings(ctx, desired)
+}
+
+// buildMaintainerrJobs renders the job schedules under Maintainerr's names.
+func buildMaintainerrJobs(jobs *curationv1alpha1.MaintainerrJobs) map[string]any {
+	desired := map[string]any{}
+	if jobs.Rules != "" {
+		desired["rules_handler_job_cron"] = jobs.Rules
+	}
+	if jobs.Collections != "" {
+		desired["collection_handler_job_cron"] = jobs.Collections
+	}
+	return desired
+}
+
+// serviceURL is a URL as Maintainerr stores it: trimmed, without trailing slashes.
+func serviceURL(url string) string {
+	return strings.TrimRight(strings.TrimSpace(url), "/")
 }
 
 // maintainerrReferencesSecret checks if the config references the given secret name.
 func maintainerrReferencesSecret(config *curationv1alpha1.MaintainerrConfig, secretName string) bool {
-	if config.Spec.Connection.APIKeySecretRef.Name == secretName {
-		return true
+	var refs []commonv1alpha1.SecretKeyRef
+	if tls := config.Spec.Connection.TLS; tls != nil && tls.CASecretRef != nil {
+		refs = append(refs, *tls.CASecretRef)
 	}
-	if config.Spec.PlexConnection != nil && config.Spec.PlexConnection.TokenSecretRef.Name == secretName {
-		return true
+	if ms := config.Spec.MediaServer; ms != nil {
+		if ms.Plex != nil {
+			refs = append(refs, ms.Plex.TokenSecretRef)
+		}
+		if ms.Jellyfin != nil {
+			refs = append(refs, ms.Jellyfin.APIKeySecretRef)
+		}
 	}
-	if config.Spec.SonarrConnection != nil && config.Spec.SonarrConnection.APIKeySecretRef.Name == secretName {
-		return true
+	for _, server := range append(append([]curationv1alpha1.MaintainerrArrServer{}, config.Spec.Sonarr...), config.Spec.Radarr...) {
+		refs = append(refs, server.APIKeySecretRef)
 	}
-	if config.Spec.RadarrConnection != nil && config.Spec.RadarrConnection.APIKeySecretRef.Name == secretName {
-		return true
+	for _, conn := range []*curationv1alpha1.MaintainerrServiceConnection{config.Spec.Seerr, config.Spec.Tautulli} {
+		if conn != nil {
+			refs = append(refs, conn.APIKeySecretRef)
+		}
 	}
-	if config.Spec.OverseerrConnection != nil && config.Spec.OverseerrConnection.APIKeySecretRef.Name == secretName {
-		return true
+	for _, ref := range refs {
+		if ref.Name == secretName {
+			return true
+		}
 	}
 	return false
 }

@@ -53,28 +53,13 @@ spec:
             description: MaintainerrConfigSpec defines the desired state of MaintainerrConfig.
             properties:
               connection:
-                description: |-
-                  connection defines how to connect to the Maintainerr instance.
-                  Maintainerr uses API key authentication.
+                description: connection defines how to connect to the Maintainerr
+                  instance.
                 properties:
-                  apiKeySecretRef:
-                    description: apiKeySecretRef references a Secret containing the
-                      API key.
-                    properties:
-                      key:
-                        description: key is the key within the Secret.
-                        type: string
-                      name:
-                        description: name is the name of the Secret.
-                        type: string
-                    required:
-                    - key
-                    - name
-                    type: object
                   tls:
                     description: |-
                       tls configures TLS settings for the connection.
-                      Only needed when the app uses HTTPS with self-signed or private CA certificates.
+                      Only needed when Maintainerr uses HTTPS with self-signed or private CA certificates.
                     properties:
                       caSecretRef:
                         description: |-
@@ -101,87 +86,165 @@ spec:
                         type: boolean
                     type: object
                   url:
-                    description: url is the base URL of the app (e.g., http://arr-sonarr.arr.svc.cluster.local:8989).
+                    description: |-
+                      url is the base URL of Maintainerr, including any BASE_PATH
+                      (e.g., http://maintainerr:6246).
                     type: string
                 required:
-                - apiKeySecretRef
                 - url
                 type: object
-              overseerrConnection:
-                description: overseerrConnection configures the Overseerr/Jellyseerr
-                  connection within Maintainerr.
+              jobs:
+                description: jobs sets when Maintainerr runs its rules and acts on
+                  its collections.
                 properties:
-                  apiKeySecretRef:
-                    description: apiKeySecretRef references a Secret containing the
-                      app's API key.
+                  collections:
+                    description: |-
+                      collections is when Maintainerr acts on media whose time in a collection
+                      has run out (e.g., "0 0-23/12 * * *").
+                    type: string
+                  rules:
+                    description: rules is when Maintainerr evaluates rule groups (e.g.,
+                      "0 0-23/8 * * *").
+                    type: string
+                type: object
+              mediaServer:
+                description: |-
+                  mediaServer connects Maintainerr to Plex or Jellyfin. The operator sets the
+                  media server on a fresh Maintainerr only: switching an existing one deletes
+                  every collection, so a different server already in use is reported as an
+                  error instead.
+                properties:
+                  jellyfin:
+                    description: |-
+                      jellyfin connects Maintainerr to a Jellyfin server. Maintainerr tests the
+                      connection before saving it, so Jellyfin must be reachable from Maintainerr.
                     properties:
-                      key:
-                        description: key is the key within the Secret.
+                      apiKeySecretRef:
+                        description: apiKeySecretRef references a Secret containing
+                          a Jellyfin API key.
+                        properties:
+                          key:
+                            description: key is the key within the Secret.
+                            type: string
+                          name:
+                            description: name is the name of the Secret.
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      url:
+                        description: url is the Jellyfin URL as Maintainerr reaches
+                          it (e.g., http://jellyfin:8096).
+                        pattern: ^https?://
                         type: string
-                      name:
-                        description: name is the name of the Secret.
+                      userId:
+                        description: |-
+                          userId is the Jellyfin administrator Maintainerr acts as. Maintainerr
+                          picks the first administrator when it is unset.
                         type: string
                     required:
-                    - key
-                    - name
+                    - apiKeySecretRef
+                    - url
                     type: object
-                  url:
-                    description: url is the app URL (e.g., http://sonarr:8989).
-                    type: string
-                required:
-                - apiKeySecretRef
-                - url
-                type: object
-              plexConnection:
-                description: plexConnection configures the Plex server connection
-                  within Maintainerr.
-                properties:
-                  tokenSecretRef:
-                    description: tokenSecretRef references a Secret containing the
-                      Plex authentication token.
+                  plex:
+                    description: plex connects Maintainerr to a Plex server.
                     properties:
-                      key:
-                        description: key is the key within the Secret.
+                      hostname:
+                        description: |-
+                          hostname is the Plex host as Maintainerr reaches it, without a scheme
+                          (e.g., plex.media.svc.cluster.local).
+                        minLength: 1
                         type: string
-                      name:
-                        description: name is the name of the Secret.
-                        type: string
+                      port:
+                        default: 32400
+                        description: port is the Plex port.
+                        format: int32
+                        maximum: 65535
+                        minimum: 1
+                        type: integer
+                      ssl:
+                        description: ssl connects to Plex over HTTPS.
+                        type: boolean
+                      tokenSecretRef:
+                        description: |-
+                          tokenSecretRef references a Secret containing a Plex token for an account
+                          with access to the server.
+                        properties:
+                          key:
+                            description: key is the key within the Secret.
+                            type: string
+                          name:
+                            description: name is the name of the Secret.
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
                     required:
-                    - key
-                    - name
+                    - hostname
+                    - tokenSecretRef
                     type: object
-                  url:
-                    description: url is the Plex server URL (e.g., http://plex:32400).
-                    type: string
-                required:
-                - tokenSecretRef
-                - url
                 type: object
-              radarrConnection:
-                description: radarrConnection configures the Radarr connection within
-                  Maintainerr.
-                properties:
-                  apiKeySecretRef:
-                    description: apiKeySecretRef references a Secret containing the
-                      app's API key.
-                    properties:
-                      key:
-                        description: key is the key within the Secret.
-                        type: string
-                      name:
-                        description: name is the name of the Secret.
-                        type: string
-                    required:
-                    - key
-                    - name
-                    type: object
-                  url:
-                    description: url is the app URL (e.g., http://sonarr:8989).
-                    type: string
-                required:
-                - apiKeySecretRef
-                - url
-                type: object
+                x-kubernetes-validations:
+                - message: set exactly one of plex or jellyfin
+                  rule: has(self.plex) != has(self.jellyfin)
+              radarr:
+                description: radarr lists the Radarr servers rule groups can act through.
+                items:
+                  description: MaintainerrArrServer is a Sonarr or Radarr server in
+                    Maintainerr.
+                  properties:
+                    apiKeySecretRef:
+                      description: apiKeySecretRef references a Secret containing
+                        the server's API key.
+                      properties:
+                        key:
+                          description: key is the key within the Secret.
+                          type: string
+                        name:
+                          description: name is the name of the Secret.
+                          type: string
+                      required:
+                      - key
+                      - name
+                      type: object
+                    exclusionTag:
+                      description: |-
+                        exclusionTag is the tag tagExclusions looks for. Maintainerr uses "dnd"
+                        when it is unset.
+                      pattern: ^[a-z0-9-]+$
+                      type: string
+                    name:
+                      description: |-
+                        name identifies the server here and in ruleGroups[].sonarrServer and
+                        ruleGroups[].radarrServer. It is the server name Maintainerr shows.
+                      minLength: 1
+                      type: string
+                    tagExclusions:
+                      description: |-
+                        tagExclusions excludes media carrying exclusionTag in this server from
+                        every rule group.
+                      type: boolean
+                    untagOnUnexclude:
+                      description: |-
+                        untagOnUnexclude removes exclusionTag from media when it is no longer
+                        excluded in Maintainerr.
+                      type: boolean
+                    url:
+                      description: url is the server URL as Maintainerr reaches it
+                        (e.g., http://radarr:7878).
+                      pattern: ^https?://
+                      type: string
+                  required:
+                  - apiKeySecretRef
+                  - name
+                  - url
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               reconcile:
                 description: reconcile configures reconciliation behavior (e.g., sync
                   interval).
@@ -221,115 +284,259 @@ spec:
                       Default: false (only create/update, never delete).
                     type: boolean
                 type: object
-              rules:
-                description: rules defines media management rules for automatic collection
-                  cleanup.
+              ruleGroups:
+                description: |-
+                  ruleGroups are the rules that put media into a collection and the action
+                  Maintainerr takes on it. Each group is matched by name.
                 items:
-                  description: MaintainerrRule defines a media management rule.
+                  description: |-
+                    MaintainerrRuleGroup is a set of rules, the collection the matching media goes
+                    into and what Maintainerr does with it.
                   properties:
-                    action:
-                      description: action defines what happens to matched media.
+                    actionAfterDays:
+                      description: |-
+                        actionAfterDays is how long media stays in the collection before arrAction
+                        runs. A new group without it fills its collection but never acts. Removing
+                        it later leaves Maintainerr's value in place: Maintainerr cannot clear it.
+                      format: int32
+                      maximum: 36500
+                      minimum: 0
+                      type: integer
+                    active:
+                      default: true
+                      description: |-
+                        active runs the rule group. Inactive groups keep their collection but are
+                        not evaluated or acted on.
+                      type: boolean
+                    arrAction:
+                      description: |-
+                        arrAction is what Maintainerr does with media once actionAfterDays have
+                        passed. Without a Sonarr or Radarr server, deleting actions delete through
+                        the media server. changeQualityProfile needs qualityProfile.
                       enum:
                       - delete
+                      - unmonitorDeleteAll
+                      - unmonitorDeleteExisting
                       - unmonitor
+                      - doNothing
+                      - deleteShowIfEmpty
+                      - unmonitorShowIfEmpty
+                      - changeQualityProfile
                       type: string
-                    conditions:
+                    cleanupLeftoverFolders:
                       description: |-
-                        conditions defines the criteria for matching media.
-                        All conditions must be met for media to be matched (AND logic).
-                      items:
-                        description: MaintainerrRuleCondition defines a condition
-                          for a media management rule.
-                        properties:
-                          field:
-                            description: field is the media field to evaluate.
-                            enum:
-                            - addedAt
-                            - lastViewedAt
-                            - viewCount
-                            - rating
-                            - year
-                            - fileSize
-                            - resolution
-                            - genre
-                            - label
-                            type: string
-                          operator:
-                            description: operator is the comparison operator.
-                            enum:
-                            - equals
-                            - not_equals
-                            - contains
-                            - not_contains
-                            - greater_than
-                            - less_than
-                            - before
-                            - after
-                            - in_last
-                            - not_in_last
-                            type: string
-                          value:
-                            description: |-
-                              value is the value to compare against. For date fields, use duration format
-                              (e.g., "30d" for 30 days, "6m" for 6 months). For numeric fields, use plain numbers.
-                              For string fields, use the literal value.
-                            type: string
-                        required:
-                        - field
-                        - operator
-                        - value
-                        type: object
-                      type: array
-                    deleteFromDisk:
-                      description: deleteFromDisk also deletes the media files from
-                        disk (only when action=delete).
+                        cleanupLeftoverFolders deletes folders a deleting action leaves behind.
+                        Maintainerr supports it for unmonitorDeleteAll on movies and shows,
+                        unmonitorDeleteExisting on shows and seasons, and delete or
+                        deleteShowIfEmpty on seasons.
                       type: boolean
-                    enable:
-                      default: true
-                      description: enable controls whether this rule is active.
-                      type: boolean
-                    libraryName:
-                      description: libraryName is the Plex library this rule applies
-                        to (e.g., "Movies", "TV Shows").
-                      type: string
-                    mediaType:
-                      description: mediaType is the type of media this rule targets.
+                    dataType:
+                      description: |-
+                        dataType is what a show library's rules match: whole shows, seasons or
+                        episodes. Movie libraries always match movies. Changing it empties the
+                        collection.
                       enum:
                       - movie
                       - show
+                      - season
+                      - episode
                       type: string
+                    description:
+                      description: description is shown on the collection.
+                      type: string
+                    forceSeerr:
+                      description: |-
+                        forceSeerr removes the media's requests from Seerr when it is acted on,
+                        even if Seerr is not otherwise involved. Not supported for episodes.
+                      type: boolean
+                    keepInMaintainerrOnly:
+                      description: |-
+                        keepInMaintainerrOnly keeps the collection in Maintainerr without creating
+                        it on the media server.
+                      type: boolean
+                    library:
+                      description: library is the title of the media server library
+                        the rules run against.
+                      minLength: 1
+                      type: string
+                    listExclusions:
+                      description: |-
+                        listExclusions adds deleted media to the Sonarr or Radarr import list
+                        exclusions, so lists do not add it again.
+                      type: boolean
                     name:
-                      description: name is the display name of the rule.
+                      description: name identifies the rule group and names its collection.
+                      minLength: 1
                       type: string
+                    qualityProfile:
+                      description: |-
+                        qualityProfile is the name of the Sonarr or Radarr quality profile that
+                        changeQualityProfile switches media to.
+                      type: string
+                    radarrServer:
+                      description: |-
+                        radarrServer names the spec.radarr server to act through. Required when a
+                        rule reads Radarr.
+                      type: string
+                    schedule:
+                      description: |-
+                        schedule is a cron expression for this group's rule runs. Unset, the group
+                        runs on spec.jobs.rules.
+                      type: string
+                    sections:
+                      description: |-
+                        sections are evaluated in order. Rules within a section combine with each
+                        other first; each section then combines with the result of the ones before
+                        it.
+                      items:
+                        description: MaintainerrRuleSection is a group of rules evaluated
+                          together.
+                        properties:
+                          operator:
+                            description: |-
+                              operator combines this section with the sections before it. Required on
+                              every section but the first, and not allowed on the first.
+                            enum:
+                            - AND
+                            - OR
+                            type: string
+                          rules:
+                            description: rules are combined in order, each with the
+                              result of the ones before it.
+                            items:
+                              description: |-
+                                MaintainerrRule compares a property of the media with a value or with another
+                                property. It uses the names Maintainerr's rule YAML export uses.
+                              properties:
+                                action:
+                                  description: action is the comparison.
+                                  enum:
+                                  - BIGGER
+                                  - SMALLER
+                                  - EQUALS
+                                  - NOT_EQUALS
+                                  - CONTAINS
+                                  - BEFORE
+                                  - AFTER
+                                  - IN_LAST
+                                  - IN_NEXT
+                                  - NOT_CONTAINS
+                                  - CONTAINS_PARTIAL
+                                  - NOT_CONTAINS_PARTIAL
+                                  - CONTAINS_ALL
+                                  - NOT_CONTAINS_ALL
+                                  - COUNT_EQUALS
+                                  - COUNT_NOT_EQUALS
+                                  - COUNT_BIGGER
+                                  - COUNT_SMALLER
+                                  - EXISTS
+                                  - NOT_EXISTS
+                                  type: string
+                                arrDiskPath:
+                                  description: arrDiskPath limits disk-space properties
+                                    to one Sonarr or Radarr root folder.
+                                  type: string
+                                customValue:
+                                  description: customValue is a literal value to compare
+                                    against.
+                                  properties:
+                                    type:
+                                      description: |-
+                                        type is how value is read. custom_days is a number of days, which date
+                                        properties compare relative to now. date takes an ISO date. boolean takes
+                                        "true" or "false". text_list takes a JSON array or a single value.
+                                      enum:
+                                      - number
+                                      - custom_days
+                                      - date
+                                      - text
+                                      - text_list
+                                      - boolean
+                                      type: string
+                                    value:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      description: 'value is the literal. Quote booleans:
+                                        value: "true".'
+                                      x-kubernetes-int-or-string: true
+                                  required:
+                                  - type
+                                  - value
+                                  type: object
+                                firstValue:
+                                  description: |-
+                                    firstValue is the property compared, as Application.property (e.g.,
+                                    Plex.addDate, Jellyfin.viewCount, Radarr.fileSize). Plex and Jellyfin
+                                    properties must belong to the configured media server. A name Maintainerr
+                                    lists twice resolves to the one not marked deprecated.
+                                  pattern: ^[A-Za-z]+\.[A-Za-z0-9_]+$
+                                  type: string
+                                lastValue:
+                                  description: |-
+                                    lastValue is a second property to compare against, as Application.property.
+                                    Set lastValue or customValue, not both.
+                                  pattern: ^[A-Za-z]+\.[A-Za-z0-9_]+$
+                                  type: string
+                                operator:
+                                  description: |-
+                                    operator combines this rule with the rules before it in the section.
+                                    Required on every rule but a section's first, and not allowed on the first.
+                                  enum:
+                                  - AND
+                                  - OR
+                                  type: string
+                                username:
+                                  description: |-
+                                    username is the media server user that per-user properties (viewCountByUser,
+                                    watchTimeByUser, lastViewedAtByUser) are read for. Required by those
+                                    properties and not allowed on others.
+                                  type: string
+                              required:
+                              - action
+                              - firstValue
+                              type: object
+                            minItems: 1
+                            type: array
+                        required:
+                        - rules
+                        type: object
+                      minItems: 1
+                      type: array
+                    sonarrServer:
+                      description: |-
+                        sonarrServer names the spec.sonarr server to act through. Required when a
+                        rule reads Sonarr.
+                      type: string
+                    tagInArr:
+                      description: tagInArr tags collection members in Sonarr or Radarr.
+                      type: boolean
+                    visibleOnHome:
+                      description: visibleOnHome shows the collection on the media
+                        server's home screen.
+                      type: boolean
+                    visibleOnRecommended:
+                      description: visibleOnRecommended shows the collection in the
+                        library's recommendations.
+                      type: boolean
                   required:
-                  - action
-                  - libraryName
-                  - mediaType
+                  - arrAction
+                  - library
                   - name
+                  - sections
                   type: object
                 type: array
-              settings:
-                description: settings configures general Maintainerr settings.
-                properties:
-                  collectionHandling:
-                    description: collectionHandling controls how Maintainerr manages
-                      Plex collections.
-                    enum:
-                    - keep
-                    - delete
-                    type: string
-                  dryRun:
-                    description: dryRun prevents actual deletions and only logs what
-                      would happen.
-                    type: boolean
-                type: object
-              sonarrConnection:
-                description: sonarrConnection configures the Sonarr connection within
-                  Maintainerr.
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              seerr:
+                description: |-
+                  seerr connects Maintainerr to Seerr (or Overseerr or Jellyseerr), which
+                  rules can read and which Maintainerr clears requests in.
                 properties:
                   apiKeySecretRef:
                     description: apiKeySecretRef references a Secret containing the
-                      app's API key.
+                      service's API key.
                     properties:
                       key:
                         description: key is the key within the Secret.
@@ -342,7 +549,91 @@ spec:
                     - name
                     type: object
                   url:
-                    description: url is the app URL (e.g., http://sonarr:8989).
+                    description: url is the service URL as Maintainerr reaches it.
+                    pattern: ^https?://
+                    type: string
+                required:
+                - apiKeySecretRef
+                - url
+                type: object
+              sonarr:
+                description: sonarr lists the Sonarr servers rule groups can act through.
+                items:
+                  description: MaintainerrArrServer is a Sonarr or Radarr server in
+                    Maintainerr.
+                  properties:
+                    apiKeySecretRef:
+                      description: apiKeySecretRef references a Secret containing
+                        the server's API key.
+                      properties:
+                        key:
+                          description: key is the key within the Secret.
+                          type: string
+                        name:
+                          description: name is the name of the Secret.
+                          type: string
+                      required:
+                      - key
+                      - name
+                      type: object
+                    exclusionTag:
+                      description: |-
+                        exclusionTag is the tag tagExclusions looks for. Maintainerr uses "dnd"
+                        when it is unset.
+                      pattern: ^[a-z0-9-]+$
+                      type: string
+                    name:
+                      description: |-
+                        name identifies the server here and in ruleGroups[].sonarrServer and
+                        ruleGroups[].radarrServer. It is the server name Maintainerr shows.
+                      minLength: 1
+                      type: string
+                    tagExclusions:
+                      description: |-
+                        tagExclusions excludes media carrying exclusionTag in this server from
+                        every rule group.
+                      type: boolean
+                    untagOnUnexclude:
+                      description: |-
+                        untagOnUnexclude removes exclusionTag from media when it is no longer
+                        excluded in Maintainerr.
+                      type: boolean
+                    url:
+                      description: url is the server URL as Maintainerr reaches it
+                        (e.g., http://radarr:7878).
+                      pattern: ^https?://
+                      type: string
+                  required:
+                  - apiKeySecretRef
+                  - name
+                  - url
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              tautulli:
+                description: |-
+                  tautulli connects Maintainerr to Tautulli. Rules can read it only when
+                  Plex is the media server.
+                properties:
+                  apiKeySecretRef:
+                    description: apiKeySecretRef references a Secret containing the
+                      service's API key.
+                    properties:
+                      key:
+                        description: key is the key within the Secret.
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  url:
+                    description: url is the service URL as Maintainerr reaches it.
+                    pattern: ^https?://
                     type: string
                 required:
                 - apiKeySecretRef

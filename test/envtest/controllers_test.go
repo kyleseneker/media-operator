@@ -87,7 +87,9 @@ func controllerCases() []controllerCase {
 			newCR: func(url string) client.Object {
 				return &curationv1alpha1.MaintainerrConfig{
 					ObjectMeta: meta("maintainerr"),
-					Spec:       curationv1alpha1.MaintainerrConfigSpec{Connection: appConn(url), Reconcile: orphan()},
+					Spec: curationv1alpha1.MaintainerrConfigSpec{
+						Connection: curationv1alpha1.MaintainerrConnection{URL: url}, Reconcile: orphan(),
+					},
 				}
 			},
 			newRec: func(c client.Client, s *runtime.Scheme) reconcile.Reconciler {
