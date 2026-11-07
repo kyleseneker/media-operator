@@ -2,6 +2,7 @@ package downloads
 
 import (
 	"context"
+	"crypto/rand"
 	"maps"
 	"net"
 	"net/http"
@@ -154,15 +155,16 @@ func TestSabnzbdPlanSkipsWhatAlreadyMatches(t *testing.T) {
 		"categories": []any{map[string]any{"name": "tv", "dir": "tv", "priority": float64(0), "order": float64(2)}},
 	}
 
-	first := planSabnzbd(current, sabnzbdSpec(), servers, "plan-matches")
+	owner := freshOwner()
+	first := planSabnzbd(current, sabnzbdSpec(), servers, owner)
 	require.Len(t, first, 1, "only the server, whose masked password cannot be compared")
 	assert.Equal(t, "servers", first[0].section)
 	reconciler.RecordSecrets(first[0].secretKey, first[0].secretDigest)
 
-	assert.Empty(t, planSabnzbd(current, sabnzbdSpec(), servers, "plan-matches"))
+	assert.Empty(t, planSabnzbd(current, sabnzbdSpec(), servers, owner))
 
 	vals["password"] = "rotated"
-	assert.Len(t, planSabnzbd(current, sabnzbdSpec(), servers, "plan-matches"), 1, "a rotated password must be written")
+	assert.Len(t, planSabnzbd(current, sabnzbdSpec(), servers, owner), 1, "a rotated password must be written")
 }
 
 // Observe mode has no record of a masked password it never wrote, so a server
@@ -222,14 +224,22 @@ func TestSabnzbdPlanRemembersTheCreatedPassword(t *testing.T) {
 	spec := sabnzbdSpec()
 	spec.Folders, spec.Categories = nil, nil
 
-	created := planSabnzbd(map[string]any{}, spec, servers, "plan-created")
+	owner := freshOwner()
+	created := planSabnzbd(map[string]any{}, spec, servers, owner)
 	require.Len(t, created, 1)
 	reconciler.RecordSecrets(created[0].secretKey, created[0].secretDigest)
 
 	readBack := map[string]any{"servers": []any{map[string]any{
 		"name": "Primary", "host": "news.example.com", "port": float64(563), "ssl": float64(1), "password": "**********",
 	}}}
-	assert.Empty(t, planSabnzbd(readBack, spec, servers, "plan-created"))
+	assert.Empty(t, planSabnzbd(readBack, spec, servers, owner))
+}
+
+// freshOwner stands in for a config's UID. The remembered password digests
+// live for the process, keyed by owner, so a fixed owner would let a repeated
+// run (-count) find the record an earlier run left.
+func freshOwner() string {
+	return "test-" + rand.Text()
 }
 
 // SABnzbd reports a misc switch as 0/1 until it is written and true/false after.

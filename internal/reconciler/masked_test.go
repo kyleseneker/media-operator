@@ -84,6 +84,7 @@ func TestMergeDesiredNoMaskedFieldsHasNoDigest(t *testing.T) {
 // digest that differs from the one last written.
 func TestSecretsChangedSinceTracksRotation(t *testing.T) {
 	const key = "sonarr|notifications|Jellyfin"
+	forgetSecretsAfter(t, key)
 
 	first := digestOf([]string{"key-v1"})
 	require.NotEmpty(t, first)
@@ -98,6 +99,18 @@ func TestSecretsChangedSinceTracksRotation(t *testing.T) {
 	assert.False(t, SecretsChangedSince(key, rotated))
 }
 
+// forgetSecretsAfter drops what a test recorded for key. The store lives for the
+// process, as it does in the operator, so a record left behind would answer the
+// same test's next run under -count.
+func forgetSecretsAfter(t *testing.T, key string) {
+	t.Helper()
+	t.Cleanup(func() {
+		secretDigest.Lock()
+		defer secretDigest.Unlock()
+		delete(secretDigest.hashes, key)
+	})
+}
+
 func TestSecretsChangedSinceIgnoresEmptyDigest(t *testing.T) {
 	assert.False(t, SecretsChangedSince("app|type|name", ""))
 }
@@ -107,6 +120,7 @@ func TestSecretsChangedSinceIgnoresEmptyDigest(t *testing.T) {
 // credential as differing forever.
 func TestSecretsDifferOnlyFromARecordUnderObserve(t *testing.T) {
 	const key = "radarr|downloadClients|qbit"
+	forgetSecretsAfter(t, key)
 	written := digestOf([]string{"pw-v1"})
 
 	assert.False(t, SecretsDiffer(key, written, true), "nothing recorded: unverifiable, not drift")
