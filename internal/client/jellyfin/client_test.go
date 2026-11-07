@@ -48,19 +48,26 @@ func TestIsSetupComplete(t *testing.T) {
 	}
 }
 
+// Jellyfin 12 creates the initial user when it is first read and answers 404
+// to an update before that, so the wizard must read it first.
 func TestRunSetupWizard(t *testing.T) {
 	var calls []string
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		calls = append(calls, r.URL.Path)
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(`{"Name":"root"}`))
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 	})
 	err := c.RunSetupWizard(context.Background(), "admin", "pass", "Jellyfin", "en", "US")
 	require.NoError(t, err)
 	assert.Equal(t, []string{
-		"/Startup/User",
-		"/Startup/Configuration",
-		"/Startup/RemoteAccess",
-		"/Startup/Complete",
+		"GET /Startup/User",
+		"POST /Startup/User",
+		"POST /Startup/Configuration",
+		"POST /Startup/RemoteAccess",
+		"POST /Startup/Complete",
 	}, calls)
 }
 

@@ -36,7 +36,11 @@ func (c *Client) IsSetupComplete(ctx context.Context) (bool, error) {
 
 // RunSetupWizard drives the Jellyfin first-time setup wizard to completion.
 func (c *Client) RunSetupWizard(ctx context.Context, username, password, serverName, metadataLang, countryCode string) error {
-	// Step 1: Set initial user.
+	// Step 1: Set initial user. Reading it first is what creates it: Jellyfin 12
+	// answers 404 to the update otherwise, and its own web wizard reads first.
+	if _, err := c.hc.GetJSON(ctx, "/Startup/User"); err != nil {
+		return fmt.Errorf("reading startup user: %w", err)
+	}
 	userPayload := map[string]any{
 		"Name":     username,
 		"Password": password,
