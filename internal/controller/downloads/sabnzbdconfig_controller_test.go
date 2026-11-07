@@ -10,10 +10,11 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -21,6 +22,7 @@ import (
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	downloadsv1alpha1 "github.com/kyleseneker/media-operator/api/downloads/v1alpha1"
+	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
 
 // fakeSabnzbd records the form parameters of every /api call. SABnzbd drives
@@ -39,18 +41,6 @@ func (f *fakeSabnzbd) sawMode(mode string) bool {
 		}
 	}
 	return false
-}
-
-// setValue returns the value written for a given config key, if any.
-func (f *fakeSabnzbd) setValue(section, key string) (string, bool) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for _, c := range f.calls {
-		if c.Get("mode") == "set_config" && c.Get("section") == section && c.Get("keyword") == key {
-			return c.Get("value"), true
-		}
-	}
-	return "", false
 }
 
 func (f *fakeSabnzbd) serve(t *testing.T) string {
@@ -119,26 +109,6 @@ func runSabnzbd(t *testing.T, cfg *downloadsv1alpha1.SabnzbdConfig, withSecret b
 	}
 }
 
-func TestSabnzbdWritesDeclaredCategory(t *testing.T) {
-	app := &fakeSabnzbd{}
-	addr := app.serve(t)
-
-	cfg := sabnzbdConfig(addr)
-	cfg.Spec.Categories = []downloadsv1alpha1.SabnzbdCategory{{Name: "tv", Dir: "/downloads/tv"}}
-	runSabnzbd(t, cfg, true)
-
-	if !app.sawMode("version") {
-		t.Fatal("never health-checked the app")
-	}
-	// Categories are written positionally as "categories,<index>".
-	if got, ok := app.setValue("categories,0", "dir"); !ok || got != "/downloads/tv" {
-		t.Errorf("category dir = %q (found=%v), want /downloads/tv", got, ok)
-	}
-	if got, ok := app.setValue("categories,0", "name"); !ok || got != "tv" {
-		t.Errorf("category name = %q (found=%v), want tv", got, ok)
-	}
-}
-
 func TestSabnzbdMissingSecretDoesNotContactApp(t *testing.T) {
 	app := &fakeSabnzbd{}
 	addr := app.serve(t)
@@ -150,28 +120,110 @@ func TestSabnzbdMissingSecretDoesNotContactApp(t *testing.T) {
 	}
 }
 
-func TestSabnzbdObserveRejectedBeforeApplicationAccess(t *testing.T) {
-	scheme := runtime.NewScheme()
-	if err := downloadsv1alpha1.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
+func sabnzbdSpec() downloadsv1alpha1.SabnzbdConfigSpec {
+	return downloadsv1alpha1.SabnzbdConfigSpec{
+		Folders:    &downloadsv1alpha1.SabnzbdFolders{CompleteDir: "/done"},
+		Servers:    []downloadsv1alpha1.SabnzbdServer{{Name: "Primary", Host: "news.example.com", Port: 563, SSL: new(true)}},
+		Categories: []downloadsv1alpha1.SabnzbdCategory{{Name: "tv", Dir: "tv", Priority: new(0)}},
 	}
+}
+
+// SABnzbd only accepts servers and categories addressed by name; the operator
+// used to write "servers,0" and "categories,0", which SABnzbd rejected.
+func TestSabnzbdPlanWritesServersAndCategoriesByName(t *testing.T) {
+	servers := map[string]map[string]string{"Primary": sabnzbdServerValues(sabnzbdSpec().Servers[0])}
+	writes := planSabnzbd(map[string]any{}, sabnzbdSpec(), servers, "plan-by-name")
+
+	require.Len(t, writes, 3)
+	byName := map[string]sabWrite{}
+	for _, w := range writes {
+		byName[w.section+"/"+w.name] = w
+	}
+	assert.Equal(t, "/done", byName["misc/complete_dir"].values["value"])
+	assert.Equal(t, "news.example.com", byName["servers/Primary"].values["host"])
+	assert.NotContains(t, byName["servers/Primary"].values, "name", "the name is the keyword; sending it as a value renames")
+	assert.Equal(t, "tv", byName["categories/tv"].values["dir"])
+}
+
+// get_config reports numbers and 0/1 flags typed and the password masked, so a
+// matching config needs no writes once the password's digest is remembered.
+func TestSabnzbdPlanSkipsWhatAlreadyMatches(t *testing.T) {
+	vals := sabnzbdServerValues(sabnzbdSpec().Servers[0])
+	vals["password"] = "s3cret"
+	servers := map[string]map[string]string{"Primary": vals}
+	current := map[string]any{
+		"misc": map[string]any{"complete_dir": "/done"},
+		"servers": []any{map[string]any{
+			"name": "Primary", "host": "news.example.com", "port": float64(563), "ssl": float64(1),
+			"password": "**********", "timeout": float64(60),
+		}},
+		"categories": []any{map[string]any{"name": "tv", "dir": "tv", "priority": float64(0), "order": float64(2)}},
+	}
+
+	first := planSabnzbd(current, sabnzbdSpec(), servers, "plan-matches")
+	require.Len(t, first, 1, "only the server, whose masked password cannot be compared")
+	assert.Equal(t, "servers", first[0].section)
+	reconciler.RecordSecrets(first[0].secretKey, first[0].secretDigest)
+
+	assert.Empty(t, planSabnzbd(current, sabnzbdSpec(), servers, "plan-matches"))
+
+	vals["password"] = "rotated"
+	assert.Len(t, planSabnzbd(current, sabnzbdSpec(), servers, "plan-matches"), 1, "a rotated password must be written")
+}
+
+func TestSabnzbdObserveReportsDriftWithoutWriting(t *testing.T) {
+	app := &fakeSabnzbd{}
+	cfg := sabnzbdConfig(app.serve(t))
+	cfg.Spec.Categories = []downloadsv1alpha1.SabnzbdCategory{{Name: "tv", Dir: "tv"}}
 	policy := "observe"
-	cfg := &downloadsv1alpha1.SabnzbdConfig{Name: "observe", Namespace: "media"}
 	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &policy}
-	// No URL or Secrets: rejection must happen before application access or authentication.
-	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(cfg).WithObjects(cfg).Build()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, downloadsv1alpha1.AddToScheme(scheme))
+	c := fake.NewClientBuilder().WithScheme(scheme).
+		WithStatusSubresource(&downloadsv1alpha1.SabnzbdConfig{}).WithObjects(cfg, sabnzbdSecret()).Build()
 	r := &SabnzbdConfigReconciler{Client: c, Scheme: scheme}
-	key := types.NamespacedName{Namespace: cfg.Namespace, Name: cfg.Name}
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
-		t.Fatal(err)
-	}
-	if err := c.Get(context.Background(), key, cfg); err != nil {
-		t.Fatal(err)
-	}
-	for _, condition := range cfg.Status.Conditions {
-		if condition.Type == "Synced" && condition.Reason == "InvalidConfig" && condition.Status == metav1.ConditionFalse {
-			return
+	_, err := r.Reconcile(context.Background(), ctrl.Request{Name: "sabnzbd", Namespace: "media"})
+	require.NoError(t, err)
+
+	assert.True(t, app.sawMode("get_config"))
+	assert.False(t, app.sawMode("set_config"), "observe must not write")
+	var got downloadsv1alpha1.SabnzbdConfig
+	require.NoError(t, c.Get(context.Background(), ctrl.Request{Name: "sabnzbd", Namespace: "media"}.NamespacedName, &got))
+	synced := metav1.Condition{}
+	for _, cond := range got.Status.Conditions {
+		if cond.Type == "Synced" {
+			synced = cond
 		}
 	}
-	t.Fatalf("expected explicit unsupported-policy status, got %+v", cfg.Status.Conditions)
+	assert.Equal(t, metav1.ConditionFalse, synced.Status)
+	assert.Equal(t, "DriftDetected", synced.Reason)
+}
+
+// A created server reads back with its password masked; the digest remembered
+// at creation keeps the next pass from rewriting it.
+func TestSabnzbdPlanRemembersTheCreatedPassword(t *testing.T) {
+	vals := sabnzbdServerValues(sabnzbdSpec().Servers[0])
+	vals["password"] = "s3cret"
+	servers := map[string]map[string]string{"Primary": vals}
+	spec := sabnzbdSpec()
+	spec.Folders, spec.Categories = nil, nil
+
+	created := planSabnzbd(map[string]any{}, spec, servers, "plan-created")
+	require.Len(t, created, 1)
+	reconciler.RecordSecrets(created[0].secretKey, created[0].secretDigest)
+
+	readBack := map[string]any{"servers": []any{map[string]any{
+		"name": "Primary", "host": "news.example.com", "port": float64(563), "ssl": float64(1), "password": "**********",
+	}}}
+	assert.Empty(t, planSabnzbd(readBack, spec, servers, "plan-created"))
+}
+
+// SABnzbd reports a misc switch as 0/1 until it is written and true/false after.
+func TestSabnzbdPlanTreatsWrittenSwitchesAsSet(t *testing.T) {
+	spec := downloadsv1alpha1.SabnzbdConfigSpec{General: &downloadsv1alpha1.SabnzbdGeneral{PreCheck: new(true)}}
+	assert.Empty(t, planSabnzbd(map[string]any{"misc": map[string]any{"pre_check": true}}, spec, nil, "switch"))
+	assert.Empty(t, planSabnzbd(map[string]any{"misc": map[string]any{"pre_check": float64(1)}}, spec, nil, "switch"))
+	assert.Len(t, planSabnzbd(map[string]any{"misc": map[string]any{"pre_check": false}}, spec, nil, "switch"), 1)
 }

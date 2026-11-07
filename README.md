@@ -98,7 +98,7 @@ doesn't matter, the operator just reads them and re-reconciles when they change.
   `insecureSkipVerify` if you don't care.
 
 `spec.reconcile.driftPolicy: observe` supports Sonarr, Radarr, Lidarr, Readarr,
-Prowlarr, qBittorrent, Jellyfin, and FlareSolverr. It reads configuration without
+Prowlarr, qBittorrent, SABnzbd, Jellyfin, and FlareSolverr. It reads configuration without
 changing it; qBittorrent and Jellyfin may authenticate to read protected settings.
 A fresh Jellyfin is reported as needing initialization without running its wizard.
 Create-only resources are compared by existence. Masked credentials cannot be
@@ -107,8 +107,8 @@ verified by reading the application.
 Other integrations reject `observe` with `InvalidConfig` before making application
 requests. They require `enforce` (the default) until read-only comparison is
 implemented. Observe-mode differences increment `media_operator_drift_observed_total`,
-not `media_operator_drift_corrected_total`. qBittorrent, Jellyfin, and FlareSolverr
-report `Synced=False` with reason `DriftDetected` when differences remain.
+not `media_operator_drift_corrected_total`. qBittorrent, SABnzbd, Jellyfin, and
+FlareSolverr report `Synced=False` with reason `DriftDetected` when differences remain.
 
 When upgrading, existing `status.managedResources` records are retained. Older
 versions also recorded matching pre-existing resources as managed; the operator

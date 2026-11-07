@@ -83,3 +83,25 @@ func TestApiParams(t *testing.T) {
 	assert.Equal(t, "misc", params.Get("section"))
 	assert.Equal(t, "dir", params.Get("keyword"))
 }
+
+// SABnzbd answers a rejected change with HTTP 200; treating that as success
+// reported servers and categories as synced when none had been written.
+func TestSetConfigSurfacesARejectedChange(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"status":false,"error":"Config item does not exist"}`))
+	})
+	err := c.SetConfig(context.Background(), "servers,0", "host", "news")
+	require.ErrorContains(t, err, "Config item does not exist")
+}
+
+func TestSetNamedAddressesTheEntryByName(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.NoError(t, r.ParseForm())
+		assert.Equal(t, "set_config", r.PostForm.Get("mode"))
+		assert.Equal(t, "servers", r.PostForm.Get("section"))
+		assert.Equal(t, "Primary", r.PostForm.Get("keyword"))
+		assert.Equal(t, "news.example.com", r.PostForm.Get("host"))
+		_, _ = w.Write([]byte(`{"config":{"servers":[{"name":"Primary"}]}}`))
+	})
+	require.NoError(t, c.SetNamed(context.Background(), "servers", "Primary", map[string]string{"host": "news.example.com"}))
+}

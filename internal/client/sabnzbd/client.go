@@ -67,8 +67,36 @@ func (c *Client) SetConfig(ctx context.Context, section, keyword, value string) 
 	params.Set("section", section)
 	params.Set("keyword", keyword)
 	params.Set("value", value)
-	_, err := c.hc.DoForm(ctx, "/api", params)
-	return err
+	return c.write(ctx, params)
+}
+
+// SetNamed creates or updates one entry of a named section (servers,
+// categories) in a single call, the only form SABnzbd accepts for them.
+func (c *Client) SetNamed(ctx context.Context, section, name string, values map[string]string) error {
+	params := c.apiParams("set_config", "")
+	params.Set("section", section)
+	params.Set("keyword", name)
+	for k, v := range values {
+		params.Set(k, v)
+	}
+	return c.write(ctx, params)
+}
+
+// write sends a configuration change. SABnzbd reports a rejected change with
+// HTTP 200 and {"status": false, "error": ...}, so the body decides success.
+func (c *Client) write(ctx context.Context, params url.Values) error {
+	data, err := c.hc.DoForm(ctx, "/api", params)
+	if err != nil {
+		return err
+	}
+	var reply struct {
+		Status *bool  `json:"status"`
+		Error  string `json:"error"`
+	}
+	if json.Unmarshal(data, &reply) == nil && reply.Status != nil && !*reply.Status {
+		return fmt.Errorf("sabnzbd rejected the change: %s", reply.Error)
+	}
+	return nil
 }
 
 func (c *Client) SetConfigMulti(ctx context.Context, section string, values map[string]string) error {
