@@ -152,6 +152,13 @@ func qbPreferencePayload(prefs *downloadsv1alpha1.QBittorrentPreferences) (map[s
 		}
 		out["max_ratio_act"] = act
 	}
+	// A disabled limit is stored as -1, and qBittorrent ignores a limit sent with
+	// it, so comparing the declared limit would differ on every pass.
+	for enabled, limit := range map[string]string{"max_ratio_enabled": "max_ratio", "max_seeding_time_enabled": "max_seeding_time"} {
+		if out[enabled] == false {
+			delete(out, limit)
+		}
+	}
 
 	return out, nil
 }

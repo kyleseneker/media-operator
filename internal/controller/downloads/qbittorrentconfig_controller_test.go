@@ -88,6 +88,8 @@ func TestQBPreferencePayloadCoversEverySpecField(t *testing.T) {
 		func(p *downloadsv1alpha1.QBittorrentPreferences) {
 			p.MaxRatio = new("1.0")
 			p.MaxRatioAction = new("stop")
+			p.MaxRatioEnabled = new(true)
+			p.MaxSeedingTimeEnabled = new(true)
 		})
 }
 
@@ -373,4 +375,18 @@ func TestQBDeletionPolicyRemovesWhatItCreated(t *testing.T) {
 	runQB(t, cfg)
 
 	assert.Equal(t, []string{"tv"}, app.removed)
+}
+
+// qBittorrent stores a disabled limit as -1 and ignores a limit sent with it.
+func TestQBDisabledLimitIsNotCompared(t *testing.T) {
+	payload, err := qbPreferencePayload(&downloadsv1alpha1.QBittorrentPreferences{
+		MaxRatioEnabled: new(false), MaxRatio: new("2.0"),
+		MaxSeedingTimeEnabled: new(false), MaxSeedingTime: new(1440),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"max_ratio_enabled": false, "max_seeding_time_enabled": false}, payload)
+
+	enabled, err := qbPreferencePayload(&downloadsv1alpha1.QBittorrentPreferences{MaxRatioEnabled: new(true), MaxRatio: new("2.0")})
+	require.NoError(t, err)
+	assert.Equal(t, 2.0, enabled["max_ratio"])
 }
