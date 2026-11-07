@@ -95,7 +95,7 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Reconcile Sonarr connection
 	if config.Spec.Sonarr != nil {
-		if err := r.reconcileSonarrConnection(ctx, sc, writes, &config, false); err != nil {
+		if err := r.reconcileSonarrConnection(ctx, sc, writes, &config); err != nil {
 			logger.Error(err, "failed to reconcile Sonarr connection")
 			syncErrors = append(syncErrors, fmt.Sprintf("sonarr: %v", err))
 		}
@@ -103,7 +103,7 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Reconcile Radarr connection
 	if config.Spec.Radarr != nil {
-		if err := r.reconcileRadarrConnection(ctx, sc, writes, &config, false); err != nil {
+		if err := r.reconcileRadarrConnection(ctx, sc, writes, &config); err != nil {
 			logger.Error(err, "failed to reconcile Radarr connection")
 			syncErrors = append(syncErrors, fmt.Sprintf("radarr: %v", err))
 		}
@@ -153,13 +153,13 @@ func (r *SeerrConfigReconciler) setup(
 	}
 
 	if config.Spec.Sonarr != nil {
-		if err := r.reconcileSonarrConnection(ctx, sc, writes, config, true); err != nil {
+		if err := r.reconcileSonarrConnection(ctx, sc, writes, config); err != nil {
 			logger.Error(err, "failed to configure Sonarr during initialization")
 			initErrors = append(initErrors, fmt.Sprintf("sonarr init: %v", err))
 		}
 	}
 	if config.Spec.Radarr != nil {
-		if err := r.reconcileRadarrConnection(ctx, sc, writes, config, true); err != nil {
+		if err := r.reconcileRadarrConnection(ctx, sc, writes, config); err != nil {
 			logger.Error(err, "failed to configure Radarr during initialization")
 			initErrors = append(initErrors, fmt.Sprintf("radarr init: %v", err))
 		}
@@ -182,8 +182,11 @@ func (r *SeerrConfigReconciler) setup(
 	return nil
 }
 
+// reconcileSonarrConnection updates the Sonarr connection with the declared
+// name, or creates it. Setup uses it too: a setup that failed partway runs again
+// from the start, and Seerr appends a connection on every POST.
 func (r *SeerrConfigReconciler) reconcileSonarrConnection(
-	ctx context.Context, sc *seerrclient.Client, w *engine.Writes, config *requestsv1alpha1.SeerrConfig, createOnly bool,
+	ctx context.Context, sc *seerrclient.Client, w *engine.Writes, config *requestsv1alpha1.SeerrConfig,
 ) error {
 	sonarrAPIKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Sonarr.APIKeySecretRef)
 	if err != nil {
@@ -196,11 +199,6 @@ func (r *SeerrConfigReconciler) reconcileSonarrConnection(
 	}
 	if _, ok := payload["enableSeasonFolders"]; !ok {
 		payload["enableSeasonFolders"] = false
-	}
-
-	if createOnly {
-		_, err := sc.Post(ctx, "/api/v1/settings/sonarr", payload)
-		return err
 	}
 
 	existing, err := sc.GetList(ctx, "/api/v1/settings/sonarr")
@@ -230,7 +228,7 @@ func (r *SeerrConfigReconciler) reconcileSonarrConnection(
 }
 
 func (r *SeerrConfigReconciler) reconcileRadarrConnection(
-	ctx context.Context, sc *seerrclient.Client, w *engine.Writes, config *requestsv1alpha1.SeerrConfig, createOnly bool,
+	ctx context.Context, sc *seerrclient.Client, w *engine.Writes, config *requestsv1alpha1.SeerrConfig,
 ) error {
 	radarrAPIKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Radarr.APIKeySecretRef)
 	if err != nil {
@@ -243,11 +241,6 @@ func (r *SeerrConfigReconciler) reconcileRadarrConnection(
 	}
 	if _, ok := payload["minimumAvailability"]; !ok {
 		payload["minimumAvailability"] = "released"
-	}
-
-	if createOnly {
-		_, err := sc.Post(ctx, "/api/v1/settings/radarr", payload)
-		return err
 	}
 
 	existing, err := sc.GetList(ctx, "/api/v1/settings/radarr")

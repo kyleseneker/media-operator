@@ -129,6 +129,15 @@ type fakeSeerr struct {
 	// libraries is what a Jellyfin library sync finds, keyed by "id" with an
 	// "enabled" flag the library PUT updates.
 	libraries []map[string]any
+	// services holds the Sonarr and Radarr connections, keyed by "sonarr" or
+	// "radarr". Like Seerr, a POST appends one rather than replacing by name.
+	services map[string][]map[string]any
+}
+
+func (f *fakeSeerr) serviceCount(kind string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.services[kind])
 }
 
 func (f *fakeSeerr) saw(method, path string) bool {
@@ -190,6 +199,9 @@ func (f *fakeSeerr) serve(t *testing.T) string {
 	if f.authBodies == nil {
 		f.authBodies = map[string]map[string]any{}
 	}
+	if f.services == nil {
+		f.services = map[string][]map[string]any{}
+	}
 	ln, err := net.Listen("tcp", net.JoinHostPort(routableAddr(t), "0"))
 	if err != nil {
 		t.Skipf("cannot bind a routable listener: %v", err)
@@ -219,6 +231,15 @@ func (f *fakeSeerr) serve(t *testing.T) string {
 			_ = json.NewEncoder(w).Encode(map[string]any{"initialized": f.initialized})
 		case r.URL.Path == "/api/v1/settings/main":
 			_ = json.NewEncoder(w).Encode(map[string]any{"apiKey": "seerr-generated-key"})
+		case r.URL.Path == "/api/v1/settings/sonarr" || r.URL.Path == "/api/v1/settings/radarr":
+			kind := strings.TrimPrefix(r.URL.Path, "/api/v1/settings/")
+			if r.Method == http.MethodPost {
+				body["id"] = float64(len(f.services[kind]))
+				f.services[kind] = append(f.services[kind], body)
+				_ = json.NewEncoder(w).Encode(body)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(append([]map[string]any{}, f.services[kind]...))
 		case r.URL.Path == "/api/v1/settings/initialize" && r.Method == http.MethodPost:
 			f.initialized = true
 			_ = json.NewEncoder(w).Encode(map[string]any{"initialized": true})
@@ -398,6 +419,26 @@ func TestSeerrFirstRunEnablesJellyfinLibraries(t *testing.T) {
 	require.GreaterOrEqual(t, initialize, 0, "setup never completed initialization")
 	assert.LessOrEqual(t, app.order("PUT", "/api/v1/settings/jellyfin/library/shows"), initialize,
 		"initialized before every library was enabled")
+}
+
+// Setup that fails partway runs again from the start on the next pass. Seerr
+// appends a connection on every POST, so posting Sonarr and Radarr without
+// looking first would leave one copy of each per attempt.
+func TestSeerrRetriedSetupDoesNotDuplicateConnections(t *testing.T) {
+	app := &fakeSeerr{} // no Jellyfin libraries yet, so setup fails and is retried
+	addr := app.serve(t)
+	port := 8989
+	cfg := firstRunJellyfinConfig(addr)
+	key := commonv1alpha1.SecretKeyRef{Name: "seerr-secrets", Key: "api-key"}
+	cfg.Spec.Sonarr = &requestsv1alpha1.SeerrServiceConnection{Name: "Sonarr", Hostname: "sonarr", Port: &port, APIKeySecretRef: key}
+	cfg.Spec.Radarr = &requestsv1alpha1.SeerrServiceConnection{Name: "Radarr", Hostname: "radarr", Port: &port, APIKeySecretRef: key}
+
+	runSeerr(t, cfg.DeepCopy())
+	runSeerr(t, cfg.DeepCopy())
+
+	require.False(t, app.saw("POST", "/api/v1/settings/initialize"), "precondition: setup must not have completed")
+	assert.Equal(t, 1, app.serviceCount("sonarr"), "each setup attempt added another Sonarr connection")
+	assert.Equal(t, 1, app.serviceCount("radarr"), "each setup attempt added another Radarr connection")
 }
 
 // Seerr's library sync answers 404 while Jellyfin has no libraries yet, as on a
