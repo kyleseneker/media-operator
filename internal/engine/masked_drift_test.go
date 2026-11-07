@@ -177,3 +177,47 @@ func TestProwlarrApplicationSettles(t *testing.T) {
 		t.Errorf("wrote %d times, want 1: %v", len(writes), writes)
 	}
 }
+
+// A resource created with a secret comes back masked. Without remembering what
+// the create wrote, the next pass rewrote every new download client and indexer.
+func TestCreatedSecretIsNotRewrittenOnTheNextPass(t *testing.T) {
+	var writes []string
+	created := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		body := map[string]any{
+			"id": float64(1), "name": "created", "enable": true,
+			"fields": []any{
+				map[string]any{"name": "host", "value": "qbit.svc"},
+				map[string]any{"name": "password", "value": "********"},
+			},
+		}
+		if r.Method == http.MethodGet {
+			if !created {
+				_ = json.NewEncoder(w).Encode([]map[string]any{})
+				return
+			}
+			_ = json.NewEncoder(w).Encode([]map[string]any{body})
+			return
+		}
+		writes = append(writes, r.Method)
+		created = true
+		_ = json.NewEncoder(w).Encode(body)
+	}))
+	t.Cleanup(srv.Close)
+	hc, err := NewHTTPClient(srv.URL, AuthAPIKey, WithAPIKey("k"), WithAppLabel("sonarr"),
+		WithOwner("default/created/uid"), WithTransport(&http.Transport{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ep := ResourceEndpoint{Name: "downloadClients", Path: "/api/v3/downloadclient", MatchField: "name", Policy: CreateOrUpdate}
+
+	for i := range 3 {
+		if err := reconcileResource(context.Background(), hc, ep, desiredWithPassword("created", "pw"), false); err != nil {
+			t.Fatalf("reconcile %d: %v", i, err)
+		}
+	}
+	if len(writes) != 1 || writes[0] != http.MethodPost {
+		t.Errorf("writes = %v, want only the create", writes)
+	}
+}

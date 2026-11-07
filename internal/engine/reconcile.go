@@ -2,8 +2,10 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"reflect"
 	"slices"
 
@@ -292,8 +294,19 @@ func reconcileResourceTracked(ctx context.Context, client *HTTPClient, endpoint 
 		metrics.DriftObservedTotal.WithLabelValues(client.AppLabel(), endpoint.Name, desiredMatch).Inc()
 		return false, nil
 	}
-	err = client.PostJSON(ctx, endpoint.Path, desired)
-	return err == nil, err
+	body, err := client.Do(ctx, http.MethodPost, endpoint.Path, desired)
+	if err != nil {
+		return false, err
+	}
+	// The created resource comes back with its secrets masked, like any later
+	// read. Remember what was written now, or the next pass rewrites it once.
+	var created map[string]any
+	if json.Unmarshal(body, &created) == nil {
+		if out, err := reconciler.MergeDesired(created, desired); err == nil {
+			reconciler.RecordSecrets(client.secretKey(endpoint.Name, desiredMatch), out.SecretDigest)
+		}
+	}
+	return true, nil
 }
 
 // secretKey isolates last-written secrets by target and Kubernetes owner. Quoted
