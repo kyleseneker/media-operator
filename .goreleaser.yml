@@ -75,14 +75,14 @@ dockers_v2:
     build_args:
       BINARY: media-operator-pvr
     annotations: &image-annotations
-      "index,manifest:org.opencontainers.image.source": https://github.com/kyleseneker/media-operator
-      "index,manifest:org.opencontainers.image.revision": "{{ .FullCommit }}"
-      "index,manifest:org.opencontainers.image.version": "{{ .Version }}"
-      "index,manifest:org.opencontainers.image.created": "{{ .Date }}"
-      "index,manifest:org.opencontainers.image.licenses": Apache-2.0
-      "index,manifest:org.opencontainers.image.base.name": "{{ .BaseImage }}"
-      "index,manifest:org.opencontainers.image.base.digest": "{{ .BaseImageDigest }}"
-      "index,manifest:org.opencontainers.image.description": Manages Sonarr, Radarr, Lidarr and Readarr configuration as Kubernetes resources
+      "org.opencontainers.image.source": https://github.com/kyleseneker/media-operator
+      "org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "org.opencontainers.image.version": "{{ .Version }}"
+      "org.opencontainers.image.created": "{{ .Date }}"
+      "org.opencontainers.image.licenses": Apache-2.0
+      "org.opencontainers.image.base.name": "{{ .BaseImage }}"
+      "org.opencontainers.image.base.digest": "{{ .BaseImageDigest }}"
+      "org.opencontainers.image.description": Manages Sonarr, Radarr, Lidarr and Readarr configuration as Kubernetes resources
   - id: media-operator-indexers
     ids: [media-operator-indexers]
     images: [ghcr.io/kyleseneker/media-operator-indexers]
@@ -93,7 +93,7 @@ dockers_v2:
       BINARY: media-operator-indexers
     annotations:
       <<: *image-annotations
-      "index,manifest:org.opencontainers.image.description": Manages Prowlarr and FlareSolverr configuration as Kubernetes resources
+      "org.opencontainers.image.description": Manages Prowlarr and FlareSolverr configuration as Kubernetes resources
   - id: media-operator-subtitles
     ids: [media-operator-subtitles]
     images: [ghcr.io/kyleseneker/media-operator-subtitles]
@@ -104,7 +104,7 @@ dockers_v2:
       BINARY: media-operator-subtitles
     annotations:
       <<: *image-annotations
-      "index,manifest:org.opencontainers.image.description": Manages Bazarr configuration as Kubernetes resources
+      "org.opencontainers.image.description": Manages Bazarr configuration as Kubernetes resources
   - id: media-operator-curation
     ids: [media-operator-curation]
     images: [ghcr.io/kyleseneker/media-operator-curation]
@@ -115,7 +115,7 @@ dockers_v2:
       BINARY: media-operator-curation
     annotations:
       <<: *image-annotations
-      "index,manifest:org.opencontainers.image.description": Manages Maintainerr configuration as Kubernetes resources
+      "org.opencontainers.image.description": Manages Maintainerr configuration as Kubernetes resources
   - id: media-operator-downloads
     ids: [media-operator-downloads]
     images: [ghcr.io/kyleseneker/media-operator-downloads]
@@ -126,7 +126,7 @@ dockers_v2:
       BINARY: media-operator-downloads
     annotations:
       <<: *image-annotations
-      "index,manifest:org.opencontainers.image.description": Manages qBittorrent and SABnzbd configuration as Kubernetes resources
+      "org.opencontainers.image.description": Manages qBittorrent and SABnzbd configuration as Kubernetes resources
   - id: media-operator-mediaservers
     ids: [media-operator-mediaservers]
     images: [ghcr.io/kyleseneker/media-operator-mediaservers]
@@ -137,7 +137,7 @@ dockers_v2:
       BINARY: media-operator-mediaservers
     annotations:
       <<: *image-annotations
-      "index,manifest:org.opencontainers.image.description": Manages Jellyfin and Plex configuration as Kubernetes resources
+      "org.opencontainers.image.description": Manages Jellyfin and Plex configuration as Kubernetes resources
   - id: media-operator-requests
     ids: [media-operator-requests]
     images: [ghcr.io/kyleseneker/media-operator-requests]
@@ -148,7 +148,7 @@ dockers_v2:
       BINARY: media-operator-requests
     annotations:
       <<: *image-annotations
-      "index,manifest:org.opencontainers.image.description": Manages Seerr configuration as Kubernetes resources
+      "org.opencontainers.image.description": Manages Seerr configuration as Kubernetes resources
   - id: media-operator-transcode
     ids: [media-operator-transcode]
     images: [ghcr.io/kyleseneker/media-operator-transcode]
@@ -159,7 +159,7 @@ dockers_v2:
       BINARY: media-operator-transcode
     annotations:
       <<: *image-annotations
-      "index,manifest:org.opencontainers.image.description": Manages Tdarr configuration as Kubernetes resources
+      "org.opencontainers.image.description": Manages Tdarr configuration as Kubernetes resources
   - id: media-operator-automation
     ids: [media-operator-automation]
     images: [ghcr.io/kyleseneker/media-operator-automation]
@@ -170,7 +170,7 @@ dockers_v2:
       BINARY: media-operator-automation
     annotations:
       <<: *image-annotations
-      "index,manifest:org.opencontainers.image.description": Manages Autobrr configuration as Kubernetes resources
+      "org.opencontainers.image.description": Manages Autobrr configuration as Kubernetes resources
 
 docker_signs:
   - cmd: cosign
