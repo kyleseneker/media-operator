@@ -234,3 +234,41 @@ func deepCopySlice(s []any) []any {
 	}
 	return result
 }
+
+// Covers reports whether current already holds everything desired declares.
+// Keys desired leaves out are ignored, arrays compare in order element by
+// element, and scalars match across the representations apps read back: a
+// number or bool as text, and a bool as 0/1. It suits documents an app stores
+// whole (Tdarr libraries and flows, Bazarr profiles), where merging arrays by
+// name could pair up elements that merely share a display name.
+func Covers(current, desired any) bool {
+	switch d := desired.(type) {
+	case map[string]any:
+		c, ok := current.(map[string]any)
+		if !ok {
+			return false
+		}
+		for k, dv := range d {
+			if !Covers(c[k], dv) {
+				return false
+			}
+		}
+		return true
+	case []any:
+		c, ok := current.([]any)
+		if !ok || len(c) != len(d) {
+			return false
+		}
+		for i := range d {
+			if !Covers(c[i], d[i]) {
+				return false
+			}
+		}
+		return true
+	case bool:
+		if c, ok := current.(float64); ok {
+			return (c != 0) == d
+		}
+	}
+	return reflect.DeepEqual(current, desired) || sameScalarText(current, desired)
+}

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"maps"
 	"net/url"
-	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -266,7 +265,7 @@ func bazarrScalarText(v any) string {
 }
 
 // sameBazarrProfiles compares only the keys the operator sends. Bazarr adds
-// keys of its own (tag) and reports originalFormat as 0/1.
+// keys of its own (tag) and reports originalFormat as 0/1; Covers allows both.
 func sameBazarrProfiles(current []map[string]any, desiredJSON string) bool {
 	var want []any
 	if err := json.Unmarshal([]byte(desiredJSON), &want); err != nil {
@@ -285,44 +284,7 @@ func sameBazarrProfiles(current []map[string]any, desiredJSON string) bool {
 	}
 	byID(have)
 	byID(want)
-	return bazarrProjectedEqual(have, want)
-}
-
-func bazarrProjectedEqual(current, desired any) bool {
-	switch d := desired.(type) {
-	case map[string]any:
-		c, ok := current.(map[string]any)
-		if !ok {
-			return false
-		}
-		for k, dv := range d {
-			if !bazarrProjectedEqual(c[k], dv) {
-				return false
-			}
-		}
-		return true
-	case []any:
-		c, ok := current.([]any)
-		if !ok || len(c) != len(d) {
-			return false
-		}
-		for i := range d {
-			if !bazarrProjectedEqual(c[i], d[i]) {
-				return false
-			}
-		}
-		return true
-	case bool:
-		switch c := current.(type) {
-		case bool:
-			return c == d
-		case float64:
-			return (c != 0) == d
-		}
-		return false
-	default:
-		return reflect.DeepEqual(current, desired)
-	}
+	return reconciler.Covers(any(have), any(want))
 }
 
 // SetupWithManager sets up the controller with the Manager.

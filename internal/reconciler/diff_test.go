@@ -206,3 +206,19 @@ func TestStringMatchingTheAppsTypedValueIsNotDrift(t *testing.T) {
 	_, changed, _ = MergeDesiredOverCurrent(current, desired)
 	assert.True(t, changed, "a different value must still be drift")
 }
+
+func TestCoversComparesOnlyWhatIsDeclared(t *testing.T) {
+	current := map[string]any{
+		"name": "English", "tag": nil, "originalFormat": float64(0), "port": float64(8080),
+		"items": []any{map[string]any{"id": float64(1), "language": "en", "extra": "kept"}},
+	}
+	assert.True(t, Covers(current, map[string]any{
+		"name": "English", "originalFormat": false, "port": "8080",
+		"items": []any{map[string]any{"id": float64(1), "language": "en"}},
+	}), "undeclared keys, 0 for false and quoted numbers are not differences")
+
+	assert.False(t, Covers(current, map[string]any{"name": "Spanish"}))
+	assert.False(t, Covers(current, map[string]any{"items": []any{}}), "a different length is a change")
+	assert.False(t, Covers(current, map[string]any{"missing": "x"}))
+	assert.False(t, Covers([]any{"a", "b"}, []any{"b", "a"}), "arrays are ordered")
+}
