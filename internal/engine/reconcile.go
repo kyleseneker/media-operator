@@ -323,6 +323,21 @@ func isNilInterface(v any) bool {
 	return rv.Kind() == reflect.Pointer && rv.IsNil()
 }
 
+// CorrectDifference is ObserveDifference for integrations that write through
+// their own client: it reports whether the caller must write, and counts the
+// correction so a write that never sticks shows up in drift_corrected_total.
+func CorrectDifference(app, resourceType, name string, current map[string]any, desired any) (bool, error) {
+	out, err := reconciler.MergeDesired(current, desired)
+	if err != nil {
+		return false, err
+	}
+	drift := current == nil || out.Changed
+	if drift {
+		metrics.DriftCorrectedTotal.WithLabelValues(app, resourceType, name).Inc()
+	}
+	return drift, nil
+}
+
 // ObserveDifference compares only desired fields, preserving the same partial
 // ownership and masked-value semantics as enforcement. A nil current object
 // means the resource does not exist and therefore requires creation.

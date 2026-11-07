@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -108,10 +109,19 @@ func (r *QBittorrentConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	// Reconcile categories
-	for _, cat := range config.Spec.Categories {
-		if err := reconcileQBCategory(ctx, qb, cat); err != nil {
-			logger.Error(err, "failed to reconcile category", "name", cat.Name)
-			syncErrors = append(syncErrors, fmt.Sprintf("category(%s): %v", cat.Name, err))
+	if len(config.Spec.Categories) > 0 {
+		existing, err := qb.ListCategories(ctx)
+		if err != nil {
+			syncErrors = append(syncErrors, fmt.Sprintf("listing categories: %v", err))
+		}
+		for _, cat := range config.Spec.Categories {
+			if err != nil {
+				break
+			}
+			if cerr := reconcileQBCategory(ctx, qb, existing, cat); cerr != nil {
+				logger.Error(cerr, "failed to reconcile category", "name", cat.Name)
+				syncErrors = append(syncErrors, fmt.Sprintf("category(%s): %v", cat.Name, cerr))
+			}
 		}
 	}
 
@@ -141,7 +151,7 @@ func qbPreferencePayload(prefs *downloadsv1alpha1.QBittorrentPreferences) (map[s
 	}
 
 	if prefs.SavePath != "" {
-		out["save_path"] = prefs.SavePath
+		out["save_path"] = qbPath(prefs.SavePath)
 	}
 	if prefs.Locale != "" {
 		out["locale"] = prefs.Locale
@@ -183,6 +193,18 @@ func qbPreferencePayload(prefs *downloadsv1alpha1.QBittorrentPreferences) (map[s
 	return out, nil
 }
 
+// qbPath is a path as qBittorrent stores it: without a trailing separator.
+// Declaring one would otherwise read back as a change on every pass.
+func qbPath(p string) string {
+	trimmed := strings.TrimRight(p, `/\`)
+	if trimmed == "" {
+		return p
+	}
+	return trimmed
+}
+
+// reconcileQBPreferences writes only when qBittorrent's preferences differ;
+// setPreferences on every pass would re-apply listen and WebUI settings.
 func reconcileQBPreferences(ctx context.Context, qb *qbclient.Client, prefs *downloadsv1alpha1.QBittorrentPreferences) error {
 	payload, err := qbPreferencePayload(prefs)
 	if err != nil {
@@ -191,19 +213,27 @@ func reconcileQBPreferences(ctx context.Context, qb *qbclient.Client, prefs *dow
 	if len(payload) == 0 {
 		return nil
 	}
+	current, err := qb.GetPreferences(ctx)
+	if err != nil {
+		return fmt.Errorf("reading preferences: %w", err)
+	}
+	changed, err := engine.CorrectDifference("qbittorrent", "settings", "preferences", current, payload)
+	if err != nil || !changed {
+		return err
+	}
 	return qb.SetPreferences(ctx, payload)
 }
 
-func reconcileQBCategory(ctx context.Context, qb *qbclient.Client, cat downloadsv1alpha1.QBittorrentCategory) error {
-	existing, err := qb.ListCategories(ctx)
-	if err != nil {
-		return fmt.Errorf("listing categories: %w", err)
+func reconcileQBCategory(ctx context.Context, qb *qbclient.Client, existing map[string]any, cat downloadsv1alpha1.QBittorrentCategory) error {
+	current, exists := existing[cat.Name].(map[string]any)
+	if !exists {
+		return qb.CreateCategory(ctx, cat.Name, qbPath(cat.SavePath))
 	}
-
-	if _, exists := existing[cat.Name]; exists {
-		return qb.EditCategory(ctx, cat.Name, cat.SavePath)
+	changed, err := engine.CorrectDifference("qbittorrent", "categories", cat.Name, current, map[string]any{"savePath": qbPath(cat.SavePath)})
+	if err != nil || !changed {
+		return err
 	}
-	return qb.CreateCategory(ctx, cat.Name, cat.SavePath)
+	return qb.EditCategory(ctx, cat.Name, qbPath(cat.SavePath))
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -253,7 +283,7 @@ func observeQBConfig(ctx context.Context, qb *qbclient.Client, spec downloadsv1a
 	}
 	for _, category := range spec.Categories {
 		current, _ := categories[category.Name].(map[string]any)
-		changed, err := engine.ObserveDifference("qbittorrent", "categories", category.Name, current, map[string]any{"savePath": category.SavePath})
+		changed, err := engine.ObserveDifference("qbittorrent", "categories", category.Name, current, map[string]any{"savePath": qbPath(category.SavePath)})
 		if err != nil {
 			return drift, err
 		}

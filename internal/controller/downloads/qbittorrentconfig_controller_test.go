@@ -10,6 +10,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	downloadsv1alpha1 "github.com/kyleseneker/media-operator/api/downloads/v1alpha1"
 	"github.com/kyleseneker/media-operator/internal/controller/internal/contract"
@@ -201,6 +204,65 @@ func TestQBObserveReadsWithoutChangingPreferencesOrCategories(t *testing.T) {
 				}
 			}
 			t.Fatalf("want %s, got %+v", tt.reason, cfg.Status.Conditions)
+		})
+	}
+}
+
+// Enforcement used to call setPreferences and editCategory on every pass. It
+// must write only what differs, comparing paths the way qBittorrent stores them.
+func TestQBEnforceWritesOnlyWhatDiffers(t *testing.T) {
+	for _, tt := range []struct {
+		name, path string
+		writes     []string
+	}{
+		{"matching, trailing slash declared", "/existing/", nil},
+		{"drift", "/new", []string{"POST /api/v2/app/setPreferences", "POST /api/v2/torrents/editCategory"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var writes []string
+			var mu sync.Mutex
+			ln, err := net.Listen("tcp", net.JoinHostPort(routableAddr(t), "0"))
+			require.NoError(t, err)
+			srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/api/v2/auth/login":
+					http.SetCookie(w, &http.Cookie{Name: "SID", Value: "session", Path: "/"})
+					_, _ = w.Write([]byte("Ok."))
+				case "/api/v2/app/version":
+					_, _ = w.Write([]byte("v5"))
+				case "/api/v2/app/preferences":
+					_, _ = w.Write([]byte(`{"save_path":"/existing","unmanaged":true}`))
+				case "/api/v2/torrents/categories":
+					_, _ = w.Write([]byte(`{"tv":{"name":"tv","savePath":"/existing"}}`))
+				default:
+					mu.Lock()
+					writes = append(writes, r.Method+" "+r.URL.Path)
+					mu.Unlock()
+				}
+			}))
+			_ = srv.Listener.Close()
+			srv.Listener = ln
+			srv.Start()
+			defer srv.Close()
+
+			scheme := runtime.NewScheme()
+			require.NoError(t, downloadsv1alpha1.AddToScheme(scheme))
+			require.NoError(t, corev1.AddToScheme(scheme))
+			cfg := &downloadsv1alpha1.QBittorrentConfig{Name: "qbit", Namespace: "media"}
+			cfg.Spec.Connection = downloadsv1alpha1.QBittorrentConnection{URL: srv.URL,
+				UsernameSecretRef: commonv1alpha1.SecretKeyRef{Name: "creds", Key: "user"},
+				PasswordSecretRef: commonv1alpha1.SecretKeyRef{Name: "creds", Key: "password"}}
+			cfg.Spec.Preferences = &downloadsv1alpha1.QBittorrentPreferences{SavePath: tt.path}
+			cfg.Spec.Categories = []downloadsv1alpha1.QBittorrentCategory{{Name: "tv", SavePath: tt.path}}
+			secret := &corev1.Secret{Name: "creds", Namespace: "media",
+				Data: map[string][]byte{"user": []byte("admin"), "password": []byte("pw")}}
+			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cfg, secret).
+				WithStatusSubresource(&downloadsv1alpha1.QBittorrentConfig{}).Build()
+			r := &QBittorrentConfigReconciler{Client: c, Scheme: scheme}
+			req := ctrl.Request{Name: "qbit", Namespace: "media"}
+			_, err = r.Reconcile(context.Background(), req)
+			require.NoError(t, err)
+			assert.Equal(t, tt.writes, writes)
 		})
 	}
 }
