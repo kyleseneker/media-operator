@@ -3,10 +3,15 @@
 package compat
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,6 +25,82 @@ import (
 	"github.com/kyleseneker/media-operator/internal/controller/downloads"
 	"github.com/kyleseneker/media-operator/internal/engine"
 )
+
+func TestSabnzbd(t *testing.T) {
+	t.Parallel()
+	sab := startContainer(t, containerSpec{name: "sabnzbd", image: sabnzbdImage, port: 8080, env: linuxserverEnv})
+	var key string
+	waitFor(t, "sabnzbd api key", 2*time.Minute, func() error {
+		out, err := runTool("exec", sab.id, "sh", "-c", `sed -n 's/^api_key = //p' /config/sabnzbd.ini`)
+		if err != nil || out == "" {
+			return fmt.Errorf("api_key not written yet: %v", err)
+		}
+		key = out
+		return nil
+	})
+	sab.exec(t, "mkdir -p /downloads/complete /downloads/incomplete /downloads/nzb-backup && chown -R abc:abc /downloads")
+	waitFor(t, "sabnzbd", 2*time.Minute, func() error {
+		_, err := sabnzbdGet(sab.url(), key, "version")
+		return err
+	})
+	proxy := newRecordingProxy(t, sab.url())
+
+	checkCompat(t, compatCase{
+		fixture: "sabnzbd.yaml",
+		vars:    map[string]string{"URL": proxy.url()},
+		secrets: map[string]string{"api-key": key, "usenet-username": "compat", "usenet-password": "usenet-secret"},
+		newObj:  func() ctrlcommon.ConfigResource { return &downloadsv1alpha1.SabnzbdConfig{} },
+		reconciler: func(c client.Client) reconcile.Reconciler {
+			return &downloads.SabnzbdConfigReconciler{Client: c, Scheme: c.Scheme(), Recorder: events.NewFakeRecorder(100)}
+		},
+		proxy: proxy,
+		// Every call is a form POST to /api; the mode says whether it writes.
+		read: func(r request) bool {
+			values, _ := url.ParseQuery(r.Body)
+			mode := values.Get("mode")
+			return getOnly(r) || mode == "version" || mode == "get_config"
+		},
+		observe: true,
+		verify: func(t *testing.T) {
+			raw, err := sabnzbdGet(sab.url(), key, "get_config")
+			require.NoError(t, err)
+			var cfg struct {
+				Config struct {
+					Misc       map[string]any   `json:"misc"`
+					Servers    []map[string]any `json:"servers"`
+					Categories []map[string]any `json:"categories"`
+				} `json:"config"`
+			}
+			require.NoError(t, json.Unmarshal(raw, &cfg))
+			assert.Equal(t, "/downloads/complete", cfg.Config.Misc["complete_dir"])
+			assert.Equal(t, "50M", cfg.Config.Misc["bandwidth_max"])
+			require.Len(t, cfg.Config.Servers, 1)
+			assert.Equal(t, "news.example.com", cfg.Config.Servers[0]["host"])
+			names := make([]any, 0, len(cfg.Config.Categories))
+			for _, c := range cfg.Config.Categories {
+				names = append(names, c["name"])
+			}
+			assert.Subset(t, names, []any{"tv", "movies"})
+		},
+	})
+}
+
+// sabnzbdGet calls the API directly, outside the operator.
+func sabnzbdGet(base, key, mode string) ([]byte, error) {
+	resp, err := http.Get(base + "/api?output=json&apikey=" + key + "&mode=" + mode)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK || bytes.Contains(body, []byte(`"error"`)) {
+		return nil, fmt.Errorf("%s: %d %s", mode, resp.StatusCode, body)
+	}
+	return body, nil
+}
 
 func TestQBittorrent(t *testing.T) {
 	t.Parallel()

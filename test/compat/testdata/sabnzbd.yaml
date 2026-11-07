@@ -1,0 +1,41 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: SabnzbdConfig
+metadata:
+  name: sabnzbd
+spec:
+  connection:
+    url: ${URL}
+    apiKeySecretRef:
+      name: compat-credentials
+      key: api-key
+  general:
+    downloadSpeedLimit: "50M"
+    pauseOnPostProcessing: true
+    autoSort: true
+    preCheck: true
+  folders:
+    completeDir: /downloads/complete
+    incompleteDir: /downloads/incomplete
+    nzbBackupDir: /downloads/nzb-backup
+  servers:
+    - name: Primary
+      host: news.example.com
+      port: 563
+      ssl: true
+      connections: 20
+      priority: 0
+      retention: 3000
+      enable: true
+      usernameSecretRef:
+        name: compat-credentials
+        key: usenet-username
+      passwordSecretRef:
+        name: compat-credentials
+        key: usenet-password
+  categories:
+    - name: tv
+      dir: tv
+      priority: 0
+    - name: movies
+      dir: movies
+      priority: 1
