@@ -2,7 +2,9 @@ package automation
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"maps"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -19,6 +21,7 @@ import (
 	autobrrclient "github.com/kyleseneker/media-operator/internal/client/autobrr"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/engine"
+	"github.com/kyleseneker/media-operator/internal/metrics"
 	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
 
@@ -64,7 +67,9 @@ func (r *AutobrrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
-	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthAPIKey, engine.WithAPIKey(apiKey), engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("autobrr"))
+	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthAPIKey, engine.WithAPIKey(apiKey),
+		// Autobrr reads only X-API-Token; any other header is answered with 403.
+		engine.WithAPIKeyHeader("X-API-Token"), engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("autobrr"))
 	if err != nil {
 		ctrlcommon.UpdateStatusUnreachable(ctx, r.Status(), &config, engine.ReasonInvalidConfig, err.Error())
 		return ctrl.Result{}, nil
@@ -137,7 +142,7 @@ func reconcileAutobrrDownloadClient(ctx context.Context, c client.Reader, ac *au
 
 	obj := map[string]any{
 		"name":    dc.Name,
-		"type":    dc.Type,
+		"type":    autobrrType(dc.Type),
 		"host":    dc.Host,
 		"enabled": dc.Enable == nil || *dc.Enable,
 	}
@@ -171,38 +176,16 @@ func reconcileAutobrrDownloadClient(ctx context.Context, c client.Reader, ac *au
 		obj["api_key"] = val
 	}
 
-	if dc.Settings != nil {
-		settings := make(map[string]any)
-		if dc.Settings.Category != "" {
-			settings["category"] = dc.Settings.Category
-		}
-		if dc.Settings.SavePath != "" {
-			settings["savePath"] = dc.Settings.SavePath
-		}
-		if dc.Settings.ContentLayout != "" {
-			settings["contentLayout"] = dc.Settings.ContentLayout
-		}
-		if dc.Settings.PrioritizeProperRepacks != nil {
-			settings["prioritizeProperRepacks"] = *dc.Settings.PrioritizeProperRepacks
-		}
-		if len(settings) > 0 {
-			obj["settings"] = settings
-		}
+	// Category, save path and content layout are set on filter actions in
+	// Autobrr; a download client has no such fields and drops them.
+	if dc.Settings != nil && (dc.Settings.Category != "" || dc.Settings.SavePath != "" ||
+		dc.Settings.ContentLayout != "" || dc.Settings.PrioritizeProperRepacks != nil) {
+		return fmt.Errorf("settings are not download client fields in Autobrr; set category, savePath and contentLayout on filter actions")
 	}
 
-	// Find existing by name
-	for _, e := range existing {
-		if name, _ := e["name"].(string); name == dc.Name {
-			id, ok := e["id"].(float64)
-			if !ok {
-				return fmt.Errorf("download client %q has no valid id", dc.Name)
-			}
-			obj["id"] = int(id)
-			return ac.UpdateDownloadClient(ctx, int(id), obj)
-		}
-	}
-
-	return ac.CreateDownloadClient(ctx, obj)
+	return upsertAutobrr("download client", dc.Name, existing, obj,
+		func() error { return ac.CreateDownloadClient(ctx, obj) },
+		func(id int) error { return ac.UpdateDownloadClient(ctx, id, obj) })
 }
 
 func reconcileAutobrrIndexer(ctx context.Context, c client.Reader, ac *autobrrclient.Client, namespace string, idx automationv1alpha1.AutobrrIndexer) error {
@@ -230,18 +213,9 @@ func reconcileAutobrrIndexer(ctx context.Context, c client.Reader, ac *autobrrcl
 		obj["api_key"] = val
 	}
 
-	for _, e := range existing {
-		if name, _ := e["name"].(string); name == idx.Name {
-			id, ok := e["id"].(float64)
-			if !ok {
-				return fmt.Errorf("indexer %q has no valid id", idx.Name)
-			}
-			obj["id"] = int(id)
-			return ac.UpdateIndexer(ctx, int(id), obj)
-		}
-	}
-
-	return ac.CreateIndexer(ctx, obj)
+	return upsertAutobrr("indexer", idx.Name, existing, obj,
+		func() error { return ac.CreateIndexer(ctx, obj) },
+		func(id int) error { return ac.UpdateIndexer(ctx, id, obj) })
 }
 
 func reconcileAutobrrIRCNetwork(ctx context.Context, c client.Reader, ac *autobrrclient.Client, namespace string, irc automationv1alpha1.AutobrrIRCNetwork) error {
@@ -260,8 +234,10 @@ func reconcileAutobrrIRCNetwork(ctx context.Context, c client.Reader, ac *autobr
 	if irc.TLS != nil {
 		obj["tls"] = *irc.TLS
 	}
+	// Autobrr keeps IRC authentication in a nested object.
+	auth := map[string]any{}
 	if irc.AuthMechanism != "" {
-		obj["auth_mechanism"] = irc.AuthMechanism
+		auth["mechanism"] = autobrrIRCAuth(irc.AuthMechanism)
 	}
 	if irc.InviteCommand != "" {
 		obj["invite_command"] = irc.InviteCommand
@@ -272,14 +248,17 @@ func reconcileAutobrrIRCNetwork(ctx context.Context, c client.Reader, ac *autobr
 		if err != nil {
 			return fmt.Errorf("resolving auth account: %w", err)
 		}
-		obj["auth_account"] = val
+		auth["account"] = val
 	}
 	if irc.AuthPasswordSecretRef != nil {
 		val, err := reconciler.ResolveSecretKeyRef(ctx, c, namespace, *irc.AuthPasswordSecretRef)
 		if err != nil {
 			return fmt.Errorf("resolving auth password: %w", err)
 		}
-		obj["auth_password"] = val
+		auth["password"] = val
+	}
+	if len(auth) > 0 {
+		obj["auth"] = auth
 	}
 
 	// Build channels list
@@ -299,18 +278,9 @@ func reconcileAutobrrIRCNetwork(ctx context.Context, c client.Reader, ac *autobr
 		obj["channels"] = channels
 	}
 
-	for _, e := range existing {
-		if name, _ := e["name"].(string); name == irc.Name {
-			id, ok := e["id"].(float64)
-			if !ok {
-				return fmt.Errorf("IRC network %q has no valid id", irc.Name)
-			}
-			obj["id"] = int(id)
-			return ac.UpdateIRCNetwork(ctx, int(id), obj)
-		}
-	}
-
-	return ac.CreateIRCNetwork(ctx, obj)
+	return upsertAutobrr("IRC network", irc.Name, existing, obj,
+		func() error { return ac.CreateIRCNetwork(ctx, obj) },
+		func(id int) error { return ac.UpdateIRCNetwork(ctx, id, obj) })
 }
 
 func reconcileAutobrrFeed(ctx context.Context, c client.Reader, ac *autobrrclient.Client, namespace string, feed automationv1alpha1.AutobrrFeed) error {
@@ -339,24 +309,27 @@ func reconcileAutobrrFeed(ctx context.Context, c client.Reader, ac *autobrrclien
 		obj["api_key"] = val
 	}
 
-	for _, e := range existing {
-		if name, _ := e["name"].(string); name == feed.Name {
-			id, ok := e["id"].(float64)
-			if !ok {
-				return fmt.Errorf("feed %q has no valid id", feed.Name)
-			}
-			obj["id"] = int(id)
-			return ac.UpdateFeed(ctx, int(id), obj)
-		}
-	}
-
-	return ac.CreateFeed(ctx, obj)
+	return upsertAutobrr("feed", feed.Name, existing, obj,
+		func() error { return ac.CreateFeed(ctx, obj) },
+		func(id int) error { return ac.UpdateFeed(ctx, id, obj) })
 }
 
 func reconcileAutobrrFilter(ctx context.Context, ac *autobrrclient.Client, filter automationv1alpha1.AutobrrFilter) error {
 	existing, err := ac.ListFilters(ctx)
 	if err != nil {
 		return fmt.Errorf("listing filters: %w", err)
+	}
+	downloaders, err := ac.ListDownloadClients(ctx)
+	if err != nil {
+		return fmt.Errorf("listing download clients: %w", err)
+	}
+	clientIDs := map[string]int{}
+	for _, d := range downloaders {
+		if name, _ := d["name"].(string); name != "" {
+			if id, ok := d["id"].(float64); ok {
+				clientIDs[name] = int(id)
+			}
+		}
 	}
 
 	obj := map[string]any{
@@ -403,54 +376,62 @@ func reconcileAutobrrFilter(ctx context.Context, ac *autobrrclient.Client, filte
 		obj["indexers"] = filter.Indexers
 	}
 
-	// Build actions
-	if len(filter.Actions) > 0 {
-		actions := make([]map[string]any, 0, len(filter.Actions))
-		for _, a := range filter.Actions {
-			aObj := map[string]any{
-				"name":    a.Name,
-				"type":    a.Type,
-				"enabled": a.Enable == nil || *a.Enable,
-			}
-			if a.ClientRef != "" {
-				aObj["client_id"] = a.ClientRef
-			}
-			if a.Category != "" {
-				aObj["category"] = a.Category
-			}
-			if a.SavePath != "" {
-				aObj["save_path"] = a.SavePath
-			}
-			if a.WebhookURL != "" {
-				aObj["webhook_url"] = a.WebhookURL
-			}
-			if a.ExecCommand != "" {
-				aObj["exec_cmd"] = a.ExecCommand
-			}
-			if a.ExecArgs != "" {
-				aObj["exec_args"] = a.ExecArgs
-			}
-			if a.WatchFolder != "" {
-				aObj["watch_folder"] = a.WatchFolder
-			}
-			actions = append(actions, aObj)
-		}
-		obj["actions"] = actions
+	// A new filter must carry these lists; Autobrr's columns reject null.
+	create := maps.Clone(obj)
+	addRequiredFilterLists(create)
+	filterID, err := upsertAutobrrFilter(ctx, ac, filter.Name, existing, obj, create)
+	if err != nil {
+		return err
 	}
+	if filterID == 0 || len(filter.Actions) == 0 {
+		return nil
+	}
+	return reconcileAutobrrActions(ctx, ac, filterID, filter, clientIDs)
+}
 
-	for _, e := range existing {
-		if name, _ := e["name"].(string); name == filter.Name {
-			id, ok := e["id"].(float64)
+// reconcileAutobrrActions creates or updates a filter's actions by name.
+func reconcileAutobrrActions(
+	ctx context.Context, ac *autobrrclient.Client, filterID int, filter automationv1alpha1.AutobrrFilter, clientIDs map[string]int,
+) error {
+	existing, err := ac.ListActions(ctx, filterID)
+	if err != nil {
+		return fmt.Errorf("listing actions of filter %q: %w", filter.Name, err)
+	}
+	for _, a := range filter.Actions {
+		aObj := map[string]any{
+			"name":    a.Name,
+			"type":    autobrrType(a.Type),
+			"enabled": a.Enable == nil || *a.Enable,
+		}
+		if a.ClientRef != "" {
+			// Autobrr links an action to a downloader by its numeric ID.
+			id, ok := clientIDs[a.ClientRef]
 			if !ok {
-				return fmt.Errorf("filter %q has no valid id", filter.Name)
+				return fmt.Errorf("action %q references download client %q, which does not exist", a.Name, a.ClientRef)
 			}
-			obj["id"] = int(id)
-			return ac.UpdateFilter(ctx, int(id), obj)
+			aObj["client_id"] = id
+		}
+		for key, value := range map[string]string{
+			"category": a.Category, "save_path": a.SavePath, "webhook_host": a.WebhookURL,
+			"exec_cmd": a.ExecCommand, "exec_args": a.ExecArgs, "watch_folder": a.WatchFolder,
+		} {
+			if value != "" {
+				aObj[key] = value
+			}
+		}
+		// Actions read back without their filter_id, so it is sent but not compared.
+		withFilter := func() map[string]any {
+			body := maps.Clone(aObj)
+			body["filter_id"] = filterID
+			return body
+		}
+		if err := upsertAutobrr("action", a.Name, existing, aObj,
+			func() error { return ac.CreateAction(ctx, withFilter()) },
+			func(id int) error { return ac.UpdateAction(ctx, id, withFilter()) }); err != nil {
+			return fmt.Errorf("action %q: %w", a.Name, err)
 		}
 	}
-
-	_, err = ac.CreateFilter(ctx, obj)
-	return err
+	return nil
 }
 
 // referencesSecret checks if the config references the given secret name.
@@ -512,4 +493,120 @@ func (r *AutobrrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		})).
 		Named("autobrrconfig").
 		Complete(r)
+}
+
+// autobrrTypes maps the CRD's client and action names to Autobrr's constants,
+// which are all Autobrr accepts ("invalid download client type" otherwise).
+var autobrrTypes = map[string]string{
+	"qBittorrent": "QBITTORRENT", "Deluge": "DELUGE_V2", "Transmission": "TRANSMISSION",
+	"rTorrent": "RTORRENT", "SABnzbd": "SABNZBD", "Sonarr": "SONARR", "Radarr": "RADARR",
+	"Lidarr": "LIDARR", "Readarr": "READARR", "Whisparr": "WHISPARR",
+	"Webhook": "WEBHOOK", "Exec": "EXEC", "WatchFolder": "WATCH_FOLDER",
+}
+
+func autobrrType(name string) string {
+	if t, ok := autobrrTypes[name]; ok {
+		return t
+	}
+	return name
+}
+
+// upsertAutobrr updates an existing resource only when Autobrr does not already
+// hold every declared value; writing on every pass rewrote each one each time.
+func upsertAutobrr(kind, name string, existing []map[string]any, obj map[string]any,
+	create func() error, update func(id int) error,
+) error {
+	for _, e := range existing {
+		if n, _ := e["name"].(string); n != name {
+			continue
+		}
+		id, ok := e["id"].(float64)
+		if !ok {
+			return fmt.Errorf("%s %q has no valid id", kind, name)
+		}
+		obj["id"] = int(id)
+		desired, err := jsonValue(obj)
+		if err != nil {
+			return err
+		}
+		if reconciler.Covers(e, desired) {
+			return nil
+		}
+		metrics.DriftCorrectedTotal.WithLabelValues("autobrr", kind, name).Inc()
+		return update(int(id))
+	}
+	return create()
+}
+
+// upsertAutobrrFilter compares against the full stored filter, since the list
+// endpoint returns a summary. An update replaces the whole filter, so it sends
+// the stored filter with the declared values over it.
+func upsertAutobrrFilter(
+	ctx context.Context, ac *autobrrclient.Client, name string, existing []map[string]any, obj, create map[string]any,
+) (int, error) {
+	for _, e := range existing {
+		if n, _ := e["name"].(string); n != name {
+			continue
+		}
+		raw, ok := e["id"].(float64)
+		if !ok {
+			return 0, fmt.Errorf("filter %q has no valid id", name)
+		}
+		id := int(raw)
+		full, err := ac.GetFilter(ctx, id)
+		if err != nil {
+			return 0, fmt.Errorf("reading filter %q: %w", name, err)
+		}
+		desired, err := jsonValue(obj)
+		if err != nil {
+			return 0, err
+		}
+		if reconciler.Covers(full, desired) {
+			return id, nil
+		}
+		merged, _, err := reconciler.MergeDesiredOverCurrent(full, obj)
+		if err != nil {
+			return 0, err
+		}
+		delete(merged, "actions")
+		addRequiredFilterLists(merged)
+		metrics.DriftCorrectedTotal.WithLabelValues("autobrr", "filter", name).Inc()
+		return id, ac.UpdateFilter(ctx, id, merged)
+	}
+	created, err := ac.CreateFilter(ctx, create)
+	if err != nil {
+		return 0, err
+	}
+	raw, _ := created["id"].(float64)
+	return int(raw), nil
+}
+
+// addRequiredFilterLists sets the lists Autobrr's filter columns reject as null
+// and its reads omit when empty.
+func addRequiredFilterLists(filter map[string]any) {
+	for _, list := range []string{"codecs", "containers"} {
+		if filter[list] == nil {
+			filter[list] = []string{}
+		}
+	}
+}
+
+func jsonValue(v any) (any, error) {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	var out any
+	return out, json.Unmarshal(raw, &out)
+}
+
+// autobrrIRCAuth maps the CRD's mechanism names to Autobrr's constants.
+func autobrrIRCAuth(mechanism string) string {
+	switch mechanism {
+	case "None":
+		return "NONE"
+	case "NickServ":
+		return "NICKSERV"
+	}
+	return mechanism
 }

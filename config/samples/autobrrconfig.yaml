@@ -23,8 +23,6 @@ spec:
       passwordSecretRef:
         name: qbittorrent-secrets
         key: password
-      settings:
-        category: autobrr
   filters:
     - name: "TV Shows - 1080p"
       priority: 1

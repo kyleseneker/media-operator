@@ -181,3 +181,42 @@ func TestAutobrrObserveRejectedBeforeApplicationAccess(t *testing.T) {
 		return condition.Type == "Synced" && condition.Reason == "InvalidConfig" && condition.Status == metav1.ConditionFalse
 	}), "expected explicit unsupported-policy status, got %+v", cfg.Status.Conditions)
 }
+
+// Autobrr accepts only its own constants; "qBittorrent" is answered with
+// "invalid download client type".
+func TestAutobrrTypeMapsToAutobrrConstants(t *testing.T) {
+	for in, want := range map[string]string{
+		"qBittorrent": "QBITTORRENT", "Deluge": "DELUGE_V2", "WatchFolder": "WATCH_FOLDER", "Webhook": "WEBHOOK",
+	} {
+		assert.Equal(t, want, autobrrType(in), in)
+	}
+	assert.Equal(t, "NONE", autobrrIRCAuth("None"))
+	assert.Equal(t, "NICKSERV", autobrrIRCAuth("NickServ"))
+}
+
+// A stored resource that already holds every declared value, with Autobrr's
+// redacted password, must not be rewritten.
+func TestUpsertAutobrrSkipsWhatAlreadyMatches(t *testing.T) {
+	existing := []map[string]any{{
+		"id": float64(4), "name": "qBittorrent", "type": "QBITTORRENT", "password": "<redacted>", "tls": false,
+	}}
+	obj := map[string]any{"name": "qBittorrent", "type": "QBITTORRENT", "password": "s3cret"}
+	updated := false
+	err := upsertAutobrr("download client", "qBittorrent", existing, obj,
+		func() error { require.Fail(t, "must not create"); return nil },
+		func(int) error { updated = true; return nil })
+	require.NoError(t, err)
+	assert.False(t, updated, "an unchanged download client was rewritten")
+
+	obj["type"] = "DELUGE_V2"
+	require.NoError(t, upsertAutobrr("download client", "qBittorrent", existing, obj,
+		func() error { return nil }, func(int) error { updated = true; return nil }))
+	assert.True(t, updated, "a real change must be written")
+}
+
+func TestAddRequiredFilterListsKeepsDeclaredValues(t *testing.T) {
+	filter := map[string]any{"codecs": []string{"x265"}}
+	addRequiredFilterLists(filter)
+	assert.Equal(t, []string{"x265"}, filter["codecs"])
+	assert.Equal(t, []string{}, filter["containers"], "Autobrr rejects a null containers column")
+}

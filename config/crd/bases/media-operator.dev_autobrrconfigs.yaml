@@ -155,7 +155,9 @@ spec:
                       description: port is the port of the download client.
                       type: integer
                     settings:
-                      description: settings contains additional client-specific settings.
+                      description: |-
+                        settings is deprecated and rejected: Autobrr has no client-level category,
+                        save path or content layout. Set category and savePath on filter actions.
                       properties:
                         category:
                           description: category is the default download category/label.
@@ -176,7 +178,8 @@ spec:
                       description: tls enables TLS for the connection.
                       type: boolean
                     type:
-                      description: type is the download client type.
+                      description: type is the download client type. Deluge means
+                        Deluge 2 (Autobrr's DELUGE_V2).
                       enum:
                       - qBittorrent
                       - Deluge
@@ -300,7 +303,8 @@ spec:
                               default save path.
                             type: string
                           type:
-                            description: type is the action type.
+                            description: type is the action type. Deluge means Deluge
+                              2 (Autobrr's DELUGE_V2).
                             enum:
                             - qBittorrent
                             - Deluge

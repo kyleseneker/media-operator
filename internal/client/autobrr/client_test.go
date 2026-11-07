@@ -35,7 +35,7 @@ func TestPing(t *testing.T) {
 
 func TestListDownloadClients(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/download_clients", r.URL.Path)
+		assert.Equal(t, "/api/downloaders", r.URL.Path)
 		_ = json.NewEncoder(w).Encode([]map[string]any{{"name": "qBit"}})
 	})
 	dcs, err := c.ListDownloadClients(context.Background())
@@ -46,19 +46,32 @@ func TestListDownloadClients(t *testing.T) {
 func TestCreateDownloadClient(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/api/download_clients", r.URL.Path)
+		assert.Equal(t, "/api/downloaders", r.URL.Path)
 		w.WriteHeader(http.StatusCreated)
 	})
 	assert.NoError(t, c.CreateDownloadClient(context.Background(), map[string]any{"name": "qBit"}))
 }
 
+// Autobrr updates a downloader at the collection path with the ID in the body.
 func TestUpdateDownloadClient(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPut, r.Method)
-		assert.Equal(t, "/api/download_clients/5", r.URL.Path)
+		assert.Equal(t, "/api/downloaders", r.URL.Path)
+		var body map[string]any
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		assert.Equal(t, float64(5), body["id"])
 		w.WriteHeader(http.StatusOK)
 	})
 	assert.NoError(t, c.UpdateDownloadClient(context.Background(), 5, map[string]any{"name": "qBit"}))
+}
+
+func TestUpdateIRCNetwork(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPut, r.Method)
+		assert.Equal(t, "/api/irc/network/3", r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+	})
+	assert.NoError(t, c.UpdateIRCNetwork(context.Background(), 3, map[string]any{"name": "IPT"}))
 }
 
 func TestListFilters(t *testing.T) {

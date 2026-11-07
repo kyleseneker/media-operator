@@ -63,7 +63,7 @@ type AutobrrDownloadClient struct {
 	// +kubebuilder:default=true
 	Enable *bool `json:"enable,omitempty"`
 
-	// type is the download client type.
+	// type is the download client type. Deluge means Deluge 2 (Autobrr's DELUGE_V2).
 	// +required
 	// +kubebuilder:validation:Enum=qBittorrent;Deluge;Transmission;rTorrent;SABnzbd;Sonarr;Radarr;Lidarr;Readarr;Whisparr
 	Type string `json:"type"`
@@ -92,7 +92,8 @@ type AutobrrDownloadClient struct {
 	// +optional
 	APIKeySecretRef *commonv1alpha1.SecretKeyRef `json:"apiKeySecretRef,omitempty"`
 
-	// settings contains additional client-specific settings.
+	// settings is deprecated and rejected: Autobrr has no client-level category,
+	// save path or content layout. Set category and savePath on filter actions.
 	// +optional
 	Settings *AutobrrDownloadClientSettings `json:"settings,omitempty"`
 }
@@ -319,7 +320,7 @@ type AutobrrFilterAction struct {
 	// +kubebuilder:default=true
 	Enable *bool `json:"enable,omitempty"`
 
-	// type is the action type.
+	// type is the action type. Deluge means Deluge 2 (Autobrr's DELUGE_V2).
 	// +required
 	// +kubebuilder:validation:Enum=qBittorrent;Deluge;Transmission;rTorrent;SABnzbd;Sonarr;Radarr;Lidarr;Readarr;Whisparr;Webhook;Exec;WatchFolder
 	Type string `json:"type"`

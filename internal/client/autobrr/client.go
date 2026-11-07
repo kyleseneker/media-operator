@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 
 	"github.com/kyleseneker/media-operator/internal/engine"
@@ -25,17 +26,21 @@ func (c *Client) Ping(ctx context.Context) error {
 }
 
 // --- Download Clients ---
+// Autobrr serves download clients as "downloaders" and updates them without an
+// ID in the path; the ID travels in the body.
 
 func (c *Client) ListDownloadClients(ctx context.Context) ([]map[string]any, error) {
-	return c.hc.GetJSONList(ctx, "/api/download_clients")
+	return c.hc.GetJSONList(ctx, "/api/downloaders")
 }
 
 func (c *Client) CreateDownloadClient(ctx context.Context, dc map[string]any) error {
-	return c.hc.PostJSON(ctx, "/api/download_clients", dc)
+	return c.hc.PostJSON(ctx, "/api/downloaders", dc)
 }
 
 func (c *Client) UpdateDownloadClient(ctx context.Context, id int, dc map[string]any) error {
-	return c.hc.PutJSON(ctx, fmt.Sprintf("/api/download_clients/%d", id), dc)
+	body := maps.Clone(dc)
+	body["id"] = id
+	return c.hc.PutJSON(ctx, "/api/downloaders", body)
 }
 
 // --- Indexers ---
@@ -63,7 +68,9 @@ func (c *Client) CreateIRCNetwork(ctx context.Context, net map[string]any) error
 }
 
 func (c *Client) UpdateIRCNetwork(ctx context.Context, id int, net map[string]any) error {
-	return c.hc.PutJSON(ctx, fmt.Sprintf("/api/irc/%d", id), net)
+	body := maps.Clone(net)
+	body["id"] = id
+	return c.hc.PutJSON(ctx, fmt.Sprintf("/api/irc/network/%d", id), body)
 }
 
 // --- Feeds ---
@@ -100,4 +107,26 @@ func (c *Client) CreateFilter(ctx context.Context, filter map[string]any) (map[s
 
 func (c *Client) UpdateFilter(ctx context.Context, id int, filter map[string]any) error {
 	return c.hc.PutJSON(ctx, fmt.Sprintf("/api/filters/%d", id), filter)
+}
+
+// GetFilter returns one filter.
+func (c *Client) GetFilter(ctx context.Context, id int) (map[string]any, error) {
+	return c.hc.GetJSON(ctx, fmt.Sprintf("/api/filters/%d", id))
+}
+
+// --- Actions ---
+// Autobrr stores a filter's actions separately and ignores actions sent with
+// the filter itself.
+
+// ListActions returns a filter's actions; the filter itself does not carry them.
+func (c *Client) ListActions(ctx context.Context, filterID int) ([]map[string]any, error) {
+	return c.hc.GetJSONList(ctx, fmt.Sprintf("/api/actions?filter_id=%d", filterID))
+}
+
+func (c *Client) CreateAction(ctx context.Context, action map[string]any) error {
+	return c.hc.PostJSON(ctx, "/api/actions", action)
+}
+
+func (c *Client) UpdateAction(ctx context.Context, id int, action map[string]any) error {
+	return c.hc.PutJSON(ctx, fmt.Sprintf("/api/actions/%d", id), action)
 }
