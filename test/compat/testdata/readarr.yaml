@@ -1,0 +1,112 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: ReadarrConfig
+metadata:
+  name: readarr
+spec:
+  connection:
+    url: ${URL}
+    apiKeySecretRef:
+      name: compat-credentials
+      key: api-key
+  mediaManagement:
+    copyUsingHardlinks: true
+    deleteEmptyFolders: true
+    importExtraFiles: true
+    extraFileExtensions: "lrc,nfo"
+    downloadPropersAndRepacks: preferAndUpgrade
+    rescanAfterRefresh: always
+    minimumFreeSpaceWhenImporting: 100
+    createEmptyAuthorFolders: false
+  naming:
+    renameBooks: true
+    replaceIllegalCharacters: true
+    standardBookFormat: "{Book Title}/{Author Name} - {Book Title}{ (PartNumber)}"
+    authorFolderFormat: "{Author Name}"
+  indexerConfig:
+    minimumAge: 0
+    retention: 0
+    maximumSize: 0
+    rssSyncInterval: 15
+  downloadClientConfig:
+    enableCompletedDownloadHandling: true
+    autoRedownloadFailed: true
+  ui:
+    firstDayOfWeek: 1
+    shortDateFormat: "MMM D YYYY"
+    longDateFormat: "dddd, MMMM D YYYY"
+    timeFormat: "h(:mm)a"
+    theme: dark
+    uiLanguage: 1
+  rootFolders:
+    - path: /data/media/books
+      defaultQualityProfileName: Books
+      defaultMetadataProfileName: Standard
+  remotePathMappings:
+    - host: ${HOST}
+      remotePath: /downloads/books
+      localPath: /data/media/books
+  tags:
+    - label: favorites
+  # No download client: Readarr is retired upstream and its qBittorrent client
+  # cannot log in to qBittorrent 5, which answers a login with an empty 204.
+  qualityProfiles:
+    - name: Books
+      upgradeAllowed: true
+      cutoff: EPUB
+      items:
+        - quality:
+            id: 2
+            name: MOBI
+          allowed: true
+        - quality:
+            id: 3
+            name: EPUB
+          allowed: true
+  indexers:
+    - name: Compat Torznab
+      protocol: torrent
+      implementation: Torznab
+      enableRss: true
+      enableAutomaticSearch: true
+      enableInteractiveSearch: true
+      priority: 10
+      tagLabels:
+        - favorites
+      fields:
+        - name: baseUrl
+          value: ${FAKES}/torznab
+        - name: apiPath
+          value: /api
+        - name: apiKey
+          valueFrom:
+            name: compat-credentials
+            key: api-key
+        - name: categories
+          value: [7000, 7020]
+        - name: minimumSeeders
+          value: 1
+  notifications:
+    - name: Compat Webhook
+      implementation: Webhook
+      onGrab: true
+      onReleaseImport: true
+      onUpgrade: true
+      onRename: true
+      onDownloadFailure: true
+      onImportFailure: true
+      onAuthorAdded: true
+      onAuthorDelete: true
+      onBookDelete: true
+      onBookFileDelete: true
+      onBookFileDeleteForUpgrade: true
+      onBookRetag: true
+      onHealthIssue: true
+      includeHealthWarnings: true
+      onApplicationUpdate: true
+      tagLabels:
+        - favorites
+      fields:
+        - name: url
+          value: ${FAKES}/webhook
+        - name: method
+          value: 1

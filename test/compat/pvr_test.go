@@ -110,6 +110,73 @@ func TestRadarr(t *testing.T) {
 	})
 }
 
+func TestLidarr(t *testing.T) {
+	t.Parallel()
+	lidarr, key := startPVR(t, "lidarr", lidarrImage, 8686, "v1")
+	lidarr.exec(t, "mkdir -p /data/media/music && chown -R abc:abc /data")
+	qbit, qbitPassword := startQBittorrent(t)
+	fakes := startFakes(t)
+	proxy := newRecordingProxy(t, lidarr.url())
+
+	checkCompat(t, compatCase{
+		fixture: "lidarr.yaml",
+		vars: map[string]string{
+			"URL": proxy.url(), "HOST": hostIP, "FAKES": fakes, "QBITTORRENT_PORT": strconv.Itoa(qbit.port),
+		},
+		secrets: map[string]string{
+			"api-key": key, "qbittorrent-username": qbittorrentUser, "qbittorrent-password": qbitPassword,
+		},
+		newObj: func() ctrlcommon.ConfigResource { return &pvrv1alpha1.LidarrConfig{} },
+		reconciler: func(c client.Client) reconcile.Reconciler {
+			return &pvr.LidarrConfigReconciler{Client: c, Scheme: c.Scheme(), Recorder: events.NewFakeRecorder(100)}
+		},
+		proxy:   proxy,
+		observe: true,
+		verify: func(t *testing.T) {
+			hc := directClient(t, lidarr.url(), key)
+			requireNamed(t, hc, "/api/v1/rootfolder", "music")
+			requireNamed(t, hc, "/api/v1/downloadclient", "qBittorrent")
+			requireNamed(t, hc, "/api/v1/indexer", "Compat Torznab")
+			requireNamed(t, hc, "/api/v1/qualityprofile", "Music")
+			requireNamed(t, hc, "/api/v1/notification", "Compat Webhook")
+			lists, err := hc.GetJSONList(context.Background(), "/api/v1/importlist")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(lists) != 1 || lists[0]["shouldMonitor"] != "entireArtist" {
+				t.Errorf("import list monitor did not reach Lidarr: %v", lists)
+			}
+		},
+	})
+}
+
+func TestReadarr(t *testing.T) {
+	t.Parallel()
+	readarr, key := startPVR(t, "readarr", readarrImage, 8787, "v1")
+	readarr.exec(t, "mkdir -p /data/media/books && chown -R abc:abc /data")
+	fakes := startFakes(t)
+	proxy := newRecordingProxy(t, readarr.url())
+
+	checkCompat(t, compatCase{
+		fixture: "readarr.yaml",
+		vars:    map[string]string{"URL": proxy.url(), "HOST": hostIP, "FAKES": fakes},
+		secrets: map[string]string{"api-key": key},
+		newObj:  func() ctrlcommon.ConfigResource { return &pvrv1alpha1.ReadarrConfig{} },
+		reconciler: func(c client.Client) reconcile.Reconciler {
+			return &pvr.ReadarrConfigReconciler{Client: c, Scheme: c.Scheme(), Recorder: events.NewFakeRecorder(100)}
+		},
+		proxy:   proxy,
+		observe: true,
+		verify: func(t *testing.T) {
+			hc := directClient(t, readarr.url(), key)
+			requireNamed(t, hc, "/api/v1/rootfolder", "books")
+			requireNamed(t, hc, "/api/v1/indexer", "Compat Torznab")
+			requireNamed(t, hc, "/api/v1/qualityprofile", "Books")
+			requireNamed(t, hc, "/api/v1/notification", "Compat Webhook")
+		},
+	})
+}
+
 func requireNamed(t *testing.T, hc interface {
 	GetJSONList(context.Context, string) ([]map[string]any, error)
 }, path, name string) {

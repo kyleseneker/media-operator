@@ -11,5 +11,9 @@ const (
 	// renovate: datasource=docker
 	radarrImage = "lscr.io/linuxserver/radarr:6.4.4.10685-ls325"
 	// renovate: datasource=docker
+	lidarrImage = "lscr.io/linuxserver/lidarr:3.1.6.5079-ls47"
+	// renovate: datasource=docker
+	readarrImage = "lscr.io/linuxserver/readarr:develop-0.4.18.2805-ls157"
+	// renovate: datasource=docker
 	qbittorrentImage = "lscr.io/linuxserver/qbittorrent:5.3.0_v2.1.2-ls486"
 )

@@ -71,6 +71,7 @@ func startFakes(t *testing.T) string {
 	lists := map[string]string{
 		"/lists/sonarr": `[{"title":"Breaking Bad","tvdbId":81189}]`,
 		"/lists/radarr": `[{"id":603,"title":"The Matrix","imdb_id":"tt0133093"}]`,
+		"/lists/lidarr": `[{"artistName":"Radiohead","musicBrainzId":"a74b1b7f-71a5-4011-9441-d0b5e4122711"}]`,
 	}
 	for path, body := range lists {
 		mux.HandleFunc(path, func(w http.ResponseWriter, _ *http.Request) {

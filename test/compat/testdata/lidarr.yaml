@@ -1,0 +1,144 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: LidarrConfig
+metadata:
+  name: lidarr
+spec:
+  connection:
+    url: ${URL}
+    apiKeySecretRef:
+      name: compat-credentials
+      key: api-key
+  mediaManagement:
+    copyUsingHardlinks: true
+    deleteEmptyFolders: true
+    importExtraFiles: true
+    extraFileExtensions: "lrc,nfo"
+    downloadPropersAndRepacks: preferAndUpgrade
+    rescanAfterRefresh: always
+    minimumFreeSpaceWhenImporting: 100
+    createEmptyArtistFolders: false
+  naming:
+    renameTracks: true
+    replaceIllegalCharacters: true
+    standardTrackFormat: "{Album Title} ({Release Year})/{Artist Name} - {Album Title} - {track:00} - {Track Title}"
+    multiDiscTrackFormat: "{Album Title} ({Release Year})/{Medium Format} {medium:00}/{Artist Name} - {Album Title} - {track:00} - {Track Title}"
+    artistFolderFormat: "{Artist Name}"
+  indexerConfig:
+    minimumAge: 0
+    retention: 0
+    maximumSize: 0
+    rssSyncInterval: 15
+  downloadClientConfig:
+    enableCompletedDownloadHandling: true
+    autoRedownloadFailed: true
+  ui:
+    firstDayOfWeek: 1
+    shortDateFormat: "MMM D YYYY"
+    longDateFormat: "dddd, MMMM D YYYY"
+    timeFormat: "h(:mm)a"
+    theme: dark
+    uiLanguage: 1
+  rootFolders:
+    - path: /data/media/music
+      defaultQualityProfileName: Music
+      defaultMetadataProfileName: Standard
+  remotePathMappings:
+    - host: ${HOST}
+      remotePath: /downloads/music
+      localPath: /data/media/music
+  tags:
+    - label: favorites
+  downloadClients:
+    - name: qBittorrent
+      protocol: torrent
+      implementation: QBittorrent
+      host: ${HOST}
+      port: ${QBITTORRENT_PORT}
+      category: music
+      priority: 1
+      removeCompletedDownloads: true
+      removeFailedDownloads: true
+      tagLabels:
+        - favorites
+      usernameSecretRef:
+        name: compat-credentials
+        key: qbittorrent-username
+      passwordSecretRef:
+        name: compat-credentials
+        key: qbittorrent-password
+  qualityProfiles:
+    - name: Music
+      upgradeAllowed: true
+      cutoff: Lossless
+      items:
+        - quality:
+            id: 4
+            name: MP3-320
+          allowed: true
+        - name: Lossless
+          allowed: true
+          items:
+            - quality:
+                id: 6
+                name: FLAC
+            - quality:
+                id: 7
+                name: ALAC
+  indexers:
+    - name: Compat Torznab
+      protocol: torrent
+      implementation: Torznab
+      enableRss: true
+      enableAutomaticSearch: true
+      enableInteractiveSearch: true
+      priority: 10
+      tagLabels:
+        - favorites
+      fields:
+        - name: baseUrl
+          value: ${FAKES}/torznab
+        - name: apiPath
+          value: /api
+        - name: apiKey
+          valueFrom:
+            name: compat-credentials
+            key: api-key
+        - name: categories
+          value: [3000, 3040]
+        - name: minimumSeeders
+          value: 1
+  notifications:
+    - name: Compat Webhook
+      implementation: Webhook
+      onGrab: true
+      onReleaseImport: true
+      onUpgrade: true
+      onRename: true
+      onDownloadFailure: true
+      onImportFailure: true
+      onArtistAdd: true
+      onArtistDelete: true
+      onAlbumDelete: true
+      onTrackRetag: true
+      onHealthIssue: true
+      onHealthRestored: true
+      includeHealthWarnings: true
+      onApplicationUpdate: true
+      tagLabels:
+        - favorites
+      fields:
+        - name: url
+          value: ${FAKES}/webhook
+        - name: method
+          value: 1
+  importLists:
+    - name: Compat List
+      implementation: CustomImport
+      enableAutomaticAdd: false
+      monitor: entireArtist
+      qualityProfileName: Music
+      metadataProfileName: Standard
+      rootFolderPath: /data/media/music
+      fields:
+        - name: baseUrl
+          value: ${FAKES}/lists/lidarr
