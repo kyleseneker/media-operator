@@ -156,3 +156,25 @@ func TestPlexObserveRejectedBeforeApplicationAccess(t *testing.T) {
 		return condition.Type == "Synced" && condition.Reason == "InvalidConfig" && condition.Status == metav1.ConditionFalse
 	}), "expected explicit unsupported-policy status, got %+v", cfg.Status.Conditions)
 }
+
+// Settings Plex lists are compared; settings it accepts without listing them
+// (secureConnections, hardware switches) cannot be, and are returned apart.
+func TestPlexPreferenceChangesSkipsMatchesAndSeparatesUnlisted(t *testing.T) {
+	desired := map[string]string{"FriendlyName": "plex", "FSEventLibraryUpdatesEnabled": "1", "secureConnections": "1"}
+	current := map[string]string{"FriendlyName": "plex", "FSEventLibraryUpdatesEnabled": "0"}
+
+	changes, unlisted := plexPreferenceChanges(desired, current)
+
+	assert.Equal(t, map[string]string{"FSEventLibraryUpdatesEnabled": "1"}, changes)
+	assert.Equal(t, []string{"secureConnections"}, unlisted)
+}
+
+func TestPlexPreferencesUseCurrentPlexNames(t *testing.T) {
+	prefs := buildPlexPreferences(mediaserversv1alpha1.PlexConfigSpec{
+		Server:     &mediaserversv1alpha1.PlexServer{ScanMyLibraryAutomatically: new(true), ScanMyLibraryPeriodically: new(true)},
+		Transcoder: &mediaserversv1alpha1.PlexTranscoder{MaxSimultaneousVideoTranscodes: new(2)},
+	})
+	assert.Equal(t, map[string]string{
+		"FSEventLibraryUpdatesEnabled": "1", "ScheduledLibraryUpdatesEnabled": "1", "TranscodeCountLimit": "2",
+	}, prefs)
+}

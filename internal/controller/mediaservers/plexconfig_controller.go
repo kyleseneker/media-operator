@@ -3,6 +3,8 @@ package mediaservers
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"time"
 
@@ -20,6 +22,7 @@ import (
 	plexclient "github.com/kyleseneker/media-operator/internal/client/plex"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/engine"
+	"github.com/kyleseneker/media-operator/internal/metrics"
 	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
 
@@ -81,12 +84,7 @@ func (r *PlexConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// Reconcile preferences (server, transcoder, network are all Plex prefs)
 	desiredPrefs := buildPlexPreferences(config.Spec)
 
-	if len(desiredPrefs) > 0 {
-		if err := pc.SetPreferences(ctx, desiredPrefs); err != nil {
-			logger.Error(err, "failed to set preferences")
-			syncErrors = append(syncErrors, fmt.Sprintf("preferences: %v", err))
-		}
-	}
+	syncErrors = append(syncErrors, reconcilePlexPreferences(ctx, pc, string(config.UID), desiredPrefs)...)
 
 	// Libraries (create-only)
 	if len(config.Spec.Libraries) > 0 {
@@ -128,7 +126,8 @@ func (r *PlexConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 				}
 				lang := lib.Language
 				if lang == "" {
-					lang = "en"
+					// Plex takes a locale; a bare "en" is rejected.
+					lang = "en-US"
 				}
 				if err := pc.CreateLibrary(ctx, lib.Name, lib.Type, agent, scanner, lang, lib.Paths); err != nil {
 					syncErrors = append(syncErrors, fmt.Sprintf("createLibrary(%s): %v", lib.Name, err))
@@ -176,10 +175,10 @@ func buildPlexPreferences(spec mediaserversv1alpha1.PlexConfigSpec) map[string]s
 			desiredPrefs["autoEmptyTrash"] = ctrlcommon.BoolTo01(*s.AutoEmptyTrash)
 		}
 		if s.ScanMyLibraryAutomatically != nil {
-			desiredPrefs["ScanMyLibraryAutomatically"] = ctrlcommon.BoolTo01(*s.ScanMyLibraryAutomatically)
+			desiredPrefs["FSEventLibraryUpdatesEnabled"] = ctrlcommon.BoolTo01(*s.ScanMyLibraryAutomatically)
 		}
 		if s.ScanMyLibraryPeriodically != nil {
-			desiredPrefs["ScanMyLibraryPeriodically"] = ctrlcommon.BoolTo01(*s.ScanMyLibraryPeriodically)
+			desiredPrefs["ScheduledLibraryUpdatesEnabled"] = ctrlcommon.BoolTo01(*s.ScanMyLibraryPeriodically)
 		}
 		if s.LogDebug != nil {
 			desiredPrefs["logDebug"] = ctrlcommon.BoolTo01(*s.LogDebug)
@@ -190,19 +189,19 @@ func buildPlexPreferences(spec mediaserversv1alpha1.PlexConfigSpec) map[string]s
 	}
 	if t := spec.Transcoder; t != nil {
 		if t.TranscodeHwRequested != nil {
-			desiredPrefs["TranscoderHwRequested"] = ctrlcommon.BoolTo01(*t.TranscodeHwRequested)
+			desiredPrefs["HardwareAcceleratedCodecs"] = ctrlcommon.BoolTo01(*t.TranscodeHwRequested)
 		}
 		if t.HardwareAccelerationType != "" {
 			desiredPrefs["HardwareAccelerationType"] = t.HardwareAccelerationType
 		}
 		if t.MaxSimultaneousVideoTranscodes != nil {
-			desiredPrefs["TranscoderMaxSimulTranscodes"] = strconv.Itoa(*t.MaxSimultaneousVideoTranscodes)
+			desiredPrefs["TranscodeCountLimit"] = strconv.Itoa(*t.MaxSimultaneousVideoTranscodes)
 		}
 		if t.TranscodeHwDecodingEnabled != nil {
 			desiredPrefs["TranscodeHwDecodingEnabled"] = ctrlcommon.BoolTo01(*t.TranscodeHwDecodingEnabled)
 		}
 		if t.TranscodeHwEncodingEnabled != nil {
-			desiredPrefs["TranscodeHwEncodingEnabled"] = ctrlcommon.BoolTo01(*t.TranscodeHwEncodingEnabled)
+			desiredPrefs["HardwareAcceleratedEncoders"] = ctrlcommon.BoolTo01(*t.TranscodeHwEncodingEnabled)
 		}
 		if t.TranscoderTempDirectory != "" {
 			desiredPrefs["TranscoderTempDirectory"] = t.TranscoderTempDirectory
@@ -223,4 +222,60 @@ func buildPlexPreferences(spec mediaserversv1alpha1.PlexConfigSpec) map[string]s
 		}
 	}
 	return desiredPrefs
+}
+
+// plexPreferenceChanges returns the declared preferences whose value differs
+// from Plex's, and those Plex does not list and so cannot be compared.
+func plexPreferenceChanges(desired, current map[string]string) (map[string]string, []string) {
+	changes := map[string]string{}
+	var unknown []string
+	for key, value := range desired {
+		have, ok := current[key]
+		switch {
+		case !ok:
+			unknown = append(unknown, key)
+		case have != value:
+			changes[key] = value
+		}
+	}
+	slices.Sort(unknown)
+	return changes, unknown
+}
+
+// reconcilePlexPreferences writes the declared preferences that differ, one
+// per request, and returns what could not be read or written.
+func reconcilePlexPreferences(ctx context.Context, pc *plexclient.Client, owner string, desiredPrefs map[string]string) []string {
+	logger := log.FromContext(ctx)
+	var syncErrors []string
+	if len(desiredPrefs) > 0 {
+		current, err := pc.GetSettings(ctx)
+		if err != nil {
+			syncErrors = append(syncErrors, fmt.Sprintf("reading preferences: %v", err))
+		} else {
+			changes, unlisted := plexPreferenceChanges(desiredPrefs, current)
+			// Some settings (secureConnections, the hardware switches) are accepted
+			// but never listed, so what was last written is remembered instead.
+			remember := func(key string) string { return fmt.Sprintf("plex/%s/pref/%s", owner, key) }
+			for _, key := range unlisted {
+				if reconciler.SecretsChangedSince(remember(key), desiredPrefs[key]) {
+					changes[key] = desiredPrefs[key]
+				}
+			}
+			// One key per request: Plex rejects a whole update over one setting it
+			// does not have, which would block every other setting.
+			for _, key := range slices.Sorted(maps.Keys(changes)) {
+				metrics.DriftCorrectedTotal.WithLabelValues("plex", "settings", key).Inc()
+				if err := pc.SetPreferences(ctx, map[string]string{key: changes[key]}); err != nil {
+					logger.Error(err, "Plex rejected a preference", "setting", key)
+					syncErrors = append(syncErrors, fmt.Sprintf("preference %s: Plex rejected it (%v); it may need Plex Pass or not exist in this version", key, err))
+					continue
+				}
+				if slices.Contains(unlisted, key) {
+					reconciler.RecordSecrets(remember(key), changes[key])
+				}
+			}
+		}
+	}
+
+	return syncErrors
 }

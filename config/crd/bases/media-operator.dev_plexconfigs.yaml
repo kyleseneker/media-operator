@@ -217,8 +217,9 @@ spec:
                     description: friendlyName is the server's display name.
                     type: string
                   language:
-                    description: language is the preferred language (ISO 639-1, e.g.,
-                      "en").
+                    description: |-
+                      language is not a setting current Plex has; Plex rejects it and reports why.
+                      Set a library's language on the library instead.
                     type: string
                   logDebug:
                     description: logDebug enables debug logging.
@@ -244,7 +245,9 @@ spec:
                       transcodes. 0 = unlimited.
                     type: integer
                   transcodeHwDecodingEnabled:
-                    description: transcodeHwDecodingEnabled enables hardware decoding.
+                    description: |-
+                      transcodeHwDecodingEnabled is not a setting current Plex has; Plex rejects it
+                      and reports why. transcodeHwRequested covers hardware decoding.
                     type: boolean
                   transcodeHwEncodingEnabled:
                     description: transcodeHwEncodingEnabled enables hardware encoding.

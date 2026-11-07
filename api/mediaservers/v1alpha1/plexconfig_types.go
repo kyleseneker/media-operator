@@ -54,7 +54,8 @@ type PlexServer struct {
 	// +optional
 	FriendlyName string `json:"friendlyName,omitempty"`
 
-	// language is the preferred language (ISO 639-1, e.g., "en").
+	// language is not a setting current Plex has; Plex rejects it and reports why.
+	// Set a library's language on the library instead.
 	// +optional
 	Language string `json:"language,omitempty"`
 
@@ -93,7 +94,8 @@ type PlexTranscoder struct {
 	// +optional
 	MaxSimultaneousVideoTranscodes *int `json:"maxSimultaneousVideoTranscodes,omitempty"`
 
-	// transcodeHwDecodingEnabled enables hardware decoding.
+	// transcodeHwDecodingEnabled is not a setting current Plex has; Plex rejects it
+	// and reports why. transcodeHwRequested covers hardware decoding.
 	// +optional
 	TranscodeHwDecodingEnabled *bool `json:"transcodeHwDecodingEnabled,omitempty"`
 

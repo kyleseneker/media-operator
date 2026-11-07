@@ -81,3 +81,33 @@ func TestCreateLibrary(t *testing.T) {
 	err := c.CreateLibrary(context.Background(), "Movies", "movie", "com.plexapp.agents.imdb", "Plex Movie Scanner", "en", []string{"/media/movies"})
 	assert.NoError(t, err)
 }
+
+func TestGetSettingsRendersValuesAsPlexAcceptsThem(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"MediaContainer":{"Setting":[` +
+			`{"id":"FriendlyName","value":"plex"},{"id":"autoEmptyTrash","value":true},{"id":"TranscodeCountLimit","value":2}]}}`))
+	})
+	settings, err := c.GetSettings(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"FriendlyName": "plex", "autoEmptyTrash": "1", "TranscodeCountLimit": "2"}, settings)
+}
+
+// A Plex without libraries leaves Directory out; that is an empty list.
+func TestListLibrariesOnAFreshServer(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"MediaContainer":{"size":0}}`))
+	})
+	libs, err := c.ListLibraries(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, libs)
+}
+
+func TestCreateLibrarySendsOneLocationPerFolder(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, []string{"/media/movies", "/media/more"}, r.URL.Query()["location"])
+		assert.Equal(t, "en-US", r.URL.Query().Get("language"))
+		w.WriteHeader(http.StatusCreated)
+	})
+	require.NoError(t, c.CreateLibrary(context.Background(), "Movies", "movie", "tv.plex.agents.movie", "Plex Movie", "en-US",
+		[]string{"/media/movies", "/media/more"}))
+}
