@@ -222,3 +222,8 @@ func TestCoversComparesOnlyWhatIsDeclared(t *testing.T) {
 	assert.False(t, Covers(current, map[string]any{"missing": "x"}))
 	assert.False(t, Covers([]any{"a", "b"}, []any{"b", "a"}), "arrays are ordered")
 }
+
+func TestCoversTreatsAMaskedSecretAsUnverifiable(t *testing.T) {
+	assert.True(t, Covers(map[string]any{"password": "<redacted>"}, map[string]any{"password": "s3cret"}))
+	assert.True(t, Covers(map[string]any{"apiKey": "********"}, map[string]any{"apiKey": "k"}))
+}

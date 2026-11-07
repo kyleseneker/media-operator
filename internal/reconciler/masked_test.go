@@ -107,3 +107,8 @@ func TestDigestOfIsOrderIndependent(t *testing.T) {
 	assert.NotEqual(t, digestOf([]string{"a"}), digestOf([]string{"b"}))
 	assert.Empty(t, digestOf(nil))
 }
+
+func TestIsMaskedRecognizesAutobrrRedaction(t *testing.T) {
+	assert.True(t, IsMasked("<redacted>"))
+	assert.False(t, IsMasked("redacted"))
+}

@@ -269,6 +269,11 @@ func Covers(current, desired any) bool {
 		if c, ok := current.(float64); ok {
 			return (c != 0) == d
 		}
+	case string:
+		// A masked secret cannot be read back, so it cannot be shown to differ.
+		if IsMasked(current) {
+			return true
+		}
 	}
 	return reflect.DeepEqual(current, desired) || sameScalarText(current, desired)
 }

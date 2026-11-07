@@ -21,7 +21,8 @@ func IsMasked(v any) bool {
 	if !ok || len(s) < maskedMinLen {
 		return false
 	}
-	return strings.Trim(s, "*") == ""
+	// Autobrr substitutes the literal "<redacted>".
+	return strings.Trim(s, "*") == "" || s == "<redacted>"
 }
 
 // secretDigest holds the hashes of the secret values the operator last wrote,
