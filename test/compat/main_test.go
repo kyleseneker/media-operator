@@ -137,6 +137,9 @@ type compatCase struct {
 	// export names the app for media-operator export, whose output must then
 	// describe the application exactly: observe mode finds nothing different.
 	export string
+	// exportAPIKey supplies the API key export reads with, where the fixture
+	// signs in another way.
+	exportAPIKey func(t *testing.T) string
 }
 
 func checkCompat(t *testing.T, tc compatCase) {
@@ -197,8 +200,12 @@ func checkExport(t *testing.T, tc compatCase, r reconcile.Reconciler, fixture cl
 	t.Helper()
 	ctx := context.Background()
 	namespace := fixture.GetNamespace()
+	apiKey := tc.secrets["api-key"]
+	if tc.exportAPIKey != nil {
+		apiKey = tc.exportAPIKey(t)
+	}
 	res, err := export.Run(ctx, export.Options{
-		App: tc.export, URL: tc.proxy.url(), APIKey: tc.secrets["api-key"], Name: "exported", Namespace: namespace,
+		App: tc.export, URL: tc.proxy.url(), APIKey: apiKey, Name: "exported", Namespace: namespace,
 		Username: tc.secrets["username"], Password: tc.secrets["password"], Token: tc.secrets["token"],
 	})
 	require.NoError(t, err, "exporting %s", tc.export)

@@ -23,6 +23,7 @@ import (
 	indexersv1alpha1 "github.com/kyleseneker/media-operator/api/indexers/v1alpha1"
 	mediaserversv1alpha1 "github.com/kyleseneker/media-operator/api/mediaservers/v1alpha1"
 	pvrv1alpha1 "github.com/kyleseneker/media-operator/api/pvr/v1alpha1"
+	requestsv1alpha1 "github.com/kyleseneker/media-operator/api/requests/v1alpha1"
 	subtitlesv1alpha1 "github.com/kyleseneker/media-operator/api/subtitles/v1alpha1"
 	pvrclient "github.com/kyleseneker/media-operator/internal/client/pvr"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
@@ -101,6 +102,10 @@ var apps = map[string]app{
 	"plex": {
 		auth: engine.AuthPlexToken, token: true, export: exportPlex,
 		newObj: func() client.Object { return &mediaserversv1alpha1.PlexConfig{} },
+	},
+	"seerr": {
+		auth: engine.AuthSession, apiKey: true, export: exportSeerr,
+		newObj: func() client.Object { return &requestsv1alpha1.SeerrConfig{} },
 	},
 	"bazarr": {
 		auth: engine.AuthFormEncoded, apiKey: true, export: exportBazarr,

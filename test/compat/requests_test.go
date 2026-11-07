@@ -17,6 +17,7 @@ import (
 
 	requestsv1alpha1 "github.com/kyleseneker/media-operator/api/requests/v1alpha1"
 	jellyfinclient "github.com/kyleseneker/media-operator/internal/client/jellyfin"
+	seerrclient "github.com/kyleseneker/media-operator/internal/client/seerr"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/controller/requests"
 	"github.com/kyleseneker/media-operator/internal/engine"
@@ -69,6 +70,16 @@ func TestSeerr(t *testing.T) {
 
 	checkCompat(t, compatCase{
 		fixture: "seerr.yaml",
+		export:  "seerr",
+		exportAPIKey: func(t *testing.T) string {
+			hc, err := engine.NewHTTPClient(seerr.url(), engine.AuthSession, engine.WithAppLabel("compat"))
+			require.NoError(t, err)
+			sc := seerrclient.NewClient(hc)
+			require.NoError(t, sc.AuthenticateJellyfin(ctx, jellyfinAdmin, jellyfinPassword, hostIP, jf.port, "", false, true))
+			key, err := sc.GetAPIKey(ctx)
+			require.NoError(t, err)
+			return key
+		},
 		vars: map[string]string{
 			"URL": proxy.url(), "HOST": hostIP, "FAKES": fakes, "JELLYFIN_PORT": strconv.Itoa(jf.port),
 			"SONARR_PORT": strconv.Itoa(sonarr.port), "RADARR_PORT": strconv.Itoa(radarr.port),
