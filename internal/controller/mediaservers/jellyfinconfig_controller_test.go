@@ -252,7 +252,7 @@ func TestJellyfinObserveNeverRunsSetupOrWritesConfiguration(t *testing.T) {
 			app := &fakeJellyfin{setupComplete: tt.initialized, failure: tt.failure}
 			if tt.matching {
 				app.existingLibs = []map[string]any{{"Name": "Movies", "Paths": []string{"/old"}}}
-				app.config = map[string]any{"serverName": "Media", "unmanaged": true}
+				app.config = map[string]any{"ServerName": "Media", "Unmanaged": true}
 			}
 			cfg := jellyfinConfig(app.serve(t), mediaserversv1alpha1.JellyfinLibrary{Name: "Movies", Paths: []string{"/new"}})
 			cfg.Spec.Server = &mediaserversv1alpha1.JellyfinServer{ServerName: "Media"}
@@ -280,4 +280,14 @@ func TestJellyfinObserveNeverRunsSetupOrWritesConfiguration(t *testing.T) {
 			}), "want %s, got %+v", tt.reason, cfg.Status.Conditions)
 		})
 	}
+}
+
+// Jellyfin reads settings back in PascalCase; camelCase keys never matched and
+// rewrote the configuration on every pass.
+func TestJellyfinSettingsUseJellyfinNames(t *testing.T) {
+	out, err := jellyfinSettings(&mediaserversv1alpha1.JellyfinEncoding{
+		H265Crf: new(28), EncoderPreset: "veryfast", EnableThrottling: new(true),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"H265Crf": float64(28), "EncoderPreset": "veryfast", "EnableThrottling": true}, out)
 }

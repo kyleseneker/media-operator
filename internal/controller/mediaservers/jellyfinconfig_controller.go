@@ -2,7 +2,9 @@ package mediaservers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -165,13 +167,36 @@ func (r *JellyfinConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
 
+// jellyfinSettings renders a spec section under Jellyfin's own PascalCase
+// setting names. Jellyfin accepts camelCase on write but reads back PascalCase,
+// so camelCase keys always looked missing and every pass rewrote the settings.
+func jellyfinSettings(section any) (map[string]any, error) {
+	raw, err := json.Marshal(section)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	out := make(map[string]any, len(fields))
+	for k, v := range fields {
+		out[strings.ToUpper(k[:1])+k[1:]] = v
+	}
+	return out, nil
+}
+
 func reconcileJellyfinEncoding(ctx context.Context, jf *jellyfinclient.Client, encoding *mediaserversv1alpha1.JellyfinEncoding) error {
 	current, err := jf.GetConfig(ctx, "/System/Configuration/encoding")
 	if err != nil {
 		return fmt.Errorf("getting current encoding config: %w", err)
 	}
 
-	merged, changed, err := reconciler.MergeDesiredOverCurrent(current, encoding)
+	desired, err := jellyfinSettings(encoding)
+	if err != nil {
+		return err
+	}
+	merged, changed, err := reconciler.MergeDesiredOverCurrent(current, desired)
 	if err != nil {
 		return fmt.Errorf("merging encoding config: %w", err)
 	}
@@ -188,7 +213,11 @@ func reconcileJellyfinServer(ctx context.Context, jf *jellyfinclient.Client, ser
 		return fmt.Errorf("getting current server config: %w", err)
 	}
 
-	merged, changed, err := reconciler.MergeDesiredOverCurrent(current, server)
+	desired, err := jellyfinSettings(server)
+	if err != nil {
+		return err
+	}
+	merged, changed, err := reconciler.MergeDesiredOverCurrent(current, desired)
 	if err != nil {
 		return fmt.Errorf("merging server config: %w", err)
 	}
@@ -268,6 +297,13 @@ func observeJellyfinConfig(ctx context.Context, jf *jellyfinclient.Client, spec 
 	}
 	if spec.Server != nil {
 		sections["/System/Configuration"] = spec.Server
+	}
+	for path, section := range sections {
+		desired, err := jellyfinSettings(section)
+		if err != nil {
+			return false, err
+		}
+		sections[path] = desired
 	}
 	drift := false
 	for path, desired := range sections {
