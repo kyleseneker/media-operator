@@ -65,171 +65,116 @@ builds:
     goarch: [amd64, arm64]
     ldflags: ["-s -w -X main.version={{.Version}} -X main.commit={{.Commit}}"]
 
-dockers:
-  - image_templates: ["ghcr.io/kyleseneker/media-operator-pvr:{{ .Version }}-amd64"]
-    use: buildx
-    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=media-operator-pvr"]
-    goarch: amd64
+dockers_v2:
+  - id: media-operator-pvr
     ids: [media-operator-pvr]
-  - image_templates: ["ghcr.io/kyleseneker/media-operator-pvr:{{ .Version }}-arm64"]
-    use: buildx
-    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=media-operator-pvr"]
-    goarch: arm64
-    ids: [media-operator-pvr]
-  - image_templates: ["ghcr.io/kyleseneker/media-operator-indexers:{{ .Version }}-amd64"]
-    use: buildx
-    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=media-operator-indexers"]
-    goarch: amd64
+    images: [ghcr.io/kyleseneker/media-operator-pvr]
+    tags: ["{{ .Version }}", latest]
+    platforms: [linux/amd64, linux/arm64]
+    sbom: "{{ not .IsSnapshot }}"
+    build_args:
+      BINARY: media-operator-pvr
+    annotations: &image-annotations
+      "index,manifest:org.opencontainers.image.source": https://github.com/kyleseneker/media-operator
+      "index,manifest:org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "index,manifest:org.opencontainers.image.version": "{{ .Version }}"
+      "index,manifest:org.opencontainers.image.created": "{{ .Date }}"
+      "index,manifest:org.opencontainers.image.licenses": Apache-2.0
+      "index,manifest:org.opencontainers.image.base.name": "{{ .BaseImage }}"
+      "index,manifest:org.opencontainers.image.base.digest": "{{ .BaseImageDigest }}"
+      "index,manifest:org.opencontainers.image.description": Manages Sonarr, Radarr, Lidarr and Readarr configuration as Kubernetes resources
+  - id: media-operator-indexers
     ids: [media-operator-indexers]
-  - image_templates: ["ghcr.io/kyleseneker/media-operator-indexers:{{ .Version }}-arm64"]
-    use: buildx
-    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=media-operator-indexers"]
-    goarch: arm64
-    ids: [media-operator-indexers]
-  - image_templates: ["ghcr.io/kyleseneker/media-operator-subtitles:{{ .Version }}-amd64"]
-    use: buildx
-    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=media-operator-subtitles"]
-    goarch: amd64
+    images: [ghcr.io/kyleseneker/media-operator-indexers]
+    tags: ["{{ .Version }}", latest]
+    platforms: [linux/amd64, linux/arm64]
+    sbom: "{{ not .IsSnapshot }}"
+    build_args:
+      BINARY: media-operator-indexers
+    annotations:
+      <<: *image-annotations
+      "index,manifest:org.opencontainers.image.description": Manages Prowlarr and FlareSolverr configuration as Kubernetes resources
+  - id: media-operator-subtitles
     ids: [media-operator-subtitles]
-  - image_templates: ["ghcr.io/kyleseneker/media-operator-subtitles:{{ .Version }}-arm64"]
-    use: buildx
-    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=media-operator-subtitles"]
-    goarch: arm64
-    ids: [media-operator-subtitles]
-  - image_templates: ["ghcr.io/kyleseneker/media-operator-curation:{{ .Version }}-amd64"]
-    use: buildx
-    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=media-operator-curation"]
-    goarch: amd64
+    images: [ghcr.io/kyleseneker/media-operator-subtitles]
+    tags: ["{{ .Version }}", latest]
+    platforms: [linux/amd64, linux/arm64]
+    sbom: "{{ not .IsSnapshot }}"
+    build_args:
+      BINARY: media-operator-subtitles
+    annotations:
+      <<: *image-annotations
+      "index,manifest:org.opencontainers.image.description": Manages Bazarr configuration as Kubernetes resources
+  - id: media-operator-curation
     ids: [media-operator-curation]
-  - image_templates: ["ghcr.io/kyleseneker/media-operator-curation:{{ .Version }}-arm64"]
-    use: buildx
-    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=media-operator-curation"]
-    goarch: arm64
-    ids: [media-operator-curation]
-  - image_templates: ["ghcr.io/kyleseneker/media-operator-downloads:{{ .Version }}-amd64"]
-    use: buildx
-    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=media-operator-downloads"]
-    goarch: amd64
+    images: [ghcr.io/kyleseneker/media-operator-curation]
+    tags: ["{{ .Version }}", latest]
+    platforms: [linux/amd64, linux/arm64]
+    sbom: "{{ not .IsSnapshot }}"
+    build_args:
+      BINARY: media-operator-curation
+    annotations:
+      <<: *image-annotations
+      "index,manifest:org.opencontainers.image.description": Manages Maintainerr configuration as Kubernetes resources
+  - id: media-operator-downloads
     ids: [media-operator-downloads]
-  - image_templates: ["ghcr.io/kyleseneker/media-operator-downloads:{{ .Version }}-arm64"]
-    use: buildx
-    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=media-operator-downloads"]
-    goarch: arm64
-    ids: [media-operator-downloads]
-  - image_templates: ["ghcr.io/kyleseneker/media-operator-mediaservers:{{ .Version }}-amd64"]
-    use: buildx
-    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=media-operator-mediaservers"]
-    goarch: amd64
+    images: [ghcr.io/kyleseneker/media-operator-downloads]
+    tags: ["{{ .Version }}", latest]
+    platforms: [linux/amd64, linux/arm64]
+    sbom: "{{ not .IsSnapshot }}"
+    build_args:
+      BINARY: media-operator-downloads
+    annotations:
+      <<: *image-annotations
+      "index,manifest:org.opencontainers.image.description": Manages qBittorrent and SABnzbd configuration as Kubernetes resources
+  - id: media-operator-mediaservers
     ids: [media-operator-mediaservers]
-  - image_templates: ["ghcr.io/kyleseneker/media-operator-mediaservers:{{ .Version }}-arm64"]
-    use: buildx
-    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=media-operator-mediaservers"]
-    goarch: arm64
-    ids: [media-operator-mediaservers]
-  - image_templates: ["ghcr.io/kyleseneker/media-operator-requests:{{ .Version }}-amd64"]
-    use: buildx
-    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=media-operator-requests"]
-    goarch: amd64
+    images: [ghcr.io/kyleseneker/media-operator-mediaservers]
+    tags: ["{{ .Version }}", latest]
+    platforms: [linux/amd64, linux/arm64]
+    sbom: "{{ not .IsSnapshot }}"
+    build_args:
+      BINARY: media-operator-mediaservers
+    annotations:
+      <<: *image-annotations
+      "index,manifest:org.opencontainers.image.description": Manages Jellyfin and Plex configuration as Kubernetes resources
+  - id: media-operator-requests
     ids: [media-operator-requests]
-  - image_templates: ["ghcr.io/kyleseneker/media-operator-requests:{{ .Version }}-arm64"]
-    use: buildx
-    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=media-operator-requests"]
-    goarch: arm64
-    ids: [media-operator-requests]
-  - image_templates: ["ghcr.io/kyleseneker/media-operator-transcode:{{ .Version }}-amd64"]
-    use: buildx
-    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=media-operator-transcode"]
-    goarch: amd64
+    images: [ghcr.io/kyleseneker/media-operator-requests]
+    tags: ["{{ .Version }}", latest]
+    platforms: [linux/amd64, linux/arm64]
+    sbom: "{{ not .IsSnapshot }}"
+    build_args:
+      BINARY: media-operator-requests
+    annotations:
+      <<: *image-annotations
+      "index,manifest:org.opencontainers.image.description": Manages Seerr configuration as Kubernetes resources
+  - id: media-operator-transcode
     ids: [media-operator-transcode]
-  - image_templates: ["ghcr.io/kyleseneker/media-operator-transcode:{{ .Version }}-arm64"]
-    use: buildx
-    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=media-operator-transcode"]
-    goarch: arm64
-    ids: [media-operator-transcode]
-  - image_templates: ["ghcr.io/kyleseneker/media-operator-automation:{{ .Version }}-amd64"]
-    use: buildx
-    build_flag_templates: ["--platform=linux/amd64", "--build-arg=BINARY=media-operator-automation"]
-    goarch: amd64
+    images: [ghcr.io/kyleseneker/media-operator-transcode]
+    tags: ["{{ .Version }}", latest]
+    platforms: [linux/amd64, linux/arm64]
+    sbom: "{{ not .IsSnapshot }}"
+    build_args:
+      BINARY: media-operator-transcode
+    annotations:
+      <<: *image-annotations
+      "index,manifest:org.opencontainers.image.description": Manages Tdarr configuration as Kubernetes resources
+  - id: media-operator-automation
     ids: [media-operator-automation]
-  - image_templates: ["ghcr.io/kyleseneker/media-operator-automation:{{ .Version }}-arm64"]
-    use: buildx
-    build_flag_templates: ["--platform=linux/arm64", "--build-arg=BINARY=media-operator-automation"]
-    goarch: arm64
-    ids: [media-operator-automation]
+    images: [ghcr.io/kyleseneker/media-operator-automation]
+    tags: ["{{ .Version }}", latest]
+    platforms: [linux/amd64, linux/arm64]
+    sbom: "{{ not .IsSnapshot }}"
+    build_args:
+      BINARY: media-operator-automation
+    annotations:
+      <<: *image-annotations
+      "index,manifest:org.opencontainers.image.description": Manages Autobrr configuration as Kubernetes resources
 
-docker_manifests:
-  - name_template: "ghcr.io/kyleseneker/media-operator-pvr:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/kyleseneker/media-operator-pvr:{{ .Version }}-amd64"
-      - "ghcr.io/kyleseneker/media-operator-pvr:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/kyleseneker/media-operator-pvr:latest"
-    image_templates:
-      - "ghcr.io/kyleseneker/media-operator-pvr:{{ .Version }}-amd64"
-      - "ghcr.io/kyleseneker/media-operator-pvr:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/kyleseneker/media-operator-indexers:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/kyleseneker/media-operator-indexers:{{ .Version }}-amd64"
-      - "ghcr.io/kyleseneker/media-operator-indexers:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/kyleseneker/media-operator-indexers:latest"
-    image_templates:
-      - "ghcr.io/kyleseneker/media-operator-indexers:{{ .Version }}-amd64"
-      - "ghcr.io/kyleseneker/media-operator-indexers:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/kyleseneker/media-operator-subtitles:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/kyleseneker/media-operator-subtitles:{{ .Version }}-amd64"
-      - "ghcr.io/kyleseneker/media-operator-subtitles:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/kyleseneker/media-operator-subtitles:latest"
-    image_templates:
-      - "ghcr.io/kyleseneker/media-operator-subtitles:{{ .Version }}-amd64"
-      - "ghcr.io/kyleseneker/media-operator-subtitles:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/kyleseneker/media-operator-curation:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/kyleseneker/media-operator-curation:{{ .Version }}-amd64"
-      - "ghcr.io/kyleseneker/media-operator-curation:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/kyleseneker/media-operator-curation:latest"
-    image_templates:
-      - "ghcr.io/kyleseneker/media-operator-curation:{{ .Version }}-amd64"
-      - "ghcr.io/kyleseneker/media-operator-curation:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/kyleseneker/media-operator-downloads:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/kyleseneker/media-operator-downloads:{{ .Version }}-amd64"
-      - "ghcr.io/kyleseneker/media-operator-downloads:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/kyleseneker/media-operator-downloads:latest"
-    image_templates:
-      - "ghcr.io/kyleseneker/media-operator-downloads:{{ .Version }}-amd64"
-      - "ghcr.io/kyleseneker/media-operator-downloads:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/kyleseneker/media-operator-mediaservers:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/kyleseneker/media-operator-mediaservers:{{ .Version }}-amd64"
-      - "ghcr.io/kyleseneker/media-operator-mediaservers:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/kyleseneker/media-operator-mediaservers:latest"
-    image_templates:
-      - "ghcr.io/kyleseneker/media-operator-mediaservers:{{ .Version }}-amd64"
-      - "ghcr.io/kyleseneker/media-operator-mediaservers:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/kyleseneker/media-operator-requests:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/kyleseneker/media-operator-requests:{{ .Version }}-amd64"
-      - "ghcr.io/kyleseneker/media-operator-requests:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/kyleseneker/media-operator-requests:latest"
-    image_templates:
-      - "ghcr.io/kyleseneker/media-operator-requests:{{ .Version }}-amd64"
-      - "ghcr.io/kyleseneker/media-operator-requests:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/kyleseneker/media-operator-transcode:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/kyleseneker/media-operator-transcode:{{ .Version }}-amd64"
-      - "ghcr.io/kyleseneker/media-operator-transcode:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/kyleseneker/media-operator-transcode:latest"
-    image_templates:
-      - "ghcr.io/kyleseneker/media-operator-transcode:{{ .Version }}-amd64"
-      - "ghcr.io/kyleseneker/media-operator-transcode:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/kyleseneker/media-operator-automation:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/kyleseneker/media-operator-automation:{{ .Version }}-amd64"
-      - "ghcr.io/kyleseneker/media-operator-automation:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/kyleseneker/media-operator-automation:latest"
-    image_templates:
-      - "ghcr.io/kyleseneker/media-operator-automation:{{ .Version }}-amd64"
-      - "ghcr.io/kyleseneker/media-operator-automation:{{ .Version }}-arm64"
+docker_signs:
+  - cmd: cosign
+    args: ["sign", "--yes", "${artifact}@${digest}"]
 
 archives:
   - formats: ['tar.gz']

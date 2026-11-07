@@ -57,6 +57,23 @@ helm install media-operator-pvr \
 Each chart ships only its own CRDs and RBAC. Set `watchNamespace` to restrict an
 operator to a single namespace; it watches everything by default.
 
+### Verifying a release
+
+From v0.37.0 on, the release workflow signs every image and chart with
+[cosign](https://docs.sigstore.dev/), keylessly, so the signature proves it was
+built by this repository's release workflow for that tag:
+
+```bash
+cosign verify ghcr.io/kyleseneker/media-operator-pvr:0.37.0 \
+  --certificate-identity https://github.com/kyleseneker/media-operator/.github/workflows/release.yml@refs/tags/v0.37.0 \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+Charts verify the same way, as
+`ghcr.io/kyleseneker/media-operator/media-operator-pvr:0.37.0`. Each image also
+carries an SBOM:
+`docker buildx imagetools inspect ghcr.io/kyleseneker/media-operator-pvr:0.37.0 --format '{{ json .SBOM }}'`.
+
 ## Compatibility
 
 CI runs every operator against the real application in a container

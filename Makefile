@@ -146,18 +146,12 @@ build: manifests generate fmt vet ## Build all manager binaries.
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./cmd/$(BINARY)/
 
-# ARCH is the architecture docker-build targets: the host's by default, which is
-# what a local container runtime runs. The Dockerfile only copies the binary in,
-# so another ARCH builds without emulation.
 ARCH ?= $(shell go env GOARCH)
 
-# Releases build images with goreleaser from the same Dockerfile; docker-build
-# does what it does for one operator and architecture: compile a static binary,
-# then build with only that binary as the context.
 .PHONY: docker-build
 docker-build: ## Build one operator's image, BINARY=pvr by default, for ARCH.
-	mkdir -p bin/image
-	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build -ldflags "-s -w" -o bin/image/media-operator-$(BINARY) ./cmd/$(BINARY)/
+	mkdir -p bin/image/linux/$(ARCH)
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build -ldflags "-s -w" -o bin/image/linux/$(ARCH)/media-operator-$(BINARY) ./cmd/$(BINARY)/
 	$(CONTAINER_TOOL) build --platform linux/$(ARCH) --build-arg BINARY=media-operator-$(BINARY) -f Dockerfile -t ${IMG} bin/image
 
 .PHONY: docker-push
