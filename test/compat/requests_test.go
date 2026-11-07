@@ -118,6 +118,12 @@ func TestSeerr(t *testing.T) {
 			require.NoError(t, jsonDecode(resp, &public))
 			assert.True(t, public.Initialized, "first-time setup did not complete")
 			assert.Equal(t, "Compat Requests", public.ApplicationTitle)
+
+			server, err := directClient(t, seerr.url(), seerrAPIKey(t)).GetJSON(ctx, "/api/v1/settings/jellyfin")
+			require.NoError(t, err)
+			assert.Equal(t, hostIP, server["ip"])
+			assert.Equal(t, float64(jf.port), server["port"])
+			assert.NotContains(t, server, "hostname", "Seerr's settings migration rewrites the port from a stored hostname")
 		},
 	})
 }

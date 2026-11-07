@@ -91,6 +91,13 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	var syncErrors []string
 
+	if config.Spec.JellyfinAuth != nil {
+		if err := reconcileSeerrJellyfin(ctx, sc, writes, config.Spec.JellyfinAuth); err != nil {
+			logger.Error(err, "failed to reconcile Jellyfin server")
+			syncErrors = append(syncErrors, fmt.Sprintf("jellyfin: %v", err))
+		}
+	}
+
 	for _, svc := range []struct {
 		kind      string
 		conn      *requestsv1alpha1.SeerrServiceConnection
@@ -213,7 +220,7 @@ func (r *SeerrConfigReconciler) setup(
 
 	// Sync media server libraries
 	if config.Spec.JellyfinAuth != nil {
-		if err := syncJellyfinLibraries(ctx, sc, config.Spec.JellyfinAuth); err != nil {
+		if err := syncJellyfinLibraries(ctx, sc, writes, config.Spec.JellyfinAuth); err != nil {
 			logger.Error(err, "failed to configure Jellyfin libraries")
 			initErrors = append(initErrors, err.Error())
 		}
@@ -496,21 +503,39 @@ func (r *SeerrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func syncJellyfinLibraries(ctx context.Context, sc *seerrclient.Client, auth *requestsv1alpha1.SeerrJellyfinAuth) error {
+func syncJellyfinLibraries(ctx context.Context, sc *seerrclient.Client, w *engine.Writes, auth *requestsv1alpha1.SeerrJellyfinAuth) error {
+	if err := reconcileSeerrJellyfin(ctx, sc, w, auth); err != nil {
+		return err
+	}
+	return enableJellyfinLibraries(ctx, sc)
+}
+
+// reconcileSeerrJellyfin keeps Seerr's Jellyfin server at the declared address.
+// Seerr stores the host as "ip". A "hostname" key is kept verbatim and, on the
+// next start, Seerr's settings migration parses it as a URL and replaces the
+// port with 80 or 443.
+func reconcileSeerrJellyfin(ctx context.Context, sc *seerrclient.Client, w *engine.Writes, auth *requestsv1alpha1.SeerrJellyfinAuth) error {
 	port := 0
 	if auth.Port != nil {
 		port = *auth.Port
 	}
-	settings := map[string]any{
-		"hostname": auth.Hostname,
-		"port":     port,
-		"useSsl":   auth.UseSsl != nil && *auth.UseSsl,
-		"urlBase":  auth.UrlBase,
+	payload := map[string]any{
+		"ip":      auth.Hostname,
+		"port":    port,
+		"useSsl":  auth.UseSsl != nil && *auth.UseSsl,
+		"urlBase": auth.UrlBase,
 	}
-	if _, err := sc.Post(ctx, "/api/v1/settings/jellyfin", settings); err != nil {
-		return fmt.Errorf("jellyfin settings: %w", err)
+	current, err := sc.Get(ctx, "/api/v1/settings/jellyfin")
+	if err != nil {
+		return fmt.Errorf("reading jellyfin settings: %w", err)
 	}
-	return enableJellyfinLibraries(ctx, sc)
+	if !seerrDiffers(current, payload) {
+		return nil
+	}
+	return w.Apply("settings", "jellyfin", func() error {
+		_, err := sc.Post(ctx, "/api/v1/settings/jellyfin", payload)
+		return err
+	})
 }
 
 // enableJellyfinLibraries refreshes Seerr's library list from Jellyfin and

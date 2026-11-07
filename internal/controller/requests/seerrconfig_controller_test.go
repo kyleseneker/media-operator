@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -135,6 +136,15 @@ type fakeSeerr struct {
 	// services holds the Sonarr and Radarr connections, keyed by "sonarr" or
 	// "radarr". Like Seerr, a POST appends one rather than replacing by name.
 	services map[string][]map[string]any
+	// jellyfin is the stored Jellyfin server. Like Seerr, a POST merges the body
+	// into it, keeping keys Seerr does not use.
+	jellyfin map[string]any
+}
+
+func (f *fakeSeerr) jellyfinServer() map[string]any {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return maps.Clone(f.jellyfin)
 }
 
 func (f *fakeSeerr) serviceCount(kind string) int {
@@ -246,6 +256,14 @@ func (f *fakeSeerr) serve(t *testing.T) string {
 		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/v1/settings/"):
 			kind, id, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/api/v1/settings/"), "/")
 			f.services[kind] = slices.DeleteFunc(f.services[kind], func(s map[string]any) bool { return fmt.Sprint(s["id"]) == id })
+		case r.URL.Path == "/api/v1/settings/jellyfin":
+			if f.jellyfin == nil {
+				f.jellyfin = map[string]any{}
+			}
+			if r.Method == http.MethodPost {
+				maps.Copy(f.jellyfin, body)
+			}
+			_ = json.NewEncoder(w).Encode(f.jellyfin)
 		case r.URL.Path == "/api/v1/settings/initialize" && r.Method == http.MethodPost:
 			f.initialized = true
 			_ = json.NewEncoder(w).Encode(map[string]any{"initialized": true})
@@ -458,6 +476,61 @@ func TestSeerrFirstRunWaitsForJellyfinLibraries(t *testing.T) {
 
 	require.True(t, app.saw("POST", "/api/v1/settings/jellyfin/library/sync"), "never asked Seerr to sync the Jellyfin libraries")
 	assert.False(t, app.saw("POST", "/api/v1/settings/initialize"), "completed initialization with no libraries to enable")
+}
+
+func jellyfinServerConfig(addr string) *requestsv1alpha1.SeerrConfig {
+	cfg := firstRunJellyfinConfig(addr)
+	cfg.Spec.JellyfinAuth.UseSsl = new(false)
+	return cfg
+}
+
+// Seerr's settings migration turns a stored "hostname" without a port into port
+// 80, so a set-up Seerr can end up pointing at a port Jellyfin does not serve.
+func TestSeerrRestoresTheDeclaredJellyfinServer(t *testing.T) {
+	app := &fakeSeerr{initialized: true, jellyfin: map[string]any{
+		"ip": "jellyfin", "port": float64(80), "useSsl": nil, "urlBase": "", "serverId": "abc",
+	}}
+
+	runSeerr(t, jellyfinServerConfig(app.serve(t)))
+
+	got := app.jellyfinServer()
+	assert.Equal(t, "jellyfin", got["ip"])
+	assert.Equal(t, float64(8096), got["port"])
+	assert.Equal(t, false, got["useSsl"])
+	assert.NotContains(t, got, "hostname", "Seerr's migration rewrites the port from a stored hostname")
+}
+
+func TestSeerrFirstRunStoresJellyfinServerAsIP(t *testing.T) {
+	app := &fakeSeerr{libraries: []map[string]any{{"id": "movies", "name": "Movies", "enabled": false}}}
+
+	runSeerr(t, jellyfinServerConfig(app.serve(t)))
+
+	require.True(t, app.saw("POST", "/api/v1/settings/initialize"), "setup never completed")
+	got := app.jellyfinServer()
+	assert.Equal(t, "jellyfin", got["ip"])
+	assert.NotContains(t, got, "hostname", "Seerr's migration rewrites the port from a stored hostname")
+}
+
+func TestSeerrLeavesAMatchingJellyfinServerAlone(t *testing.T) {
+	app := &fakeSeerr{initialized: true, jellyfin: map[string]any{
+		"ip": "jellyfin", "port": float64(8096), "useSsl": false, "urlBase": "", "name": "home",
+	}}
+
+	runSeerr(t, jellyfinServerConfig(app.serve(t)))
+
+	require.True(t, app.saw("GET", "/api/v1/settings/jellyfin"), "never read the Jellyfin server")
+	assert.False(t, app.saw("POST", "/api/v1/settings/jellyfin"), "rewrote a Jellyfin server that already matched")
+}
+
+func TestSeerrObserveReportsADifferentJellyfinServerWithoutWriting(t *testing.T) {
+	app := &fakeSeerr{initialized: true, jellyfin: map[string]any{
+		"ip": "jellyfin", "port": float64(80), "useSsl": false, "urlBase": "",
+	}}
+
+	synced := observeSeerr(t, jellyfinServerConfig(app.serve(t)))
+
+	assert.Empty(t, app.writes())
+	assert.Equal(t, "DriftDetected", synced.Reason)
 }
 
 // Seerr stores a service connection wholesale and answers 2xx for keys it does not
