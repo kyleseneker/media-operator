@@ -33,9 +33,10 @@ const conditionTrue = "True"
 // fakeBazarr captures posted form bodies. Bazarr takes form-encoded settings
 // rather than JSON, so the assertions are about which form keys were sent.
 type fakeBazarr struct {
-	mu    sync.Mutex
-	forms []url.Values
-	paths []string
+	mu       sync.Mutex
+	forms    []url.Values
+	paths    []string
+	profiles []map[string]any
 }
 
 // formValue returns the first value posted for key across all requests.
@@ -110,6 +111,10 @@ func (f *fakeBazarr) serve(t *testing.T) string {
 		f.mu.Unlock()
 
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/system/languages/profiles" && f.profiles != nil {
+			_ = json.NewEncoder(w).Encode(f.profiles)
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
 	}))
 	_ = srv.Listener.Close()

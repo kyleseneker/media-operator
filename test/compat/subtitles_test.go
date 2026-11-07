@@ -5,6 +5,8 @@ package compat
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -42,6 +44,11 @@ func TestBazarr(t *testing.T) {
 		_, err := hc.GetJSON(context.Background(), "/api/system/settings")
 		return err
 	})
+	_, err := hc.DoForm(context.Background(), "/api/system/settings", url.Values{"languages-profiles": {
+		`[{"profileId":99,"name":"Hand-made","cutoff":null,"mustContain":[],"mustNotContain":[],"originalFormat":false,` +
+			`"items":[{"id":1,"language":"en","hi":"True","forced":"False","audio_exclude":"False"}]}]`,
+	}})
+	require.NoError(t, err, "creating a hand-made language profile")
 	proxy := newRecordingProxy(t, bazarr.url())
 
 	checkCompat(t, compatCase{
@@ -67,8 +74,25 @@ func TestBazarr(t *testing.T) {
 			sonarrSettings, _ := settings["sonarr"].(map[string]any)
 			assert.Equal(t, hostIP, sonarrSettings["ip"])
 			assert.Contains(t, general["enabled_providers"], "podnapisi")
+			assert.Equal(t, []string{"English", "Hand-made"}, bazarrProfileNames(t, hc),
+				"saving the declared profile lost the hand-made one")
+		},
+		cleanup: func(t *testing.T) {
+			assert.Equal(t, []string{"Hand-made"}, bazarrProfileNames(t, hc))
 		},
 	})
+}
+
+func bazarrProfileNames(t *testing.T, hc *engine.HTTPClient) []string {
+	t.Helper()
+	profiles, err := hc.GetJSONList(context.Background(), "/api/system/languages/profiles")
+	require.NoError(t, err)
+	names := make([]string, 0, len(profiles))
+	for _, p := range profiles {
+		names = append(names, fmt.Sprint(p["name"]))
+	}
+	slices.Sort(names)
+	return names
 }
 
 // bazarrClient talks to Bazarr directly, outside the operator.

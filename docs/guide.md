@@ -78,9 +78,10 @@ prune, removing an item from the resource only stops managing it.
 | Seerr | Sonarr and Radarr servers |
 | SABnzbd | servers, categories |
 | qBittorrent | categories |
+| Bazarr | language profiles, matched by `profileId` |
 | Maintainerr | rule groups, Sonarr and Radarr servers |
 
-Jellyfin, Plex and Bazarr reject `prune: true` with `InvalidConfig`.
+Jellyfin and Plex reject `prune: true` with `InvalidConfig`.
 
 - A list with no declared items is not pruned.
 - Settings, root folders, tags, libraries and Prowlarr sync profiles are never
@@ -97,7 +98,7 @@ Deleting a resource leaves the app unchanged. With
 created, the same kinds prune covers. Everything else is kept.
 
 `delete` is supported for the apps in the prune table, and not in observe mode;
-Jellyfin, Plex and Bazarr reject it with `InvalidConfig`. If
+Jellyfin and Plex reject it with `InvalidConfig`. If
 cleanup keeps failing, the operator gives up after 10 minutes, records a
 warning event and removes the finalizer.
 

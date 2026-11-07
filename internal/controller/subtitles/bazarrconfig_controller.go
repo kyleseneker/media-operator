@@ -48,32 +48,22 @@ func (r *BazarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, ctrlcommon.Lifecycle{}); done {
+	cleanup := func(ctx context.Context) error { return r.cleanup(ctx, &config) }
+	lifecycle := ctrlcommon.Lifecycle{Remove: cleanup, Prune: true}
+	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, lifecycle); done {
 		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
-	// Resolve API key
-	apiKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.APIKeySecretRef)
+	bc, reason, err := r.bazarrClient(ctx, &config)
 	if err != nil {
-		logger.Error(err, "failed to resolve API key secret")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
+		logger.Error(err, "failed to build the Bazarr client")
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, reason, err.Error())
+		if reason == engine.ReasonInvalidConfig {
+			return ctrl.Result{}, nil
+		}
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
-	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
-	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-	}
-
-	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthFormEncoded, engine.WithAPIKey(apiKey), engine.WithAPIKeyHeader("X-API-KEY"), engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("bazarr"))
-	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonInvalidConfig, err.Error())
-		return ctrl.Result{}, nil
-	}
-	bc := bazarrclient.NewClient(hc)
-
-	// Health check
 	if err := bc.Ping(ctx); err != nil {
 		logger.Error(err, "Bazarr unreachable")
 		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonAppUnreachable, err.Error())
@@ -86,14 +76,23 @@ func (r *BazarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		ctrlcommon.UpdateStatus(ctx, r.Client, &config, false, engine.ReasonSyncFailed, fmt.Sprintf("reading settings: %v", err))
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
-	var profiles []map[string]any
-	if desired.Has("languages-profiles") {
-		if profiles, err = bc.GetLanguageProfiles(ctx); err != nil {
+	owned := engine.NewOwnership("bazarr", config.Status.ManagedResources)
+	var profiles *bazarrProfiles
+	if desired.Has(profilesField) {
+		existing, err := bc.GetLanguageProfiles(ctx)
+		if err != nil {
 			ctrlcommon.UpdateStatus(ctx, r.Client, &config, false, engine.ReasonSyncFailed, fmt.Sprintf("reading language profiles: %v", err))
 			return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 		}
+		profiles, err = planBazarrProfiles(desired.Get(profilesField), existing, ctrlcommon.PruneEnabled(config.Spec.Reconcile), owned)
+		if err != nil {
+			problems = append(problems, fmt.Sprintf("languages: %v", err))
+			desired.Del(profilesField)
+		} else {
+			desired.Set(profilesField, profiles.send)
+		}
 	}
-	changes := bazarrChanges(desired, settings, profiles)
+	changes := bazarrChanges(desired, settings, profiles.stored())
 
 	if ctrlcommon.ObserveOnly(config.Spec.Reconcile) {
 		for key := range changes {
@@ -113,12 +112,33 @@ func (r *BazarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		if err := bc.PostForm(ctx, "/api/system/settings", changes); err != nil {
 			logger.Error(err, "failed to write bazarr settings")
 			problems = append(problems, fmt.Sprintf("settings: %v", err))
+		} else if changes.Has(profilesField) {
+			profiles.saved(owned)
 		}
 	}
 
+	ctrlcommon.UpdateStatusManaged(&config, owned.Managed())
+	ctrlcommon.EmitPruneEvents(r.Recorder, &config, owned.Pruned())
 	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, false, false, problems)
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
+}
+
+func (r *BazarrConfigReconciler) bazarrClient(ctx context.Context, config *subtitlesv1alpha1.BazarrConfig) (*bazarrclient.Client, string, error) {
+	apiKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.APIKeySecretRef)
+	if err != nil {
+		return nil, engine.ReasonSecretNotFound, err
+	}
+	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
+	if err != nil {
+		return nil, engine.ReasonSecretNotFound, err
+	}
+	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthFormEncoded, engine.WithAPIKey(apiKey),
+		engine.WithAPIKeyHeader("X-API-KEY"), engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("bazarr"))
+	if err != nil {
+		return nil, engine.ReasonInvalidConfig, err
+	}
+	return bazarrclient.NewClient(hc), "", nil
 }
 
 // bazarrDesired renders every declared setting as the form fields Bazarr's
@@ -201,7 +221,7 @@ func (r *BazarrConfigReconciler) bazarrProviderForm(ctx context.Context, namespa
 func bazarrChanges(desired url.Values, settings map[string]any, profiles []map[string]any) url.Values {
 	changes := url.Values{}
 	for key, values := range desired {
-		if key == "languages-profiles" {
+		if key == profilesField {
 			if !sameBazarrProfiles(profiles, values[0]) {
 				changes[key] = values
 			}
@@ -217,7 +237,7 @@ func bazarrChanges(desired url.Values, settings map[string]any, profiles []map[s
 }
 
 func bazarrSettingSection(key string) string {
-	if key == "languages-profiles" {
+	if key == profilesField {
 		return "languages"
 	}
 	section, _, _ := strings.Cut(strings.TrimPrefix(key, "settings-"), "-")
@@ -271,6 +291,9 @@ func sameBazarrProfiles(current []map[string]any, desiredJSON string) bool {
 			bi, _ := b.(map[string]any)["profileId"].(float64)
 			return int(ai - bi)
 		})
+	}
+	if len(have) != len(want) {
+		return false
 	}
 	byID(have)
 	byID(want)
