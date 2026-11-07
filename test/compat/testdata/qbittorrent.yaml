@@ -1,0 +1,39 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: QBittorrentConfig
+metadata:
+  name: qbittorrent
+spec:
+  connection:
+    url: ${URL}
+    usernameSecretRef:
+      name: compat-credentials
+      key: username
+    passwordSecretRef:
+      name: compat-credentials
+      key: password
+  preferences:
+    savePath: /downloads/complete/
+    tempPathEnabled: true
+    dht: false
+    pex: false
+    lsd: false
+    encryption: 1
+    maxConnec: 400
+    maxConnecPerTorrent: 80
+    maxUploads: 40
+    maxUploadsPerTorrent: 8
+    maxRatioEnabled: true
+    maxRatio: 2.5
+    maxRatioAction: stop
+    maxSeedingTimeEnabled: true
+    maxSeedingTime: 10080
+    preallocateAll: true
+    locale: en
+    webUiPort: 8080
+    bypassAuthSubnetWhitelistEnabled: true
+    bypassAuthSubnetWhitelist: 172.31.255.0/24
+  categories:
+    - name: tv
+      savePath: /downloads/complete/tv
+    - name: movies
+      savePath: /downloads/complete/movies
