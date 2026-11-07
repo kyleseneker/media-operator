@@ -57,6 +57,45 @@ func runTool(args ...string) (string, error) {
 // it for inspection; logs are printed whenever the test failed.
 func startContainer(t *testing.T, spec containerSpec) *container {
 	t.Helper()
+	var id string
+	var err error
+	// The runtime picks a free host port when it creates the container, and with
+	// many tests binding ports at once it can be taken by the time it starts.
+	for range 3 {
+		if id, err = createAndStart(t, spec); err == nil || !strings.Contains(err.Error(), "address already in use") {
+			break
+		}
+	}
+	require.NoError(t, err, "starting %s", spec.name)
+
+	mapping, err := runTool("port", id, strconv.Itoa(spec.port))
+	require.NoError(t, err, "reading %s port", spec.name)
+	// "0.0.0.0:49153", possibly followed by an IPv6 line.
+	_, hostPort, err := net.SplitHostPort(strings.Fields(mapping)[0])
+	require.NoError(t, err, "parsing %s port mapping %q", spec.name, mapping)
+	port, err := strconv.Atoi(hostPort)
+	require.NoError(t, err, "parsing %s port %q", spec.name, hostPort)
+	return &container{id: id, port: port}
+}
+
+// exec runs a shell command inside the container.
+func (c *container) exec(t *testing.T, script string) string {
+	t.Helper()
+	out, err := runTool("exec", c.id, "sh", "-c", script)
+	require.NoError(t, err, "exec %q", script)
+	return out
+}
+
+// url is the application address as both the operator and other containers
+// reach it: the host's outbound IP and the published port.
+func (c *container) url() string {
+	return fmt.Sprintf("http://%s:%d", hostIP, c.port)
+}
+
+// createAndStart creates the container, seeds its files and starts it. The
+// container is removed when the test ends whether or not it started.
+func createAndStart(t *testing.T, spec containerSpec) (string, error) {
+	t.Helper()
 	args := []string{"create", "--name", fmt.Sprintf("media-operator-compat-%s-%d", spec.name, time.Now().UnixNano()),
 		"--label", "media-operator-compat=true", "-p", strconv.Itoa(spec.port)}
 	for k, v := range spec.env {
@@ -89,28 +128,5 @@ func startContainer(t *testing.T, spec containerSpec) *container {
 		require.NoError(t, err, "seeding %s", spec.name)
 	}
 	_, err = runTool("start", id)
-	require.NoError(t, err, "starting %s", spec.name)
-
-	mapping, err := runTool("port", id, strconv.Itoa(spec.port))
-	require.NoError(t, err, "reading %s port", spec.name)
-	// "0.0.0.0:49153", possibly followed by an IPv6 line.
-	_, hostPort, err := net.SplitHostPort(strings.Fields(mapping)[0])
-	require.NoError(t, err, "parsing %s port mapping %q", spec.name, mapping)
-	port, err := strconv.Atoi(hostPort)
-	require.NoError(t, err, "parsing %s port %q", spec.name, hostPort)
-	return &container{id: id, port: port}
-}
-
-// exec runs a shell command inside the container.
-func (c *container) exec(t *testing.T, script string) string {
-	t.Helper()
-	out, err := runTool("exec", c.id, "sh", "-c", script)
-	require.NoError(t, err, "exec %q", script)
-	return out
-}
-
-// url is the application address as both the operator and other containers
-// reach it: the host's outbound IP and the published port.
-func (c *container) url() string {
-	return fmt.Sprintf("http://%s:%d", hostIP, c.port)
+	return id, err
 }
