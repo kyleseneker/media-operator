@@ -157,6 +157,17 @@ func TestFlareSolverrPrunesItsOwnRetiredSession(t *testing.T) {
 	assert.True(t, app.ran("sessions.destroy", "retired"), "prune did not remove a session it had previously created")
 }
 
+// A spec without sessions doesn't manage sessions, so prune leaves the ones the
+// operator created, as it does for every other list.
+func TestFlareSolverrPruneLeavesSessionsWhenNoneAreDeclared(t *testing.T) {
+	app := &fakeFlareSolverr{sessions: []string{"retired"}}
+	url := app.serve(t)
+
+	runFlare(t, flareConfig(url, true, []string{"retired"}))
+
+	assert.False(t, app.ran("sessions.destroy", "retired"), "pruned sessions with none declared")
+}
+
 func TestFlareSolverrObserveDoesNotCreatePruneOrClaimSessions(t *testing.T) {
 	app := &fakeFlareSolverr{sessions: []string{"owned", "foreign"}}
 	cfg := flareConfig(app.serve(t), true, []string{"owned"}, "missing")

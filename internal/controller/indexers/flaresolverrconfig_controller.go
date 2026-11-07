@@ -65,9 +65,10 @@ func (r *FlareSolverrConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
+	owned := engine.NewOwnership("flaresolverr", config.Status.ManagedResources)
 	if ctrlcommon.ObserveOnly(config.Spec.Reconcile) {
 		drift, count, err := observeFlareSolverrSessions(ctx, fc, config.Spec.Sessions,
-			ctrlcommon.PruneEnabled(config.Spec.Reconcile), config.Status.ManagedResources["sessions"])
+			ctrlcommon.PruneEnabled(config.Spec.Reconcile), owned)
 		if err == nil {
 			config.Status.ActiveSessions = count
 		}
@@ -77,14 +78,12 @@ func (r *FlareSolverrConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	var syncErrors []string
 
-	// Reconcile sessions
-	managed, err := reconcileFlareSolverrSessions(ctx, fc, config.Spec.Sessions,
-		ctrlcommon.PruneEnabled(config.Spec.Reconcile), config.Status.ManagedResources["sessions"])
-	if err != nil {
+	if err := reconcileFlareSolverrSessions(ctx, fc, config.Spec.Sessions, ctrlcommon.PruneEnabled(config.Spec.Reconcile), owned); err != nil {
 		logger.Error(err, "failed to reconcile sessions")
 		syncErrors = append(syncErrors, fmt.Sprintf("sessions: %v", err))
 	}
-	ctrlcommon.UpdateStatusManaged(&config, map[string][]string{"sessions": managed})
+	ctrlcommon.UpdateStatusManaged(&config, owned.Managed())
+	ctrlcommon.EmitPruneEvents(r.Recorder, &config, owned.Pruned())
 
 	// Update active session count
 	if sessions, err := fc.ListSessions(ctx); err == nil {
@@ -100,65 +99,39 @@ func (r *FlareSolverrConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
 
-// reconcileFlareSolverrSessions creates the declared sessions and, when prune is
-// enabled, destroys ones this operator previously created that have since been
-// dropped from the spec. Sessions it did not create are left alone: Prowlarr
-// opens sessions on demand, and tearing those down mid-request breaks the very
-// indexers FlareSolverr exists to serve.
-// Returns the session names now under management.
-func reconcileFlareSolverrSessions(ctx context.Context, fc *flaresolverrclient.Client, desired []indexersv1alpha1.FlareSolverrSession, prune bool, previouslyManaged []string) ([]string, error) {
+// reconcileFlareSolverrSessions creates the declared sessions and, under prune,
+// destroys the ones it created that have left the spec. Sessions it did not
+// create are left alone: Prowlarr opens sessions on demand, and tearing those
+// down mid-request breaks the indexers FlareSolverr serves.
+func reconcileFlareSolverrSessions(
+	ctx context.Context, fc *flaresolverrclient.Client, desired []indexersv1alpha1.FlareSolverrSession, prune bool, owned *engine.Ownership,
+) error {
 	existing, err := fc.ListSessions(ctx)
 	if err != nil {
-		return slices.Clone(previouslyManaged), fmt.Errorf("listing sessions: %w", err)
+		return fmt.Errorf("listing sessions: %w", err)
 	}
-
-	existingSet := make(map[string]bool, len(existing))
-	for _, s := range existing {
-		existingSet[s] = true
-	}
-
-	desiredSet := make(map[string]bool, len(desired))
-	for _, s := range desired {
-		desiredSet[s.Name] = true
-	}
-
-	managed := slices.Clone(previouslyManaged)
-	for _, s := range desired {
-		if !existingSet[s.Name] {
-			if err := fc.CreateSession(ctx, s.Name); err != nil {
-				return managed, fmt.Errorf("creating session %q: %w", s.Name, err)
-			}
-			if !slices.Contains(managed, s.Name) {
-				managed = append(managed, s.Name)
-			}
+	declared := sessionNames(desired)
+	for _, name := range declared {
+		if slices.Contains(existing, name) {
+			continue
 		}
+		if err := fc.CreateSession(ctx, name); err != nil {
+			return fmt.Errorf("creating session %q: %w", name, err)
+		}
+		owned.Created("sessions", name)
 	}
-
 	if !prune {
-		return managed, nil
+		return nil
 	}
+	return owned.Prune("sessions", declared, existing, func(name string) error { return fc.DestroySession(ctx, name) })
+}
 
-	managedSet := make(map[string]bool, len(previouslyManaged))
-	for _, s := range previouslyManaged {
-		managedSet[s] = true
+func sessionNames(sessions []indexersv1alpha1.FlareSolverrSession) []string {
+	names := make([]string, 0, len(sessions))
+	for _, s := range sessions {
+		names = append(names, s.Name)
 	}
-	var candidates []string
-	for _, s := range existing {
-		if !desiredSet[s] && managedSet[s] {
-			candidates = append(candidates, s)
-		}
-	}
-	if len(candidates) > engine.DefaultMaxPruneCount {
-		return managed, fmt.Errorf("refusing to prune %d sessions (threshold is %d)", len(candidates), engine.DefaultMaxPruneCount)
-	}
-	for _, s := range candidates {
-		if err := fc.DestroySession(ctx, s); err != nil {
-			return managed, fmt.Errorf("destroying session %q: %w", s, err)
-		}
-		managed = slices.DeleteFunc(managed, func(name string) bool { return name == s })
-	}
-
-	return managed, nil
+	return names
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -170,15 +143,15 @@ func (r *FlareSolverrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		Complete(r)
 }
 
-func observeFlareSolverrSessions(ctx context.Context, fc *flaresolverrclient.Client, desired []indexersv1alpha1.FlareSolverrSession, prune bool, managed []string) (bool, int, error) {
+func observeFlareSolverrSessions(
+	ctx context.Context, fc *flaresolverrclient.Client, desired []indexersv1alpha1.FlareSolverrSession, prune bool, owned *engine.Ownership,
+) (bool, int, error) {
 	existing, err := fc.ListSessions(ctx)
 	if err != nil {
 		return false, 0, fmt.Errorf("listing sessions: %w", err)
 	}
-	desiredNames := make(map[string]bool, len(desired))
 	drift := false
 	for _, session := range desired {
-		desiredNames[session.Name] = true
 		changed, err := engine.ObserveDifference("flaresolverr", "sessions", session.Name,
 			map[string]any{"exists": slices.Contains(existing, session.Name)}, map[string]any{"exists": true})
 		if err != nil {
@@ -187,10 +160,7 @@ func observeFlareSolverrSessions(ctx context.Context, fc *flaresolverrclient.Cli
 		drift = drift || changed
 	}
 	if prune {
-		for _, name := range existing {
-			if desiredNames[name] || !slices.Contains(managed, name) {
-				continue
-			}
+		for _, name := range owned.Candidates("sessions", sessionNames(desired), existing) {
 			changed, err := engine.ObserveDifference("flaresolverr", "sessions", name,
 				map[string]any{"exists": true}, map[string]any{"exists": false})
 			if err != nil {
@@ -203,8 +173,7 @@ func observeFlareSolverrSessions(ctx context.Context, fc *flaresolverrclient.Cli
 }
 
 func cleanupFlareSolverrSessions(ctx context.Context, c client.Reader, config *indexersv1alpha1.FlareSolverrConfig) error {
-	managed := config.Status.ManagedResources["sessions"]
-	if len(managed) == 0 {
+	if len(config.Status.ManagedResources["sessions"]) == 0 {
 		return nil
 	}
 	tlsConfig, err := engine.ResolveTLSConfig(ctx, c, config.Namespace, config.Spec.Connection.TLS)
@@ -215,6 +184,11 @@ func cleanupFlareSolverrSessions(ctx context.Context, c client.Reader, config *i
 	if err != nil {
 		return err
 	}
-	_, err = reconcileFlareSolverrSessions(ctx, flaresolverrclient.NewClient(hc), nil, true, managed)
-	return err
+	fc := flaresolverrclient.NewClient(hc)
+	existing, err := fc.ListSessions(ctx)
+	if err != nil {
+		return fmt.Errorf("listing sessions: %w", err)
+	}
+	owned := engine.NewOwnership("flaresolverr", config.Status.ManagedResources)
+	return owned.Cleanup("sessions", existing, func(name string) error { return fc.DestroySession(ctx, name) })
 }
