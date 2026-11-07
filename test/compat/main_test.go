@@ -16,6 +16,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -198,7 +199,7 @@ func checkExport(t *testing.T, tc compatCase, r reconcile.Reconciler, fixture cl
 	namespace := fixture.GetNamespace()
 	res, err := export.Run(ctx, export.Options{
 		App: tc.export, URL: tc.proxy.url(), APIKey: tc.secrets["api-key"], Name: "exported", Namespace: namespace,
-		Username: tc.secrets["username"], Password: tc.secrets["password"],
+		Username: tc.secrets["username"], Password: tc.secrets["password"], Token: tc.secrets["token"],
 	})
 	require.NoError(t, err, "exporting %s", tc.export)
 	out, err := res.YAML()
@@ -217,7 +218,7 @@ func checkExport(t *testing.T, tc compatCase, r reconcile.Reconciler, fixture cl
 		fields, ok := value.(map[string]any)
 		exported, _ := exportedSpec[section].(map[string]any)
 		for field := range fields {
-			if ok {
+			if ok && !slices.Contains(res.Unreadable, section+"."+field) {
 				assert.Contains(t, exported, field, "export left out %s.%s, which the fixture configures:\n%s", section, field, out)
 			}
 		}

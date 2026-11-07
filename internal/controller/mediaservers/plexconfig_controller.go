@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -154,65 +156,28 @@ func (r *PlexConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func buildPlexPreferences(spec mediaserversv1alpha1.PlexConfigSpec) map[string]string {
-	desiredPrefs := make(map[string]string)
-	if s := spec.Server; s != nil {
-		if s.FriendlyName != "" {
-			desiredPrefs["FriendlyName"] = s.FriendlyName
+	prefs := map[string]string{}
+	for section, value := range map[string]any{"server": spec.Server, "transcoder": spec.Transcoder, "network": spec.Network} {
+		v := reflect.ValueOf(value)
+		if v.IsNil() {
+			continue
 		}
-		if s.Language != "" {
-			desiredPrefs["language"] = s.Language
-		}
-		if s.AutoEmptyTrash != nil {
-			desiredPrefs["autoEmptyTrash"] = ctrlcommon.BoolTo01(*s.AutoEmptyTrash)
-		}
-		if s.ScanMyLibraryAutomatically != nil {
-			desiredPrefs["FSEventLibraryUpdatesEnabled"] = ctrlcommon.BoolTo01(*s.ScanMyLibraryAutomatically)
-		}
-		if s.ScanMyLibraryPeriodically != nil {
-			desiredPrefs["ScheduledLibraryUpdatesEnabled"] = ctrlcommon.BoolTo01(*s.ScanMyLibraryPeriodically)
-		}
-		if s.LogDebug != nil {
-			desiredPrefs["logDebug"] = ctrlcommon.BoolTo01(*s.LogDebug)
-		}
-		if s.EnableRemoteAccess != nil {
-			desiredPrefs["PublishServerOnPlexOnlineKey"] = ctrlcommon.BoolTo01(*s.EnableRemoteAccess)
+		v = v.Elem()
+		for field := range v.Type().Fields() {
+			name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+			id := plexclient.Preferences[section][name]
+			fv := v.FieldByIndex(field.Index)
+			switch {
+			case fv.Kind() == reflect.String && fv.String() != "":
+				prefs[id] = fv.String()
+			case fv.Kind() == reflect.Pointer && !fv.IsNil() && fv.Elem().Kind() == reflect.Bool:
+				prefs[id] = ctrlcommon.BoolTo01(fv.Elem().Bool())
+			case fv.Kind() == reflect.Pointer && !fv.IsNil() && fv.Elem().Kind() == reflect.Int:
+				prefs[id] = strconv.Itoa(int(fv.Elem().Int()))
+			}
 		}
 	}
-	if t := spec.Transcoder; t != nil {
-		if t.TranscodeHwRequested != nil {
-			desiredPrefs["HardwareAcceleratedCodecs"] = ctrlcommon.BoolTo01(*t.TranscodeHwRequested)
-		}
-		if t.HardwareAccelerationType != "" {
-			desiredPrefs["HardwareAccelerationType"] = t.HardwareAccelerationType
-		}
-		if t.MaxSimultaneousVideoTranscodes != nil {
-			desiredPrefs["TranscodeCountLimit"] = strconv.Itoa(*t.MaxSimultaneousVideoTranscodes)
-		}
-		if t.TranscodeHwDecodingEnabled != nil {
-			desiredPrefs["TranscodeHwDecodingEnabled"] = ctrlcommon.BoolTo01(*t.TranscodeHwDecodingEnabled)
-		}
-		if t.TranscodeHwEncodingEnabled != nil {
-			desiredPrefs["HardwareAcceleratedEncoders"] = ctrlcommon.BoolTo01(*t.TranscodeHwEncodingEnabled)
-		}
-		if t.TranscoderTempDirectory != "" {
-			desiredPrefs["TranscoderTempDirectory"] = t.TranscoderTempDirectory
-		}
-	}
-	if n := spec.Network; n != nil {
-		if n.SecureConnections != nil {
-			desiredPrefs["secureConnections"] = strconv.Itoa(*n.SecureConnections)
-		}
-		if n.CustomServerAccessUrls != "" {
-			desiredPrefs["customConnections"] = n.CustomServerAccessUrls
-		}
-		if n.AllowedNetworks != "" {
-			desiredPrefs["allowedNetworks"] = n.AllowedNetworks
-		}
-		if n.EnableIPv6 != nil {
-			desiredPrefs["EnableIPv6"] = ctrlcommon.BoolTo01(*n.EnableIPv6)
-		}
-	}
-	return desiredPrefs
+	return prefs
 }
 
 // plexPreferenceChanges returns the declared preferences whose value differs

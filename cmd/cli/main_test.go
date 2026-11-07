@@ -56,6 +56,12 @@ func TestExportRequiresALoginForApps(t *testing.T) {
 		"qbittorrent needs --username and --password, or $MEDIA_OPERATOR_USERNAME and $MEDIA_OPERATOR_PASSWORD")
 }
 
+func TestExportRequiresATokenForPlex(t *testing.T) {
+	t.Setenv("MEDIA_OPERATOR_TOKEN", "")
+	_, _, err := runCLI(t, "export", "plex", "--url", "http://plex")
+	require.EqualError(t, err, "plex needs --token or $MEDIA_OPERATOR_TOKEN")
+}
+
 func TestExportPrintsTheSecretAndConfig(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/config/") {

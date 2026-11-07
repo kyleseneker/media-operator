@@ -14,6 +14,25 @@ type Client struct {
 	hc *engine.HTTPClient
 }
 
+// Preferences maps each PlexConfig settings section and field to the Plex
+// preference it sets.
+var Preferences = map[string]map[string]string{
+	"server": {
+		"friendlyName": "FriendlyName", "language": "language", "autoEmptyTrash": "autoEmptyTrash",
+		"scanMyLibraryAutomatically": "FSEventLibraryUpdatesEnabled", "scanMyLibraryPeriodically": "ScheduledLibraryUpdatesEnabled",
+		"logDebug": "logDebug", "enableRemoteAccess": "PublishServerOnPlexOnlineKey",
+	},
+	"transcoder": {
+		"transcodeHwRequested": "HardwareAcceleratedCodecs", "hardwareAccelerationType": "HardwareAccelerationType",
+		"maxSimultaneousVideoTranscodes": "TranscodeCountLimit", "transcodeHwDecodingEnabled": "TranscodeHwDecodingEnabled",
+		"transcodeHwEncodingEnabled": "HardwareAcceleratedEncoders", "transcoderTempDirectory": "TranscoderTempDirectory",
+	},
+	"network": {
+		"secureConnections": "secureConnections", "customServerAccessUrls": "customConnections",
+		"allowedNetworks": "allowedNetworks", "enableIPv6": "EnableIPv6",
+	},
+}
+
 func NewClient(hc *engine.HTTPClient) *Client {
 	return &Client{hc: hc}
 }

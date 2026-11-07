@@ -42,6 +42,7 @@ type Options struct {
 	APIKey             string
 	Username           string
 	Password           string
+	Token              string
 	Name               string
 	Namespace          string
 	SecretName         string
@@ -50,19 +51,22 @@ type Options struct {
 }
 
 // Result is an exported config and the Secret it reads credentials from.
-// Unfilled lists the Secret keys whose values the app would not reveal, and
-// Warnings what the app has that the config cannot express.
+// Unfilled lists the Secret keys whose values the app would not reveal,
+// Warnings what the app has that the config cannot express, and Unreadable
+// the spec fields, as section.field, that the app does not report.
 type Result struct {
-	Config   client.Object
-	Secret   *corev1.Secret
-	Unfilled []string
-	Warnings []string
+	Config     client.Object
+	Secret     *corev1.Secret
+	Unfilled   []string
+	Warnings   []string
+	Unreadable []string
 }
 
 type app struct {
 	auth    engine.AuthType
 	apiKey  bool
 	login   bool
+	token   bool
 	options []engine.HTTPClientOption
 	newObj  func() client.Object
 	export  func(r *reader) (map[string]any, error)
@@ -94,6 +98,10 @@ var apps = map[string]app{
 		auth: engine.AuthMediaBrowser, login: true, export: exportJellyfin,
 		newObj: func() client.Object { return &mediaserversv1alpha1.JellyfinConfig{} },
 	},
+	"plex": {
+		auth: engine.AuthPlexToken, token: true, export: exportPlex,
+		newObj: func() client.Object { return &mediaserversv1alpha1.PlexConfig{} },
+	},
 	"bazarr": {
 		auth: engine.AuthFormEncoded, apiKey: true, export: exportBazarr,
 		options: []engine.HTTPClientOption{engine.WithAPIKeyHeader("X-API-KEY")},
@@ -109,6 +117,11 @@ func NeedsAPIKey(app string) bool {
 // NeedsLogin reports whether export signs in to app with a username and password.
 func NeedsLogin(app string) bool {
 	return apps[app].login
+}
+
+// NeedsToken reports whether export reads app with a token.
+func NeedsToken(app string) bool {
+	return apps[app].token
 }
 
 // Apps lists the apps export supports.
@@ -146,13 +159,16 @@ func Run(ctx context.Context, o Options) (Result, error) {
 	options := append([]engine.HTTPClientOption{
 		engine.WithAPIKey(o.APIKey), engine.WithTransport(transport), engine.WithAppLabel(o.App),
 	}, a.options...)
+	if a.token {
+		options = append(options, engine.WithPlexToken(o.Token))
+	}
 	hc, err := engine.NewHTTPClient(o.URL, a.auth, options...)
 	if err != nil {
 		return Result{}, err
 	}
 
 	r := &reader{
-		ctx: ctx, hc: hc, apiKey: o.APIKey, username: o.Username, password: o.Password,
+		ctx: ctx, hc: hc, apiKey: o.APIKey, username: o.Username, password: o.Password, token: o.Token,
 		creds: &credentials{secret: o.SecretName, values: map[string]string{apiKeyKey: o.APIKey}},
 	}
 	spec, err := a.export(r)
@@ -199,7 +215,7 @@ func Run(ctx context.Context, o Options) (Result, error) {
 	if len(secret.StringData) == 0 {
 		secret = nil
 	}
-	return Result{Config: obj, Secret: secret, Unfilled: unfilled, Warnings: r.warnings}, nil
+	return Result{Config: obj, Secret: secret, Unfilled: unfilled, Warnings: r.warnings, Unreadable: r.unreadable}, nil
 }
 
 // YAML renders the Secret and the config as one multi-document YAML stream.
@@ -297,15 +313,17 @@ func referencedKeys(obj any, secret string) []string {
 }
 
 type reader struct {
-	ctx      context.Context
-	hc       *engine.HTTPClient
-	apiKey   string
-	username string
-	password string
-	prefix   string
-	creds    *credentials
-	tags     map[float64]string
-	warnings []string
+	ctx        context.Context
+	hc         *engine.HTTPClient
+	apiKey     string
+	username   string
+	password   string
+	token      string
+	prefix     string
+	creds      *credentials
+	tags       map[float64]string
+	warnings   []string
+	unreadable []string
 }
 
 type resource struct {

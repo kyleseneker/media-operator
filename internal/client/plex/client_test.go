@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	mediaserversv1alpha1 "github.com/kyleseneker/media-operator/api/mediaservers/v1alpha1"
 	"github.com/kyleseneker/media-operator/internal/engine"
 )
 
@@ -110,4 +113,22 @@ func TestCreateLibrarySendsOneLocationPerFolder(t *testing.T) {
 	})
 	require.NoError(t, c.CreateLibrary(context.Background(), "Movies", "movie", "tv.plex.agents.movie", "Plex Movie", "en-US",
 		[]string{"/media/movies", "/media/more"}))
+}
+
+func TestPreferencesCoverEveryPlexSettingsField(t *testing.T) {
+	seen := map[string]bool{}
+	for section, typ := range map[string]reflect.Type{
+		"server":     reflect.TypeFor[mediaserversv1alpha1.PlexServer](),
+		"transcoder": reflect.TypeFor[mediaserversv1alpha1.PlexTranscoder](),
+		"network":    reflect.TypeFor[mediaserversv1alpha1.PlexNetwork](),
+	} {
+		require.Len(t, Preferences[section], typ.NumField(), "%s has a field without a preference, or a stale entry", section)
+		for field := range typ.Fields() {
+			name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+			id := Preferences[section][name]
+			require.NotEmpty(t, id, "%s.%s maps to no preference", section, name)
+			assert.False(t, seen[id], "%s is set by two fields", id)
+			seen[id] = true
+		}
+	}
 }

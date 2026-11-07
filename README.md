@@ -115,10 +115,11 @@ doesn't matter, the operator just reads them and re-reconciles when they change.
 
 `media-operator export` reads a running app and prints a config that describes
 it, with a Secret for its credentials. It supports Sonarr, Radarr, Lidarr,
-Readarr, Prowlarr, FlareSolverr, Bazarr, qBittorrent, SABnzbd and Jellyfin so
-far; qBittorrent and Jellyfin take `--username` and `--password` instead of
-`--api-key`. Get it from the `media-operator-cli` release archives, or run it
-in the cluster from the `ghcr.io/kyleseneker/media-operator-cli` image:
+Readarr, Prowlarr, FlareSolverr, Bazarr, qBittorrent, SABnzbd, Jellyfin and
+Plex so far. qBittorrent and Jellyfin take `--username` and `--password`, and
+Plex `--token`, instead of `--api-key`. Get it from the `media-operator-cli`
+release archives, or run it in the cluster from the
+`ghcr.io/kyleseneker/media-operator-cli` image:
 
 ```bash
 media-operator export sonarr --url http://localhost:8989 --api-key "$SONARR_API_KEY" \

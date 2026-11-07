@@ -72,6 +72,8 @@ func exportCommand(ctx context.Context, args []string, stdout, stderr io.Writer)
 		"username to sign in with, for apps without an API key (default $MEDIA_OPERATOR_USERNAME)")
 	fs.StringVar(&o.Password, "password", os.Getenv("MEDIA_OPERATOR_PASSWORD"),
 		"password to sign in with (default $MEDIA_OPERATOR_PASSWORD)")
+	fs.StringVar(&o.Token, "token", os.Getenv("MEDIA_OPERATOR_TOKEN"),
+		"the app's token, for Plex (default $MEDIA_OPERATOR_TOKEN)")
 	fs.StringVar(&o.Name, "name", "", "name of the config (default: the app)")
 	fs.StringVar(&o.Namespace, "namespace", "", "namespace for the config and Secret")
 	fs.StringVar(&o.SecretName, "secret", "", "name of the Secret (default: <name>-credentials)")
@@ -102,6 +104,9 @@ func exportCommand(ctx context.Context, args []string, stdout, stderr io.Writer)
 	}
 	if o.APIKey == "" && export.NeedsAPIKey(o.App) {
 		return errors.New("--api-key or $MEDIA_OPERATOR_API_KEY is required")
+	}
+	if o.Token == "" && export.NeedsToken(o.App) {
+		return fmt.Errorf("%s needs --token or $MEDIA_OPERATOR_TOKEN", o.App)
 	}
 	if (o.Username == "" || o.Password == "") && export.NeedsLogin(o.App) {
 		return fmt.Errorf("%s needs --username and --password, or $MEDIA_OPERATOR_USERNAME and $MEDIA_OPERATOR_PASSWORD",

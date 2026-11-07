@@ -133,6 +133,7 @@ func TestPlex(t *testing.T) {
 
 	checkCompat(t, compatCase{
 		fixture: "plex.yaml",
+		export:  "plex",
 		vars:    map[string]string{"URL": proxy.url(), "ALLOWED_NETWORKS": plexAllowedNetworks},
 		secrets: map[string]string{"token": "unclaimed"},
 		newObj:  func() ctrlcommon.ConfigResource { return &mediaserversv1alpha1.PlexConfig{} },
