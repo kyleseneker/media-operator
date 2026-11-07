@@ -142,3 +142,33 @@ func (c *Client) CreateAction(ctx context.Context, action map[string]any) error 
 func (c *Client) UpdateAction(ctx context.Context, id int, action map[string]any) error {
 	return c.hc.PutJSON(ctx, fmt.Sprintf("/api/actions/%d", id), action)
 }
+
+// DeleteDownloadClient removes a download client.
+func (c *Client) DeleteDownloadClient(ctx context.Context, id int) error {
+	return c.hc.DeleteJSON(ctx, fmt.Sprintf("/api/downloaders/%d", id))
+}
+
+// DeleteIndexer removes an indexer.
+func (c *Client) DeleteIndexer(ctx context.Context, id int) error {
+	return c.hc.DeleteJSON(ctx, fmt.Sprintf("/api/indexer/%d", id))
+}
+
+// DeleteIRCNetwork removes an IRC network.
+func (c *Client) DeleteIRCNetwork(ctx context.Context, id int) error {
+	return c.hc.DeleteJSON(ctx, fmt.Sprintf("/api/irc/network/%d", id))
+}
+
+// DeleteFeed removes a feed.
+func (c *Client) DeleteFeed(ctx context.Context, id int) error {
+	return c.hc.DeleteJSON(ctx, fmt.Sprintf("/api/feeds/%d", id))
+}
+
+// DeleteFilter removes a filter and its actions.
+func (c *Client) DeleteFilter(ctx context.Context, id int) error {
+	return c.hc.DeleteJSON(ctx, fmt.Sprintf("/api/filters/%d", id))
+}
+
+// DeleteAction removes a filter action.
+func (c *Client) DeleteAction(ctx context.Context, id int) error {
+	return c.hc.DeleteJSON(ctx, fmt.Sprintf("/api/actions/%d", id))
+}

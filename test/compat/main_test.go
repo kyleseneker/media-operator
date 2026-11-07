@@ -26,6 +26,7 @@ import (
 
 	"github.com/go-logr/logr/testr"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -140,6 +141,9 @@ type compatCase struct {
 	// exportAPIKey supplies the API key export reads with, where the fixture
 	// signs in another way.
 	exportAPIKey func(t *testing.T) string
+	// cleanup, for an integration that supports deletionPolicy: delete, checks
+	// the application after the resource is deleted with that policy.
+	cleanup func(t *testing.T)
 }
 
 func checkCompat(t *testing.T, tc compatCase) {
@@ -194,6 +198,32 @@ func checkCompat(t *testing.T, tc compatCase) {
 	if tc.export != "" {
 		checkExport(t, tc, r, obj, read)
 	}
+	if tc.cleanup != nil {
+		checkCleanup(t, tc, r, key)
+	}
+}
+
+// checkCleanup deletes the resource with deletionPolicy: delete, then lets the
+// case check that what the operator created is gone from the application.
+func checkCleanup(t *testing.T, tc compatCase, r reconcile.Reconciler, key types.NamespacedName) {
+	t.Helper()
+	ctx := context.Background()
+	obj := tc.newObj()
+	require.NoError(t, k8s.Get(ctx, key, obj))
+	patch := client.RawPatch(types.MergePatchType,
+		[]byte(`{"spec":{"reconcile":{"driftPolicy":"enforce","deletionPolicy":"delete"}}}`))
+	require.NoError(t, k8s.Patch(ctx, obj, patch), "setting deletionPolicy: delete")
+	requireSynced(t, reconcileUntilCurrent(t, r, key, tc.newObj), "reconcile with deletionPolicy: delete")
+	require.NoError(t, k8s.Delete(ctx, obj), "deleting %s", key)
+	for range 5 {
+		_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: key})
+		require.NoError(t, err, "reconcile during deletion")
+		if apierrors.IsNotFound(k8s.Get(ctx, key, tc.newObj())) {
+			tc.cleanup(t)
+			return
+		}
+	}
+	require.FailNow(t, "the resource was not released after cleanup", "%s", key)
 }
 
 func checkExport(t *testing.T, tc compatCase, r reconcile.Reconciler, fixture client.Object, read isRead) {

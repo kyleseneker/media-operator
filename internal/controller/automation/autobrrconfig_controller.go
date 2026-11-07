@@ -42,32 +42,27 @@ func (r *AutobrrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, ctrlcommon.Lifecycle{}); done {
+	cleanup := func(ctx context.Context) error {
+		ac, _, err := r.autobrrClient(ctx, &config)
+		if err != nil {
+			return err
+		}
+		return (&autobrrSync{ac: ac, owned: engine.NewOwnership("autobrr", config.Status.ManagedResources)}).cleanup(ctx)
+	}
+	lifecycle := ctrlcommon.Lifecycle{Remove: cleanup, Prune: true}
+	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, lifecycle); done {
 		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
-	// Resolve API key
-	apiKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.APIKeySecretRef)
+	ac, reason, err := r.autobrrClient(ctx, &config)
 	if err != nil {
-		logger.Error(err, "failed to resolve API key secret")
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
+		logger.Error(err, "failed to build the Autobrr client")
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, reason, err.Error())
+		if reason == engine.ReasonInvalidConfig {
+			return ctrl.Result{}, nil
+		}
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
-
-	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
-	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-	}
-
-	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthAPIKey, engine.WithAPIKey(apiKey),
-		// Autobrr reads only X-API-Token; any other header is answered with 403.
-		engine.WithAPIKeyHeader("X-API-Token"), engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("autobrr"))
-	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonInvalidConfig, err.Error())
-		return ctrl.Result{}, nil
-	}
-	ac := autobrrclient.NewClient(hc)
 
 	// Health check
 	if err := ac.Ping(ctx); err != nil {
@@ -79,11 +74,34 @@ func (r *AutobrrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	sync := &autobrrSync{
 		App: "autobrr", Observe: ctrlcommon.ObserveOnly(config.Spec.Reconcile),
 		c: r.Client, ac: ac, namespace: config.Namespace,
+		prune: ctrlcommon.PruneEnabled(config.Spec.Reconcile), owned: engine.NewOwnership("autobrr", config.Status.ManagedResources),
 	}
 	syncErrors := sync.run(ctx, &config.Spec)
+	ctrlcommon.UpdateStatusManaged(&config, sync.owned.Managed())
+	ctrlcommon.EmitPruneEvents(r.Recorder, &config, sync.owned.Pruned())
 	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, sync.Observe, len(sync.Drift()) > 0, syncErrors)
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
+}
+
+// autobrrClient builds the client for a config, or returns the status reason it
+// can't.
+func (r *AutobrrConfigReconciler) autobrrClient(ctx context.Context, config *automationv1alpha1.AutobrrConfig) (*autobrrclient.Client, string, error) {
+	apiKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.APIKeySecretRef)
+	if err != nil {
+		return nil, engine.ReasonSecretNotFound, err
+	}
+	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
+	if err != nil {
+		return nil, engine.ReasonSecretNotFound, err
+	}
+	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthAPIKey, engine.WithAPIKey(apiKey),
+		// Autobrr reads only X-API-Token; any other header is answered with 403.
+		engine.WithAPIKeyHeader("X-API-Token"), engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("autobrr"))
+	if err != nil {
+		return nil, engine.ReasonInvalidConfig, err
+	}
+	return autobrrclient.NewClient(hc), "", nil
 }
 
 // autobrrSync applies one AutobrrConfig. With observe set it only reads, and
@@ -93,6 +111,19 @@ type autobrrSync struct {
 	c         client.Reader
 	ac        *autobrrclient.Client
 	namespace string
+	prune     bool
+	owned     *engine.Ownership
+}
+
+// created records an item once create succeeds.
+func (s *autobrrSync) created(kind, name string, create func() error) func() error {
+	return func() error {
+		if err := create(); err != nil {
+			return err
+		}
+		s.owned.Created(kind, name)
+		return nil
+	}
 }
 
 // run applies the sections in dependency order: filter actions refer to
@@ -100,9 +131,11 @@ type autobrrSync struct {
 func (s *autobrrSync) run(ctx context.Context, spec *automationv1alpha1.AutobrrConfigSpec) []string {
 	logger := log.FromContext(ctx)
 	var syncErrors []string
+	failed := map[string]bool{}
 	fail := func(section, name string, err error) {
 		logger.Error(err, "failed to reconcile", "section", section, "name", name)
 		syncErrors = append(syncErrors, fmt.Sprintf("%s(%s): %v", section, name, err))
+		failed[section+"s"] = true
 	}
 	for _, dc := range spec.DownloadClients {
 		if err := s.downloadClient(ctx, dc); err != nil {
@@ -128,6 +161,9 @@ func (s *autobrrSync) run(ctx context.Context, spec *automationv1alpha1.AutobrrC
 		if err := s.filter(ctx, filter); err != nil {
 			fail("filter", filter.Name, err)
 		}
+	}
+	if s.prune && !s.Observe {
+		syncErrors = append(syncErrors, s.pruneUndeclared(ctx, spec, failed)...)
 	}
 	return syncErrors
 }
@@ -182,7 +218,7 @@ func (s *autobrrSync) downloadClient(ctx context.Context, dc automationv1alpha1.
 	}
 
 	return s.upsert("download client", dc.Name, existing, obj,
-		func() error { return s.ac.CreateDownloadClient(ctx, obj) },
+		s.created("downloadClients", dc.Name, func() error { return s.ac.CreateDownloadClient(ctx, obj) }),
 		func(id int) error { return s.ac.UpdateDownloadClient(ctx, id, obj) })
 }
 
@@ -212,7 +248,7 @@ func (s *autobrrSync) indexer(ctx context.Context, idx automationv1alpha1.Autobr
 	}
 
 	return s.upsert("indexer", idx.Name, existing, obj,
-		func() error { return s.ac.CreateIndexer(ctx, obj) },
+		s.created("indexers", idx.Name, func() error { return s.ac.CreateIndexer(ctx, obj) }),
 		func(id int) error { return s.ac.UpdateIndexer(ctx, id, obj) })
 }
 
@@ -277,7 +313,7 @@ func (s *autobrrSync) ircNetwork(ctx context.Context, irc automationv1alpha1.Aut
 	}
 
 	return s.upsert("IRC network", irc.Name, existing, obj,
-		func() error { return s.ac.CreateIRCNetwork(ctx, obj) },
+		s.created("ircNetworks", irc.Name, func() error { return s.ac.CreateIRCNetwork(ctx, obj) }),
 		func(id int) error { return s.ac.UpdateIRCNetwork(ctx, id, obj) })
 }
 
@@ -308,7 +344,7 @@ func (s *autobrrSync) feed(ctx context.Context, feed automationv1alpha1.AutobrrF
 	}
 
 	return s.upsert("feed", feed.Name, existing, obj,
-		func() error { return s.ac.CreateFeed(ctx, obj) },
+		s.created("feeds", feed.Name, func() error { return s.ac.CreateFeed(ctx, obj) }),
 		func(id int) error { return s.ac.UpdateFeed(ctx, id, obj) })
 }
 
@@ -429,7 +465,7 @@ func (s *autobrrSync) actions(
 			return body
 		}
 		if err := s.upsert("action", a.Name, existing, aObj,
-			func() error { return s.ac.CreateAction(ctx, withFilter()) },
+			s.created(actionsKind, filter.Name+"/"+a.Name, func() error { return s.ac.CreateAction(ctx, withFilter()) }),
 			func(id int) error { return s.ac.UpdateAction(ctx, id, withFilter()) }); err != nil {
 			return fmt.Errorf("action %q: %w", a.Name, err)
 		}
@@ -522,6 +558,7 @@ func (s *autobrrSync) upsertFilter(
 		}
 		raw, _ := created["id"].(float64)
 		id = int(raw)
+		s.owned.Created("filters", name)
 		return nil
 	})
 	return id, err

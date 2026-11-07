@@ -48,9 +48,7 @@ func TestAutobrr(t *testing.T) {
 		proxy:   proxy,
 		observe: true,
 		verify: func(t *testing.T) {
-			hc, err := engine.NewHTTPClient(ab.url(), engine.AuthAPIKey, engine.WithAPIKey(key),
-				engine.WithAPIKeyHeader("X-API-Token"), engine.WithAppLabel("compat"))
-			require.NoError(t, err)
+			hc := autobrrClient(t, ab.url(), key)
 			ctx := context.Background()
 			downloaders, err := hc.GetJSONList(ctx, "/api/downloaders")
 			require.NoError(t, err)
@@ -68,7 +66,23 @@ func TestAutobrr(t *testing.T) {
 			require.Len(t, actions, 1, "the filter's action was not created")
 			assert.Equal(t, downloaders[0]["id"], actions[0]["client_id"])
 		},
+		cleanup: func(t *testing.T) {
+			hc := autobrrClient(t, ab.url(), key)
+			for _, path := range []string{"/api/downloaders", "/api/irc", "/api/filters"} {
+				items, err := hc.GetJSONList(context.Background(), path)
+				require.NoError(t, err)
+				assert.Empty(t, items, "%s still has what the operator created", path)
+			}
+		},
 	})
+}
+
+func autobrrClient(t *testing.T, url, key string) *engine.HTTPClient {
+	t.Helper()
+	hc, err := engine.NewHTTPClient(url, engine.AuthAPIKey, engine.WithAPIKey(key),
+		engine.WithAPIKeyHeader("X-API-Token"), engine.WithAppLabel("compat"))
+	require.NoError(t, err)
+	return hc
 }
 
 // autobrrAPIKey onboards a fresh Autobrr, signs in and creates an API key, the
