@@ -200,6 +200,9 @@ func checkExport(t *testing.T, tc compatCase, r reconcile.Reconciler, namespace 
 	require.NoError(t, err, "exporting %s", tc.export)
 	out, err := res.YAML()
 	require.NoError(t, err)
+	for _, w := range res.Warnings {
+		t.Logf("export warning: %s", w)
+	}
 	for _, key := range res.Unfilled {
 		res.Secret.StringData[key] = "unreadable"
 	}

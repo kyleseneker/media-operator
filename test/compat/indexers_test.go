@@ -33,6 +33,7 @@ func TestProwlarr(t *testing.T) {
 
 	checkCompat(t, compatCase{
 		fixture: "prowlarr.yaml",
+		export:  "prowlarr",
 		vars: map[string]string{
 			"URL": proxy.url(), "HOST": hostIP, "FAKES": fakes, "QBITTORRENT_PORT": strconv.Itoa(qbit.port),
 			"PROWLARR_URL": prowlarr.url(), "SONARR_URL": sonarr.url(),

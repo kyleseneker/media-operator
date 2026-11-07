@@ -114,6 +114,9 @@ func exportCommand(ctx context.Context, args []string, stdout, stderr io.Writer)
 	if _, err := stdout.Write(out); err != nil {
 		return err
 	}
+	for _, w := range res.Warnings {
+		_, _ = fmt.Fprintln(stderr, "warning:", w)
+	}
 	if len(res.Unfilled) > 0 {
 		_, _ = fmt.Fprintf(stderr, "%s doesn't reveal these credentials; fill them in Secret %s before applying: %s\n",
 			o.App, res.Secret.Name, strings.Join(res.Unfilled, ", "))

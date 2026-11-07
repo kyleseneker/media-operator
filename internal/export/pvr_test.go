@@ -35,7 +35,8 @@ var fakeSonarrAPI = map[string]string{
 		"removeFailedDownloads":true,"implementation":"QBittorrent","configContract":"QBittorrentSettings","tags":[1],"fields":[
 		{"name":"host","value":"qbit"},{"name":"port","value":8080},{"name":"useSsl","value":false},{"name":"urlBase","value":""},
 		{"name":"username","value":"admin","privacy":"userName"},{"name":"password","value":"********","privacy":"password"},
-		{"name":"tvCategory","value":"tv"},{"name":"initialState","value":0},{"name":"sequentialOrder","value":true}]}]`,
+		{"name":"tvCategory","value":"tv"},{"name":"initialState","value":0},{"name":"sequentialOrder","value":true},
+		{"name":"rpcToken","value":"********","privacy":"password"}]}]`,
 	"/downloadclient/schema": `[{"implementation":"QBittorrent","fields":[{"name":"initialState","value":0},{"name":"sequentialOrder","value":false}]}]`,
 	"/indexer": `[{"id":1,"name":"Torznab","protocol":"TorrentDownloadProtocol","implementation":"Torznab","configContract":"TorznabSettings",
 		"enableRss":true,"enableAutomaticSearch":true,"enableInteractiveSearch":false,"priority":25,"tags":[],"fields":[
@@ -106,6 +107,15 @@ func TestPVRDownloadClientMovesCredentialsToTheSecret(t *testing.T) {
 	assert.Equal(t, "admin", res.Secret.StringData["download-client-qbit-username"], "a visible username is filled in")
 	assert.Equal(t, fakeSonarrKey, res.Secret.StringData["api-key"])
 	assert.Equal(t, []string{"download-client-qbit-password", "indexer-torznab-apikey", "import-list-trakt-accesstoken"}, res.Unfilled)
+}
+
+func TestPVRDownloadClientWarnsAboutAHiddenFieldItCannotReference(t *testing.T) {
+	cfg, res := exportSonarr(t, Options{})
+	for _, f := range cfg.Spec.DownloadClients[0].Fields {
+		assert.NotEqual(t, "rpcToken", f.Name)
+	}
+	assert.Contains(t, res.Warnings,
+		`download-client "qBit": the app hides rpcToken and the config can't read it from a Secret; set it in the app`)
 }
 
 func TestPVRIndexerNormalizesProtocolAndReferencesMaskedFields(t *testing.T) {
