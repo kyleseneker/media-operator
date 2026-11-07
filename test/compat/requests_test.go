@@ -67,18 +67,27 @@ func TestSeerr(t *testing.T) {
 	})
 	fakes := startFakes(t)
 	proxy := newRecordingProxy(t, seerr.url())
+	seerrAPIKey := func(t *testing.T) string {
+		hc, err := engine.NewHTTPClient(seerr.url(), engine.AuthSession, engine.WithAppLabel("compat"))
+		require.NoError(t, err)
+		sc := seerrclient.NewClient(hc)
+		require.NoError(t, sc.AuthenticateJellyfin(ctx, jellyfinAdmin, jellyfinPassword, hostIP, jf.port, "", false, true))
+		key, err := sc.GetAPIKey(ctx)
+		require.NoError(t, err)
+		return key
+	}
 
 	checkCompat(t, compatCase{
-		fixture: "seerr.yaml",
-		export:  "seerr",
-		exportAPIKey: func(t *testing.T) string {
-			hc, err := engine.NewHTTPClient(seerr.url(), engine.AuthSession, engine.WithAppLabel("compat"))
-			require.NoError(t, err)
-			sc := seerrclient.NewClient(hc)
-			require.NoError(t, sc.AuthenticateJellyfin(ctx, jellyfinAdmin, jellyfinPassword, hostIP, jf.port, "", false, true))
-			key, err := sc.GetAPIKey(ctx)
-			require.NoError(t, err)
-			return key
+		fixture:      "seerr.yaml",
+		export:       "seerr",
+		exportAPIKey: seerrAPIKey,
+		cleanup: func(t *testing.T) {
+			hc := directClient(t, seerr.url(), seerrAPIKey(t))
+			for _, kind := range []string{"sonarr", "radarr"} {
+				servers, err := hc.GetJSONList(ctx, "/api/v1/settings/"+kind)
+				require.NoError(t, err)
+				assert.Empty(t, servers, "Seerr still has the %s connection the operator created", kind)
+			}
 		},
 		vars: map[string]string{
 			"URL": proxy.url(), "HOST": hostIP, "FAKES": fakes, "JELLYFIN_PORT": strconv.Itoa(jf.port),

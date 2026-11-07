@@ -3,6 +3,7 @@ package requests
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,6 +26,7 @@ import (
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	requestsv1alpha1 "github.com/kyleseneker/media-operator/api/requests/v1alpha1"
+	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/controller/internal/contract"
 )
 
@@ -240,6 +243,9 @@ func (f *fakeSeerr) serve(t *testing.T) string {
 				return
 			}
 			_ = json.NewEncoder(w).Encode(append([]map[string]any{}, f.services[kind]...))
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/v1/settings/"):
+			kind, id, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/api/v1/settings/"), "/")
+			f.services[kind] = slices.DeleteFunc(f.services[kind], func(s map[string]any) bool { return fmt.Sprint(s["id"]) == id })
 		case r.URL.Path == "/api/v1/settings/initialize" && r.Method == http.MethodPost:
 			f.initialized = true
 			_ = json.NewEncoder(w).Encode(map[string]any{"initialized": true})
@@ -475,4 +481,55 @@ func TestSeerrServicePayloadAlwaysSendsRequiredKeys(t *testing.T) {
 		assert.Contains(t, got, k, "required key %q missing from a minimal service payload", k)
 	}
 	assert.Equal(t, "resolved-key", got["apiKey"], "apiKey is not the resolved secret value")
+}
+
+func seerrServiceNames(f *fakeSeerr, kind string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	names := make([]string, 0, len(f.services[kind]))
+	for _, s := range f.services[kind] {
+		names = append(names, fmt.Sprint(s["name"]))
+	}
+	return names
+}
+
+func seerrWithAPIKey(addr string) *requestsv1alpha1.SeerrConfig {
+	cfg := seerrConfig(addr)
+	cfg.Spec.Connection.APIKeySecretRef = &commonv1alpha1.SecretKeyRef{Name: "seerr-secrets", Key: "api-key"}
+	return cfg
+}
+
+func TestSeerrPrunesTheConnectionItCreatedUnderAnOldName(t *testing.T) {
+	app := &fakeSeerr{initialized: true, services: map[string][]map[string]any{
+		"sonarr": {{"id": float64(0), "name": "Old"}, {"id": float64(1), "name": "Hand-made"}},
+	}}
+	cfg := seerrWithAPIKey(app.serve(t))
+	port := 8989
+	cfg.Spec.Sonarr = &requestsv1alpha1.SeerrServiceConnection{
+		Name: "New", Hostname: "sonarr", Port: &port,
+		APIKeySecretRef: commonv1alpha1.SecretKeyRef{Name: "seerr-secrets", Key: "api-key"},
+	}
+	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{Prune: new(true)}
+	cfg.Status.ManagedResources = map[string][]string{"sonarr": {"Old"}}
+
+	runSeerr(t, cfg)
+
+	assert.ElementsMatch(t, []string{"Hand-made", "New"}, seerrServiceNames(app, "sonarr"))
+}
+
+func TestSeerrDeletionPolicyRemovesTheConnectionsItCreated(t *testing.T) {
+	app := &fakeSeerr{initialized: true, services: map[string][]map[string]any{
+		"sonarr": {{"id": float64(0), "name": "Sonarr"}, {"id": float64(1), "name": "Hand-made"}},
+	}}
+	cfg := seerrWithAPIKey(app.serve(t))
+	policy := ctrlcommon.DeletionPolicyDelete
+	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DeletionPolicy: &policy}
+	cfg.Status.ManagedResources = map[string][]string{"sonarr": {"Sonarr"}}
+	now := metav1.NewTime(time.Now())
+	cfg.DeletionTimestamp = &now
+	cfg.Finalizers = []string{ctrlcommon.Finalizer}
+
+	runSeerr(t, cfg)
+
+	assert.Equal(t, []string{"Hand-made"}, seerrServiceNames(app, "sonarr"))
 }

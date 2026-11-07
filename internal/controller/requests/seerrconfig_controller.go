@@ -41,22 +41,19 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, ctrlcommon.Lifecycle{}); done {
+	lifecycle := ctrlcommon.Lifecycle{Remove: func(ctx context.Context) error { return r.cleanup(ctx, &config) }, Prune: true}
+	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, lifecycle); done {
 		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
-	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
+	sc, reason, err := r.seerrClient(ctx, &config)
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, reason, err.Error())
+		if reason == engine.ReasonInvalidConfig {
+			return ctrl.Result{}, nil
+		}
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
-
-	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthSession, engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("seerr"))
-	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonInvalidConfig, err.Error())
-		return ctrl.Result{}, nil
-	}
-	sc := seerrclient.NewClient(hc)
 
 	// Check initialization state
 	isInitialized, err := sc.IsInitialized(ctx)
@@ -67,6 +64,7 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	writes := &engine.Writes{App: "seerr", Observe: ctrlcommon.ObserveOnly(config.Spec.Reconcile)}
+	owned := engine.NewOwnership("seerr", config.Status.ManagedResources)
 	if !isInitialized && writes.Observe {
 		// Signing in to a Seerr that has not been set up configures its media
 		// server, so observe mode reports the setup as missing and stops.
@@ -82,7 +80,7 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	if !isInitialized {
-		if err := r.setup(ctx, sc, writes, &config); err != nil {
+		if err := r.setup(ctx, sc, writes, owned, &config); err != nil {
 			ctrlcommon.UpdateStatus(ctx, r.Client, &config, false, engine.ReasonSyncFailed, err.Error())
 			return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 		}
@@ -93,19 +91,24 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	var syncErrors []string
 
-	// Reconcile Sonarr connection
-	if config.Spec.Sonarr != nil {
-		if err := r.reconcileSonarrConnection(ctx, sc, writes, &config); err != nil {
-			logger.Error(err, "failed to reconcile Sonarr connection")
-			syncErrors = append(syncErrors, fmt.Sprintf("sonarr: %v", err))
+	for _, svc := range []struct {
+		kind      string
+		conn      *requestsv1alpha1.SeerrServiceConnection
+		reconcile func(context.Context, *seerrclient.Client, *engine.Writes, *engine.Ownership, *requestsv1alpha1.SeerrConfig) error
+	}{
+		{"sonarr", config.Spec.Sonarr, r.reconcileSonarrConnection},
+		{"radarr", config.Spec.Radarr, r.reconcileRadarrConnection},
+	} {
+		if svc.conn == nil {
+			continue
 		}
-	}
-
-	// Reconcile Radarr connection
-	if config.Spec.Radarr != nil {
-		if err := r.reconcileRadarrConnection(ctx, sc, writes, &config); err != nil {
-			logger.Error(err, "failed to reconcile Radarr connection")
-			syncErrors = append(syncErrors, fmt.Sprintf("radarr: %v", err))
+		err := svc.reconcile(ctx, sc, writes, owned, &config)
+		if err == nil && ctrlcommon.PruneEnabled(config.Spec.Reconcile) && !writes.Observe {
+			err = pruneSeerrService(ctx, sc, owned, svc.kind, svc.conn.Name)
+		}
+		if err != nil {
+			logger.Error(err, "failed to reconcile connection", "service", svc.kind)
+			syncErrors = append(syncErrors, fmt.Sprintf("%s: %v", svc.kind, err))
 		}
 	}
 
@@ -125,15 +128,85 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 
+	ctrlcommon.UpdateStatusManaged(&config, owned.Managed())
+	ctrlcommon.EmitPruneEvents(r.Recorder, &config, owned.Pruned())
 	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, writes.Observe, len(writes.Drift()) > 0, syncErrors)
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
 
+// seerrClient builds the client for a config, or returns the status reason it
+// can't.
+func (r *SeerrConfigReconciler) seerrClient(ctx context.Context, config *requestsv1alpha1.SeerrConfig) (*seerrclient.Client, string, error) {
+	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
+	if err != nil {
+		return nil, engine.ReasonSecretNotFound, err
+	}
+	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthSession, engine.WithTLSConfig(tlsCfg), engine.WithAppLabel("seerr"))
+	if err != nil {
+		return nil, engine.ReasonInvalidConfig, err
+	}
+	return seerrclient.NewClient(hc), "", nil
+}
+
+// pruneSeerrService deletes the connections of a kind the operator created other
+// than the declared one.
+func pruneSeerrService(ctx context.Context, sc *seerrclient.Client, owned *engine.Ownership, kind, declared string) error {
+	names, ids, err := seerrServices(ctx, sc, kind)
+	if err != nil {
+		return err
+	}
+	return owned.Prune(kind, []string{declared}, names, func(name string) error {
+		return sc.Delete(ctx, fmt.Sprintf("/api/v1/settings/%s/%d", kind, ids[name]))
+	})
+}
+
+// cleanup deletes the connections the operator created, for deletionPolicy delete.
+func (r *SeerrConfigReconciler) cleanup(ctx context.Context, config *requestsv1alpha1.SeerrConfig) error {
+	sc, _, err := r.seerrClient(ctx, config)
+	if err != nil {
+		return err
+	}
+	if err := r.establishSession(ctx, sc, config); err != nil {
+		return err
+	}
+	owned := engine.NewOwnership("seerr", config.Status.ManagedResources)
+	for _, kind := range []string{"sonarr", "radarr"} {
+		names, ids, err := seerrServices(ctx, sc, kind)
+		if err != nil {
+			return err
+		}
+		err = owned.Cleanup(kind, names, func(name string) error {
+			return sc.Delete(ctx, fmt.Sprintf("/api/v1/settings/%s/%d", kind, ids[name]))
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func seerrServices(ctx context.Context, sc *seerrclient.Client, kind string) ([]string, map[string]int, error) {
+	servers, err := sc.GetList(ctx, "/api/v1/settings/"+kind)
+	if err != nil {
+		return nil, nil, fmt.Errorf("listing %s connections: %w", kind, err)
+	}
+	var names []string
+	ids := map[string]int{}
+	for _, s := range servers {
+		name, _ := s["name"].(string)
+		if id, ok := s["id"].(float64); ok && name != "" {
+			names = append(names, name)
+			ids[name] = int(id)
+		}
+	}
+	return names, ids, nil
+}
+
 // setup runs Seerr's first-time setup: the media server's libraries, the Sonarr
 // and Radarr connections and the main settings, then marks Seerr initialized.
 func (r *SeerrConfigReconciler) setup(
-	ctx context.Context, sc *seerrclient.Client, writes *engine.Writes, config *requestsv1alpha1.SeerrConfig,
+	ctx context.Context, sc *seerrclient.Client, writes *engine.Writes, owned *engine.Ownership, config *requestsv1alpha1.SeerrConfig,
 ) error {
 	logger := log.FromContext(ctx)
 	var initErrors []string
@@ -153,13 +226,13 @@ func (r *SeerrConfigReconciler) setup(
 	}
 
 	if config.Spec.Sonarr != nil {
-		if err := r.reconcileSonarrConnection(ctx, sc, writes, config); err != nil {
+		if err := r.reconcileSonarrConnection(ctx, sc, writes, owned, config); err != nil {
 			logger.Error(err, "failed to configure Sonarr during initialization")
 			initErrors = append(initErrors, fmt.Sprintf("sonarr init: %v", err))
 		}
 	}
 	if config.Spec.Radarr != nil {
-		if err := r.reconcileRadarrConnection(ctx, sc, writes, config); err != nil {
+		if err := r.reconcileRadarrConnection(ctx, sc, writes, owned, config); err != nil {
 			logger.Error(err, "failed to configure Radarr during initialization")
 			initErrors = append(initErrors, fmt.Sprintf("radarr init: %v", err))
 		}
@@ -186,7 +259,7 @@ func (r *SeerrConfigReconciler) setup(
 // name, or creates it. Setup uses it too: a setup that failed partway runs again
 // from the start, and Seerr appends a connection on every POST.
 func (r *SeerrConfigReconciler) reconcileSonarrConnection(
-	ctx context.Context, sc *seerrclient.Client, w *engine.Writes, config *requestsv1alpha1.SeerrConfig,
+	ctx context.Context, sc *seerrclient.Client, w *engine.Writes, owned *engine.Ownership, config *requestsv1alpha1.SeerrConfig,
 ) error {
 	sonarrAPIKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Sonarr.APIKeySecretRef)
 	if err != nil {
@@ -222,13 +295,16 @@ func (r *SeerrConfigReconciler) reconcileSonarrConnection(
 	}
 
 	return w.Apply("sonarr", config.Spec.Sonarr.Name, func() error {
-		_, err := sc.Post(ctx, "/api/v1/settings/sonarr", payload)
-		return err
+		if _, err := sc.Post(ctx, "/api/v1/settings/sonarr", payload); err != nil {
+			return err
+		}
+		owned.Created("sonarr", config.Spec.Sonarr.Name)
+		return nil
 	})
 }
 
 func (r *SeerrConfigReconciler) reconcileRadarrConnection(
-	ctx context.Context, sc *seerrclient.Client, w *engine.Writes, config *requestsv1alpha1.SeerrConfig,
+	ctx context.Context, sc *seerrclient.Client, w *engine.Writes, owned *engine.Ownership, config *requestsv1alpha1.SeerrConfig,
 ) error {
 	radarrAPIKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Radarr.APIKeySecretRef)
 	if err != nil {
@@ -264,8 +340,11 @@ func (r *SeerrConfigReconciler) reconcileRadarrConnection(
 	}
 
 	return w.Apply("radarr", config.Spec.Radarr.Name, func() error {
-		_, err := sc.Post(ctx, "/api/v1/settings/radarr", payload)
-		return err
+		if _, err := sc.Post(ctx, "/api/v1/settings/radarr", payload); err != nil {
+			return err
+		}
+		owned.Created("radarr", config.Spec.Radarr.Name)
+		return nil
 	})
 }
 

@@ -155,3 +155,8 @@ func (c *Client) Put(ctx context.Context, path string, payload map[string]any) e
 func (c *Client) Ping(ctx context.Context) error {
 	return c.hc.Ping(ctx, "/api/v1/settings/public")
 }
+
+// Delete performs a DELETE request.
+func (c *Client) Delete(ctx context.Context, path string) error {
+	return c.hc.DeleteJSON(ctx, path)
+}
