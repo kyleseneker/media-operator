@@ -144,9 +144,15 @@ func BuildProwlarrIndexerPayload(idx indexersv1alpha1.ProwlarrIndexer, tagIDs ma
 		}
 		fields = append(fields, map[string]any{"name": f.Name, "value": val})
 	}
+	// Prowlarr's indexer schema lists every tracker definition, too large to read
+	// each pass; Torznab, Newznab and Cardigann all follow this naming.
+	configContract := idx.Implementation + "Settings"
+	if idx.ConfigContract != "" {
+		configContract = idx.ConfigContract
+	}
 	desired := map[string]any{
 		"name": idx.Name, "enable": enable,
-		"implementation": idx.Implementation, "configContract": idx.ConfigContract,
+		"implementation": idx.Implementation, "configContract": configContract,
 		"fields": fields, "tags": resolveTags(idx.Tags, tagIDs),
 	}
 	if idx.AppProfileId != nil {
