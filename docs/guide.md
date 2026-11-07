@@ -68,24 +68,37 @@ they are removed from the resource. It tracks what it created in
 `status.managedResources`; items it didn't create are never deleted. Without
 prune, removing an item from the resource only stops managing it.
 
-- A list with no declared items is not pruned.
-- Root folders, tags and Prowlarr sync profiles are never pruned.
-- A pass that would delete more than 25 items deletes none.
-- Observe mode never prunes.
+| App | Pruned |
+|---|---|
+| Sonarr, Radarr, Lidarr, Readarr | download clients, indexers, notifications, import lists, custom formats, quality profiles, remote path mappings |
+| Prowlarr | applications, indexers, proxies, download clients, notifications |
+| FlareSolverr | sessions |
+| Tdarr | library variables |
+| Autobrr | download clients, indexers, IRC networks, feeds, filters and their actions |
+| Seerr | Sonarr and Radarr servers |
+| SABnzbd | servers, categories |
+| Maintainerr | rule groups, Sonarr and Radarr servers |
 
-Supported for Sonarr, Radarr, Lidarr, Readarr, Prowlarr, FlareSolverr and Tdarr
-library variables. Other resources reject `prune: true` with `InvalidConfig`.
+Jellyfin, Plex, qBittorrent and Bazarr reject `prune: true` with
+`InvalidConfig`.
+
+- A list with no declared items is not pruned.
+- Settings, root folders, tags, libraries and Prowlarr sync profiles are never
+  pruned.
+- A pass that would delete more than 25 items of one kind deletes none of them.
+- Observe mode never prunes.
+- Deleting a Maintainerr rule group also deletes its collection.
 
 ## Deletion
 
 Deleting a resource leaves the app unchanged. With
 `spec.reconcile.deletionPolicy: delete`, the operator first deletes the items it
-created, following the prune rules. Settings, root folders and tags are kept.
+created, the same kinds prune covers. Everything else is kept.
 
-`delete` is supported for Sonarr, Radarr, Lidarr, Readarr, Prowlarr and
-FlareSolverr, and not in observe mode; anything else is rejected with
-`InvalidConfig`. If cleanup keeps failing, the operator gives up after 10
-minutes, records a warning event and removes the finalizer.
+`delete` is supported for the apps in the prune table, and not in observe mode;
+Jellyfin, Plex, qBittorrent and Bazarr reject it with `InvalidConfig`. If
+cleanup keeps failing, the operator gives up after 10 minutes, records a
+warning event and removes the finalizer.
 
 ## Credentials
 
