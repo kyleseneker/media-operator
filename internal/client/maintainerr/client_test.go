@@ -118,3 +118,24 @@ func TestQualityProfilesPath(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "HD-1080p", profiles[0]["name"])
 }
+
+func TestDeleteArrReportsAServerInUse(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodDelete, r.Method)
+		assert.Equal(t, "/api/settings/radarr/3", r.URL.Path)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status": "NOK", "code": 0, "message": "Cannot delete setting with associated collections",
+		})
+	})
+	err := c.DeleteArr(context.Background(), Radarr, 3)
+	require.ErrorContains(t, err, "associated collections")
+}
+
+func TestDeleteRuleGroupPath(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodDelete, r.Method)
+		assert.Equal(t, "/api/rules/7", r.URL.Path)
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "OK", "code": 1, "message": "Success"})
+	})
+	require.NoError(t, c.DeleteRuleGroup(context.Background(), 7))
+}

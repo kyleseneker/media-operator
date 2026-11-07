@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -100,6 +101,11 @@ func (f *fakeMaintainerr) handle(w http.ResponseWriter, r *http.Request) {
 		f.handleSettings(w, r.Method, path, body)
 		return
 	}
+	if id, ok := strings.CutPrefix(path, "/rules/"); ok && r.Method == http.MethodDelete {
+		f.groups = slices.DeleteFunc(f.groups, func(g map[string]any) bool { return fmt.Sprint(g["id"]) == id })
+		f.ok(w)
+		return
+	}
 	switch route {
 	case "GET /health/ready":
 		_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
@@ -166,6 +172,18 @@ func (f *fakeMaintainerr) handleSettings(w http.ResponseWriter, method, path str
 		body["id"] = f.nextID
 		f.nextID++
 		f.servers[kind] = append(f.servers[kind], body)
+		f.ok(w)
+	case method == http.MethodDelete && (strings.HasPrefix(path, "/settings/sonarr/") || strings.HasPrefix(path, "/settings/radarr/")):
+		kind, id, _ := strings.Cut(strings.TrimPrefix(path, "/settings/"), "/")
+		for _, g := range f.groups {
+			if collection, _ := g["collection"].(map[string]any); fmt.Sprint(collection[kind+"SettingsId"]) == id {
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"status": "NOK", "code": 0, "message": "Cannot delete setting with associated collections",
+				})
+				return
+			}
+		}
+		f.servers[kind] = slices.DeleteFunc(f.servers[kind], func(s map[string]any) bool { return fmt.Sprint(s["id"]) == id })
 		f.ok(w)
 	case method == http.MethodPut && strings.HasPrefix(path, "/settings/radarr/"):
 		id, _ := strconv.Atoi(strings.TrimPrefix(path, "/settings/radarr/"))
@@ -304,6 +322,13 @@ func (m *maintainerrRun) reconcile(t *testing.T) {
 	t.Helper()
 	_, err := m.r.Reconcile(context.Background(), ctrl.Request{Name: "maintainerr", Namespace: "media"})
 	require.NoError(t, err, "reconcile")
+}
+
+func (m *maintainerrRun) get(t *testing.T) *curationv1alpha1.MaintainerrConfig {
+	t.Helper()
+	var cfg curationv1alpha1.MaintainerrConfig
+	require.NoError(t, m.c.Get(context.Background(), types.NamespacedName{Name: "maintainerr", Namespace: "media"}, &cfg))
+	return &cfg
 }
 
 func (m *maintainerrRun) condition(t *testing.T, condType string) metav1.Condition {

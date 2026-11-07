@@ -139,7 +139,8 @@ func (s *maintainerrSync) ruleGroup(
 		match = e
 	}
 	if match == nil {
-		return s.Apply("ruleGroup", g.Name, func() error { return s.mc.CreateRuleGroup(ctx, newRuleGroupBody(send)) })
+		create := s.created(ruleGroupsKind, g.Name, func() error { return s.mc.CreateRuleGroup(ctx, newRuleGroupBody(send)) })
+		return s.Apply("ruleGroup", g.Name, create)
 	}
 
 	current := storedRuleGroup(match)

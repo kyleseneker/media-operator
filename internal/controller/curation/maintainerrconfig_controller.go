@@ -47,24 +47,26 @@ func (r *MaintainerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, ctrlcommon.Lifecycle{}); done {
+	cleanup := func(ctx context.Context) error {
+		mc, _, err := r.maintainerrClient(ctx, &config)
+		if err != nil {
+			return err
+		}
+		return (&maintainerrSync{mc: mc, owned: engine.NewOwnership(maintainerrApp, config.Status.ManagedResources)}).cleanup(ctx)
+	}
+	lifecycle := ctrlcommon.Lifecycle{Remove: cleanup, Prune: true}
+	if done, after := ctrlcommon.HandleLifecycle(ctx, r.Client, r.Recorder, &config, lifecycle); done {
 		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
-	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
+	mc, reason, err := r.maintainerrClient(ctx, &config)
 	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
+		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, reason, err.Error())
+		if reason == engine.ReasonInvalidConfig {
+			return ctrl.Result{}, nil
+		}
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
-
-	// Maintainerr has no API authentication.
-	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthNone,
-		engine.WithTLSConfig(tlsCfg), engine.WithAppLabel(maintainerrApp))
-	if err != nil {
-		ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonInvalidConfig, err.Error())
-		return ctrl.Result{}, nil
-	}
-	mc := maintainerrclient.NewClient(hc)
 
 	if err := mc.Ping(ctx); err != nil {
 		logger.Error(err, "Maintainerr unreachable")
@@ -75,11 +77,30 @@ func (r *MaintainerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	sync := &maintainerrSync{
 		App: maintainerrApp, Observe: ctrlcommon.ObserveOnly(config.Spec.Reconcile),
 		c: r.Client, mc: mc, namespace: config.Namespace,
+		prune: ctrlcommon.PruneEnabled(config.Spec.Reconcile), owned: engine.NewOwnership(maintainerrApp, config.Status.ManagedResources),
 	}
 	syncErrors := sync.run(ctx, &config.Spec)
+	ctrlcommon.UpdateStatusManaged(&config, sync.owned.Managed())
+	ctrlcommon.EmitPruneEvents(r.Recorder, &config, sync.owned.Pruned())
 	ctrlcommon.UpdateSyncStatus(ctx, r.Client, &config, sync.Observe, len(sync.Drift()) > 0, syncErrors)
 
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
+}
+
+func (r *MaintainerrConfigReconciler) maintainerrClient(
+	ctx context.Context, config *curationv1alpha1.MaintainerrConfig,
+) (*maintainerrclient.Client, string, error) {
+	tlsCfg, err := engine.ResolveTLSConfig(ctx, r.Client, config.Namespace, config.Spec.Connection.TLS)
+	if err != nil {
+		return nil, engine.ReasonSecretNotFound, err
+	}
+	// Maintainerr has no API authentication.
+	hc, err := engine.NewHTTPClient(config.Spec.Connection.URL, engine.AuthNone,
+		engine.WithTLSConfig(tlsCfg), engine.WithAppLabel(maintainerrApp))
+	if err != nil {
+		return nil, engine.ReasonInvalidConfig, err
+	}
+	return maintainerrclient.NewClient(hc), "", nil
 }
 
 // maintainerrSync applies one MaintainerrConfig in dependency order: the media
@@ -91,14 +112,28 @@ type maintainerrSync struct {
 	c         client.Reader
 	mc        *maintainerrclient.Client
 	namespace string
+	prune     bool
+	owned     *engine.Ownership
+}
+
+func (s *maintainerrSync) created(kind, name string, create func() error) func() error {
+	return func() error {
+		if err := create(); err != nil {
+			return err
+		}
+		s.owned.Created(kind, name)
+		return nil
+	}
 }
 
 func (s *maintainerrSync) run(ctx context.Context, spec *curationv1alpha1.MaintainerrConfigSpec) []string {
 	logger := log.FromContext(ctx)
 	var syncErrors []string
+	failed := map[string]bool{}
 	fail := func(section string, err error) {
 		logger.Error(err, "failed to reconcile", "section", section)
 		syncErrors = append(syncErrors, fmt.Sprintf("%s: %v", section, err))
+		failed[section] = true
 	}
 
 	settings, err := s.mc.GetSettings(ctx)
@@ -144,7 +179,12 @@ func (s *maintainerrSync) run(ctx context.Context, spec *curationv1alpha1.Mainta
 	}
 
 	if len(spec.RuleGroups) > 0 {
-		syncErrors = append(syncErrors, s.ruleGroups(ctx, spec.RuleGroups, servers)...)
+		errs := s.ruleGroups(ctx, spec.RuleGroups, servers)
+		syncErrors = append(syncErrors, errs...)
+		failed[ruleGroupsKind] = len(errs) > 0
+	}
+	if s.prune && !s.Observe {
+		syncErrors = append(syncErrors, s.pruneUndeclared(ctx, spec, failed)...)
 	}
 	return syncErrors
 }
@@ -312,7 +352,8 @@ func (s *maintainerrSync) arrServer(
 		match = e
 	}
 	if match == nil {
-		return !s.Observe, s.Apply(string(kind), server.Name, func() error { return s.mc.AddArr(ctx, kind, desired) })
+		add := s.created(string(kind), server.Name, func() error { return s.mc.AddArr(ctx, kind, desired) })
+		return !s.Observe, s.Apply(string(kind), server.Name, add)
 	}
 	if reconciler.Covers(match, mustJSON(desired)) {
 		return false, nil

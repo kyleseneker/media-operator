@@ -112,6 +112,11 @@ func (c *Client) UpdateArr(ctx context.Context, kind Arr, id int, server map[str
 	return c.checked(c.hc.Do(ctx, http.MethodPut, fmt.Sprintf("/api/settings/%s/%d", kind, id), server))
 }
 
+// DeleteArr deletes a server. Maintainerr refuses while a collection uses it.
+func (c *Client) DeleteArr(ctx context.Context, kind Arr, id int) error {
+	return c.checked(c.hc.Do(ctx, http.MethodDelete, fmt.Sprintf("/api/settings/%s/%d", kind, id), nil))
+}
+
 // QualityProfiles returns a server's quality profiles as {id, name}.
 func (c *Client) QualityProfiles(ctx context.Context, kind Arr, id int) ([]map[string]any, error) {
 	return c.hc.GetJSONList(ctx, fmt.Sprintf("/api/servarr/%s/%d/profiles", kind, id))
@@ -153,6 +158,11 @@ func (c *Client) CreateRuleGroup(ctx context.Context, group map[string]any) erro
 // deleted and recreated.
 func (c *Client) UpdateRuleGroup(ctx context.Context, group map[string]any) error {
 	return c.checked(ruleGroupRejection(c.hc.Do(ctx, http.MethodPut, "/api/rules", group)))
+}
+
+// DeleteRuleGroup deletes a rule group and its collection.
+func (c *Client) DeleteRuleGroup(ctx context.Context, id int) error {
+	return c.checked(c.hc.Do(ctx, http.MethodDelete, fmt.Sprintf("/api/rules/%d", id), nil))
 }
 
 // ruleGroupRejection adds Maintainerr's reason to a rejected rule group save.
