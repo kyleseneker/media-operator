@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"reflect"
+	"slices"
 	"strings"
 
 	subtitlesv1alpha1 "github.com/kyleseneker/media-operator/api/subtitles/v1alpha1"
@@ -74,6 +75,26 @@ func (c *Client) GetSettings(ctx context.Context) (map[string]any, error) {
 	return c.hc.GetJSON(ctx, "/api/system/settings")
 }
 
+// EnabledLanguagesField is the settings form field that sets which languages
+// are enabled, one value per language. Bazarr disables every language it
+// doesn't list.
+const EnabledLanguagesField = "languages-enabled"
+
+// EnabledLanguages returns the ISO 639-1 codes of the enabled languages.
+func (c *Client) EnabledLanguages(ctx context.Context) ([]string, error) {
+	languages, err := c.hc.GetJSONList(ctx, "/api/system/languages")
+	if err != nil {
+		return nil, err
+	}
+	var enabled []string
+	for _, l := range languages {
+		if code, _ := l["code2"].(string); code != "" && l["enabled"] == true {
+			enabled = append(enabled, code)
+		}
+	}
+	return enabled, nil
+}
+
 // GetLanguageProfiles returns the stored language profiles.
 func (c *Client) GetLanguageProfiles(ctx context.Context) ([]map[string]any, error) {
 	return c.hc.GetJSONList(ctx, "/api/system/languages/profiles")
@@ -90,11 +111,7 @@ func (c *Client) PostForm(ctx context.Context, path string, form url.Values) err
 func LanguagesForm(langs *subtitlesv1alpha1.BazarrLanguages) (url.Values, error) {
 	form := url.Values{}
 	if len(langs.Enabled) > 0 {
-		enabledJSON, err := json.Marshal(langs.Enabled)
-		if err != nil {
-			return nil, fmt.Errorf("marshaling enabled languages: %w", err)
-		}
-		form.Set("settings-general-enabled_languages", string(enabledJSON))
+		form[EnabledLanguagesField] = slices.Clone(langs.Enabled)
 	}
 	if len(langs.Profiles) > 0 {
 		profilesJSON, err := json.Marshal(buildLanguageProfiles(langs.Profiles))

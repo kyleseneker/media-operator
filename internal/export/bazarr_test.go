@@ -14,7 +14,7 @@ import (
 
 const fakeBazarrSettings = `{
 	"general": {"use_sonarr": true, "use_radarr": false, "minimum_score": 90, "hi_extension": "hi",
-		"enabled_providers": ["opensubtitlescom", "podnapisi"], "enabled_languages": ["en", "es"]},
+		"enabled_providers": ["opensubtitlescom", "podnapisi"], "enabled_languages": ["fr"]},
 	"sonarr": {"ip": "sonarr", "port": 8989, "base_url": "/", "apikey": "sonarr-key", "series_sync": 60, "ssl": false},
 	"radarr": {"ip": "radarr", "apikey": "radarr-key"},
 	"subsync": {"use_subsync": true, "subsync_threshold": 90},
@@ -40,6 +40,8 @@ func exportBazarrFrom(t *testing.T) (*subtitlesv1alpha1.BazarrConfig, Result) {
 			_, _ = w.Write([]byte(fakeBazarrSettings))
 		case "/api/system/languages/profiles":
 			_, _ = w.Write([]byte(fakeBazarrProfiles))
+		case "/api/system/languages":
+			_, _ = w.Write([]byte(`[{"code2":"en","enabled":true},{"code2":"es","enabled":true},{"code2":"fr","enabled":false}]`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}

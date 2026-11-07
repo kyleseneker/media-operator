@@ -76,6 +76,16 @@ func TestBazarr(t *testing.T) {
 			assert.Contains(t, general["enabled_providers"], "podnapisi")
 			assert.Equal(t, []string{"English", "Hand-made"}, bazarrProfileNames(t, hc),
 				"saving the declared profile lost the hand-made one")
+			languages, err := hc.GetJSONList(context.Background(), "/api/system/languages")
+			require.NoError(t, err)
+			var enabled []string
+			for _, l := range languages {
+				if l["enabled"] == true {
+					enabled = append(enabled, fmt.Sprint(l["code2"]))
+				}
+			}
+			slices.Sort(enabled)
+			assert.Equal(t, []string{"en", "es"}, enabled, "the declared languages are not the enabled ones")
 		},
 		cleanup: func(t *testing.T, _ map[string][]string) {
 			assert.Equal(t, []string{"Hand-made"}, bazarrProfileNames(t, hc))

@@ -61,7 +61,11 @@ func exportBazarr(r *reader) (map[string]any, error) {
 	}
 
 	languages := map[string]any{}
-	if enabled := texts(general["enabled_languages"]); len(enabled) > 0 {
+	enabled, err := bc.EnabledLanguages(r.ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(enabled) > 0 {
 		languages["enabled"] = enabled
 	}
 	profiles, err := bc.GetLanguageProfiles(r.ctx)

@@ -115,6 +115,10 @@ func (f *fakeBazarr) serve(t *testing.T) string {
 			_ = json.NewEncoder(w).Encode(f.profiles)
 			return
 		}
+		if r.URL.Path == "/api/system/languages" {
+			_ = json.NewEncoder(w).Encode([]map[string]any{{"code2": "en", "enabled": false}})
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
 	}))
 	_ = srv.Listener.Close()
@@ -200,7 +204,9 @@ func TestBazarrSubstitutesResolvedAPIKeyIntoForm(t *testing.T) {
 	assert.False(t, app.anyKeyContains("apiKeySecretRef"), "sent the Kubernetes secret reference to Bazarr instead of the resolved value")
 }
 
-func TestBazarrSendsLanguagesAsJSON(t *testing.T) {
+// Bazarr enables languages from repeated languages-enabled values; a
+// settings-general-enabled_languages key is stored but never used.
+func TestBazarrSendsEnabledLanguagesAsRepeatedValues(t *testing.T) {
 	app := &fakeBazarr{}
 	addr := app.serve(t)
 
@@ -208,12 +214,11 @@ func TestBazarrSendsLanguagesAsJSON(t *testing.T) {
 	cfg.Spec.Languages = &subtitlesv1alpha1.BazarrLanguages{Enabled: []string{"en", "de"}}
 	runBazarr(t, cfg, bazarrSecrets())
 
-	got, ok := app.formValue("settings-general-enabled_languages")
-	require.True(t, ok, "enabled languages were never sent")
-	var langs []string
-	require.NoError(t, json.Unmarshal([]byte(got), &langs), "enabled_languages is not JSON: %q", got)
-	require.Len(t, langs, 2, "enabled languages")
-	assert.Equal(t, "en", langs[0], "enabled languages")
+	app.mu.Lock()
+	defer app.mu.Unlock()
+	require.NotEmpty(t, app.forms, "nothing was written")
+	assert.Equal(t, []string{"en", "de"}, app.forms[0]["languages-enabled"])
+	assert.NotContains(t, app.forms[0], "settings-general-enabled_languages")
 }
 
 func TestBazarrReportsSyncedOnHealthyApp(t *testing.T) {
@@ -256,7 +261,7 @@ func TestBazarrChangesOnlyWhatDiffers(t *testing.T) {
 		"settings-general-use_sonarr":        {"true"},
 		"settings-general-minimum_score":     {"90"},
 		"settings-general-enabled_providers": {"podnapisi", "tvsubtitles"},
-		"settings-general-enabled_languages": {`["en","es"]`},
+		"languages-enabled":                  {"es", "en"},
 		"settings-sonarr-ip":                 {"10.0.0.5"},
 		"languages-profiles": {`[{"profileId":1,"name":"English","cutoff":null,"originalFormat":false,` +
 			`"items":[{"id":1,"language":"en","hi":"False","forced":"False","audio_exclude":"False"}]}]`},
@@ -264,7 +269,7 @@ func TestBazarrChangesOnlyWhatDiffers(t *testing.T) {
 	settings := map[string]any{
 		"general": map[string]any{
 			"use_sonarr": true, "minimum_score": float64(90),
-			"enabled_providers": []any{"tvsubtitles", "podnapisi"}, "enabled_languages": []any{"en", "es"},
+			"enabled_providers": []any{"tvsubtitles", "podnapisi"},
 		},
 		"sonarr": map[string]any{"ip": "127.0.0.1"},
 	}
@@ -273,8 +278,11 @@ func TestBazarrChangesOnlyWhatDiffers(t *testing.T) {
 		"items": []any{map[string]any{"id": float64(1), "language": "en", "hi": "False", "forced": "False", "audio_exclude": "False"}},
 	}}
 
-	changes := bazarrChanges(desired, settings, profiles)
+	changes := bazarrChanges(desired, settings, profiles, []string{"en", "es"})
 
 	assert.Equal(t, url.Values{"settings-sonarr-ip": {"10.0.0.5"}}, changes,
-		"typed values, provider order, originalFormat 0 and Bazarr's own tag key are not changes")
+		"typed values, provider and language order, originalFormat 0 and Bazarr's own tag key are not changes")
+
+	changes = bazarrChanges(url.Values{"languages-enabled": {"en", "es"}}, settings, nil, []string{"en"})
+	assert.Equal(t, url.Values{"languages-enabled": {"en", "es"}}, changes, "a language Bazarr hasn't enabled is a change")
 }

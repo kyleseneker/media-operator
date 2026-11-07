@@ -92,7 +92,14 @@ func (r *BazarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			desired.Set(profilesField, profiles.send)
 		}
 	}
-	changes := bazarrChanges(desired, settings, profiles.stored())
+	var enabled []string
+	if desired.Has(bazarrclient.EnabledLanguagesField) {
+		if enabled, err = bc.EnabledLanguages(ctx); err != nil {
+			ctrlcommon.UpdateStatus(ctx, r.Client, &config, false, engine.ReasonSyncFailed, fmt.Sprintf("reading languages: %v", err))
+			return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
+		}
+	}
+	changes := bazarrChanges(desired, settings, profiles.stored(), enabled)
 
 	if ctrlcommon.ObserveOnly(config.Spec.Reconcile) {
 		for key := range changes {
@@ -218,11 +225,17 @@ func (r *BazarrConfigReconciler) bazarrProviderForm(ctx context.Context, namespa
 
 // bazarrChanges returns the desired form fields whose value differs from what
 // Bazarr reports, so a reconcile writes nothing when nothing changed.
-func bazarrChanges(desired url.Values, settings map[string]any, profiles []map[string]any) url.Values {
+func bazarrChanges(desired url.Values, settings map[string]any, profiles []map[string]any, enabled []string) url.Values {
 	changes := url.Values{}
 	for key, values := range desired {
-		if key == profilesField {
+		switch key {
+		case profilesField:
 			if !sameBazarrProfiles(profiles, values[0]) {
+				changes[key] = values
+			}
+			continue
+		case bazarrclient.EnabledLanguagesField:
+			if !slices.Equal(slices.Sorted(slices.Values(values)), slices.Sorted(slices.Values(enabled))) {
 				changes[key] = values
 			}
 			continue

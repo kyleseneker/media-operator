@@ -56,7 +56,7 @@ func TestLanguagesForm(t *testing.T) {
 		Profiles: []subtitlesv1alpha1.BazarrLanguageProfile{{Name: "English", Items: []subtitlesv1alpha1.BazarrLanguageItem{{Language: "en"}}}},
 	})
 	require.NoError(t, err)
-	assert.JSONEq(t, `["en","es"]`, form.Get("settings-general-enabled_languages"))
+	assert.Equal(t, []string{"en", "es"}, form[EnabledLanguagesField], "Bazarr reads one value per enabled language")
 	assert.Contains(t, form.Get("languages-profiles"), `"name":"English"`)
 
 	empty, err := LanguagesForm(&subtitlesv1alpha1.BazarrLanguages{})
