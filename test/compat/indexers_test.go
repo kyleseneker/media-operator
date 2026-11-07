@@ -86,6 +86,7 @@ func TestFlareSolverr(t *testing.T) {
 
 	checkCompat(t, compatCase{
 		fixture: "flaresolverr.yaml",
+		export:  "flaresolverr",
 		vars:    map[string]string{"URL": proxy.url()},
 		newObj:  func() ctrlcommon.ConfigResource { return &indexersv1alpha1.FlareSolverrConfig{} },
 		reconciler: func(c client.Client) reconcile.Reconciler {

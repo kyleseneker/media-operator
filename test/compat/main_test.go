@@ -206,7 +206,9 @@ func checkExport(t *testing.T, tc compatCase, r reconcile.Reconciler, namespace 
 	for _, key := range res.Unfilled {
 		res.Secret.StringData[key] = "unreadable"
 	}
-	require.NoError(t, k8s.Create(ctx, res.Secret), "creating the exported Secret")
+	if res.Secret != nil {
+		require.NoError(t, k8s.Create(ctx, res.Secret), "creating the exported Secret")
+	}
 	obj, ok := res.Config.(ctrlcommon.ConfigResource)
 	require.True(t, ok)
 	require.NoError(t, k8s.Create(ctx, obj), "creating the exported config:\n%s", out)

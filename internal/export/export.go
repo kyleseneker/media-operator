@@ -68,6 +68,14 @@ var apps = map[string]app{
 	"prowlarr": {
 		auth: engine.AuthAPIKey, newObj: func() client.Object { return &indexersv1alpha1.ProwlarrConfig{} }, export: exportProwlarr,
 	},
+	"flaresolverr": {
+		auth: engine.AuthNone, newObj: func() client.Object { return &indexersv1alpha1.FlareSolverrConfig{} }, export: exportFlareSolverr,
+	},
+}
+
+// NeedsAPIKey reports whether export reads app with an API key.
+func NeedsAPIKey(app string) bool {
+	return apps[app].auth == engine.AuthAPIKey
 }
 
 // Apps lists the apps export supports.
@@ -116,10 +124,15 @@ func Run(ctx context.Context, o Options) (Result, error) {
 	for _, x := range o.Exclude {
 		delete(spec, x)
 	}
-	spec["connection"] = map[string]any{
-		"url":             o.ConnectionURL,
-		"apiKeySecretRef": map[string]any{"name": o.SecretName, "key": apiKeyKey},
+	conn, _ := spec["connection"].(map[string]any)
+	if conn == nil {
+		conn = map[string]any{}
 	}
+	conn["url"] = o.ConnectionURL
+	if a.auth == engine.AuthAPIKey {
+		conn["apiKeySecretRef"] = map[string]any{"name": o.SecretName, "key": apiKeyKey}
+	}
+	spec["connection"] = conn
 	raw, err := json.Marshal(map[string]any{
 		"apiVersion": "media-operator.dev/v1alpha1",
 		"kind":       reflect.TypeOf(obj).Elem().Name(),
@@ -145,13 +158,20 @@ func Run(ctx context.Context, o Options) (Result, error) {
 			unfilled = append(unfilled, key)
 		}
 	}
+	if len(secret.StringData) == 0 {
+		secret = nil
+	}
 	return Result{Config: obj, Secret: secret, Unfilled: unfilled, Warnings: r.warnings}, nil
 }
 
 // YAML renders the Secret and the config as one multi-document YAML stream.
 func (r Result) YAML() ([]byte, error) {
 	var docs []string
-	for _, obj := range []any{r.Secret, r.Config} {
+	objs := []any{r.Config}
+	if r.Secret != nil {
+		objs = []any{r.Secret, r.Config}
+	}
+	for _, obj := range objs {
 		raw, err := json.Marshal(obj)
 		if err != nil {
 			return nil, err

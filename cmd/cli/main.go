@@ -96,7 +96,7 @@ func exportCommand(ctx context.Context, args []string, stdout, stderr io.Writer)
 	if o.URL == "" {
 		return errors.New("--url is required")
 	}
-	if o.APIKey == "" {
+	if o.APIKey == "" && export.NeedsAPIKey(o.App) {
 		return errors.New("--api-key or $MEDIA_OPERATOR_API_KEY is required")
 	}
 	if *exclude != "" {
@@ -117,7 +117,7 @@ func exportCommand(ctx context.Context, args []string, stdout, stderr io.Writer)
 	for _, w := range res.Warnings {
 		_, _ = fmt.Fprintln(stderr, "warning:", w)
 	}
-	if len(res.Unfilled) > 0 {
+	if res.Secret != nil && len(res.Unfilled) > 0 {
 		_, _ = fmt.Fprintf(stderr, "%s doesn't reveal these credentials; fill them in Secret %s before applying: %s\n",
 			o.App, res.Secret.Name, strings.Join(res.Unfilled, ", "))
 	}
