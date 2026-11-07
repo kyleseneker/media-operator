@@ -1,0 +1,59 @@
+apiVersion: media-operator.dev/v1alpha1
+kind: MaintainerrConfig
+metadata:
+  name: maintainerr
+spec:
+  connection:
+    url: ${URL}
+  mediaServer:
+    jellyfin:
+      url: http://${HOST}:${JELLYFIN_PORT}
+      apiKeySecretRef:
+        name: compat-credentials
+        key: jellyfin-api-key
+  radarr:
+    - name: Radarr
+      url: http://${HOST}:${RADARR_PORT}
+      apiKeySecretRef:
+        name: compat-credentials
+        key: radarr-api-key
+      tagExclusions: true
+      exclusionTag: keep
+  seerr:
+    url: ${FAKES}/seerr
+    apiKeySecretRef:
+      name: compat-credentials
+      key: seerr-api-key
+  jobs:
+    rules: "0 0-23/8 * * *"
+    collections: "0 0-23/12 * * *"
+  ruleGroups:
+    - name: Stale unwatched movies
+      description: Added over 180 days ago and never watched
+      library: Movies
+      arrAction: unmonitorDeleteAll
+      actionAfterDays: 30
+      radarrServer: Radarr
+      listExclusions: true
+      cleanupLeftoverFolders: true
+      schedule: "0 3 * * *"
+      sections:
+        - rules:
+            - firstValue: Jellyfin.addDate
+              action: BEFORE
+              customValue:
+                type: custom_days
+                value: 180
+            - operator: AND
+              firstValue: Jellyfin.viewCount
+              action: EQUALS
+              customValue:
+                type: number
+                value: 0
+        - operator: OR
+          rules:
+            - firstValue: Radarr.monitored
+              action: EQUALS
+              customValue:
+                type: boolean
+                value: "false"

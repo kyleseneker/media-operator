@@ -79,7 +79,7 @@ moves them forward. Older versions may work but aren't tested.
 | Jellyfin | 12.4 |
 | Plex | 1.43.5, unclaimed |
 | Seerr | 3.5.1, set up through Jellyfin |
-| Maintainerr | not covered yet |
+| Maintainerr | 3.32.0, with Jellyfin |
 | Tdarr | 3.06.00, auth off |
 | Autobrr | 1.90.0 |
 
