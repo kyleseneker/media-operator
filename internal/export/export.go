@@ -21,6 +21,7 @@ import (
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	downloadsv1alpha1 "github.com/kyleseneker/media-operator/api/downloads/v1alpha1"
 	indexersv1alpha1 "github.com/kyleseneker/media-operator/api/indexers/v1alpha1"
+	mediaserversv1alpha1 "github.com/kyleseneker/media-operator/api/mediaservers/v1alpha1"
 	pvrv1alpha1 "github.com/kyleseneker/media-operator/api/pvr/v1alpha1"
 	subtitlesv1alpha1 "github.com/kyleseneker/media-operator/api/subtitles/v1alpha1"
 	pvrclient "github.com/kyleseneker/media-operator/internal/client/pvr"
@@ -88,6 +89,10 @@ var apps = map[string]app{
 	"sabnzbd": {
 		auth: engine.AuthNone, apiKey: true, export: exportSabnzbd,
 		newObj: func() client.Object { return &downloadsv1alpha1.SabnzbdConfig{} },
+	},
+	"jellyfin": {
+		auth: engine.AuthMediaBrowser, login: true, export: exportJellyfin,
+		newObj: func() client.Object { return &mediaserversv1alpha1.JellyfinConfig{} },
 	},
 	"bazarr": {
 		auth: engine.AuthFormEncoded, apiKey: true, export: exportBazarr,

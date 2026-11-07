@@ -54,6 +54,7 @@ func TestJellyfin(t *testing.T) {
 
 	checkCompat(t, compatCase{
 		fixture: "jellyfin.yaml",
+		export:  "jellyfin",
 		vars:    map[string]string{"URL": proxy.url()},
 		secrets: map[string]string{"username": jellyfinAdmin, "password": password},
 		newObj:  func() ctrlcommon.ConfigResource { return &mediaserversv1alpha1.JellyfinConfig{} },
