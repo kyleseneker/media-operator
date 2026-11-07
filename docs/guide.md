@@ -179,3 +179,14 @@ SBOM:
 ```bash
 docker buildx imagetools inspect ghcr.io/kyleseneker/media-operator-pvr:0.37.0 --format '{{ json .SBOM }}'
 ```
+
+From v0.39.0, the checksums file for the release archives is signed as well.
+Download it with its `.sigstore.json` bundle, verify it, then check the archive:
+
+```bash
+cosign verify-blob media-operator_0.39.0_checksums.txt \
+  --bundle media-operator_0.39.0_checksums.txt.sigstore.json \
+  --certificate-identity https://github.com/kyleseneker/media-operator/.github/workflows/release.yml@refs/tags/v0.39.0 \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+sha256sum --ignore-missing -c media-operator_0.39.0_checksums.txt
+```

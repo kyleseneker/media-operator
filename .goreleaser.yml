@@ -194,6 +194,12 @@ docker_signs:
   - cmd: cosign
     args: ["sign", "--yes", "${artifact}@${digest}"]
 
+signs:
+  - cmd: cosign
+    artifacts: checksum
+    signature: "${artifact}.sigstore.json"
+    args: ["sign-blob", "--bundle=${signature}", "--yes", "${artifact}"]
+
 archives:
   - id: operators
     ids: [media-operator-pvr, media-operator-indexers, media-operator-subtitles, media-operator-curation, media-operator-downloads,

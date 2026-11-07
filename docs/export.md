@@ -7,7 +7,8 @@ matches it, plus a Secret for its credentials.
 
 Download the `media-operator-cli` archive for your platform from the
 [releases page](https://github.com/kyleseneker/media-operator/releases), or run
-the `ghcr.io/kyleseneker/media-operator-cli` image.
+the `ghcr.io/kyleseneker/media-operator-cli` image. Both are signed; see
+[Verifying a release](guide.md#verifying-a-release).
 
 ## Usage
 
