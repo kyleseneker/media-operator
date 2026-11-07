@@ -138,7 +138,8 @@ func TestPlex(t *testing.T) {
 		reconciler: func(c client.Client) reconcile.Reconciler {
 			return &mediaservers.PlexConfigReconciler{Client: c, Scheme: c.Scheme(), Recorder: events.NewFakeRecorder(100)}
 		},
-		proxy: proxy,
+		proxy:   proxy,
+		observe: true,
 		verify: func(t *testing.T) {
 			req, err := http.NewRequest(http.MethodGet, plex.url()+"/library/sections", nil)
 			require.NoError(t, err)

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -139,22 +140,55 @@ func TestPlexMissingTokenDoesNotContactApp(t *testing.T) {
 	assert.False(t, app.sawSections("GET"), "contacted the app despite failing to resolve its token")
 }
 
-func TestPlexObserveRejectedBeforeApplicationAccess(t *testing.T) {
+func observePlex(t *testing.T, cfg *mediaserversv1alpha1.PlexConfig) metav1.Condition {
+	t.Helper()
+	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: new("observe")}
 	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
 	require.NoError(t, mediaserversv1alpha1.AddToScheme(scheme))
-	policy := "observe"
-	cfg := &mediaserversv1alpha1.PlexConfig{Name: "observe", Namespace: "media"}
-	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &policy}
-	// No URL or Secrets: rejection must happen before application access or authentication.
-	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(cfg).WithObjects(cfg).Build()
-	r := &PlexConfigReconciler{Client: c, Scheme: scheme}
+	c := fake.NewClientBuilder().WithScheme(scheme).
+		WithStatusSubresource(&mediaserversv1alpha1.PlexConfig{}).WithObjects(cfg, plexSecret()).Build()
+	r := &PlexConfigReconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(50)}
 	key := types.NamespacedName{Namespace: cfg.Namespace, Name: cfg.Name}
 	_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
 	require.NoError(t, err)
 	require.NoError(t, c.Get(context.Background(), key, cfg))
-	require.True(t, slices.ContainsFunc(cfg.Status.Conditions, func(condition metav1.Condition) bool {
-		return condition.Type == "Synced" && condition.Reason == "InvalidConfig" && condition.Status == metav1.ConditionFalse
-	}), "expected explicit unsupported-policy status, got %+v", cfg.Status.Conditions)
+	i := slices.IndexFunc(cfg.Status.Conditions, func(c metav1.Condition) bool { return c.Type == "Synced" })
+	require.GreaterOrEqual(t, i, 0, "no Synced condition")
+	return cfg.Status.Conditions[i]
+}
+
+func (f *fakePlex) writes() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []string
+	for _, r := range f.requests {
+		if !strings.HasPrefix(r, http.MethodGet) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func TestPlexObserveReportsAMissingLibraryWithoutCreatingIt(t *testing.T) {
+	app := &fakePlex{}
+	synced := observePlex(t, plexConfig(app.serve(t), mediaserversv1alpha1.PlexLibrary{
+		Name: "Movies", Type: "movie", Paths: []string{"/media/movies"},
+	}))
+	require.True(t, app.sawSections("GET"), "observe never listed the libraries")
+	assert.Empty(t, app.writes())
+	assert.Equal(t, "DriftDetected", synced.Reason)
+}
+
+// Plex accepts some preferences without ever listing them. Observe mode cannot
+// read those back, so they are not reported as drift.
+func TestPlexObserveDoesNotCountPreferencesPlexDoesNotList(t *testing.T) {
+	app := &fakePlex{existingLibs: []any{map[string]any{"title": "Movies", "key": "1"}}}
+	cfg := plexConfig(app.serve(t), mediaserversv1alpha1.PlexLibrary{Name: "Movies", Type: "movie"})
+	cfg.Spec.Network = &mediaserversv1alpha1.PlexNetwork{SecureConnections: new(1)}
+	synced := observePlex(t, cfg)
+	assert.Empty(t, app.writes())
+	assert.Equal(t, metav1.ConditionTrue, synced.Status, synced.Message)
 }
 
 // Settings Plex lists are compared; settings it accepts without listing them

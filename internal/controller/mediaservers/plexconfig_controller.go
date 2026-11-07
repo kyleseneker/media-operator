@@ -49,10 +49,6 @@ func (r *PlexConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
-	if ctrlcommon.RejectUnsupportedObserve(ctx, r.Status(), &config) {
-		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
-	}
-
 	token, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.TokenSecretRef)
 	if err != nil {
 		logger.Error(err, "failed to resolve Plex token")
@@ -79,69 +75,104 @@ func (r *PlexConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
-	var syncErrors []string
+	writes := &plexWrites{observe: ctrlcommon.ObserveOnly(config.Spec.Reconcile)}
+	syncErrors := reconcilePlexPreferences(ctx, pc, writes, string(config.UID), buildPlexPreferences(config.Spec))
+	syncErrors = append(syncErrors, reconcilePlexLibraries(ctx, pc, writes, config.Spec.Libraries)...)
 
-	// Reconcile preferences (server, transcoder, network are all Plex prefs)
-	desiredPrefs := buildPlexPreferences(config.Spec)
-
-	syncErrors = append(syncErrors, reconcilePlexPreferences(ctx, pc, string(config.UID), desiredPrefs)...)
-
-	// Libraries (create-only)
-	if len(config.Spec.Libraries) > 0 {
-		existing, err := pc.ListLibraries(ctx)
-		if err != nil {
-			syncErrors = append(syncErrors, fmt.Sprintf("listLibraries: %v", err))
-		} else {
-			existingNames := make(map[string]bool)
-			for _, lib := range existing {
-				if name, ok := lib["title"].(string); ok {
-					existingNames[name] = true
-				}
-			}
-			for _, lib := range config.Spec.Libraries {
-				if existingNames[lib.Name] {
-					continue
-				}
-				agent := lib.Agent
-				if agent == "" {
-					switch lib.Type {
-					case "movie":
-						agent = "tv.plex.agents.movie"
-					case "show":
-						agent = "tv.plex.agents.series"
-					case "artist":
-						agent = "tv.plex.agents.music"
-					}
-				}
-				scanner := lib.Scanner
-				if scanner == "" {
-					switch lib.Type {
-					case "movie":
-						scanner = "Plex Movie"
-					case "show":
-						scanner = "Plex TV Series"
-					case "artist":
-						scanner = "Plex Music"
-					}
-				}
-				lang := lib.Language
-				if lang == "" {
-					// Plex takes a locale; a bare "en" is rejected.
-					lang = "en-US"
-				}
-				if err := pc.CreateLibrary(ctx, lib.Name, lib.Type, agent, scanner, lang, lib.Paths); err != nil {
-					syncErrors = append(syncErrors, fmt.Sprintf("createLibrary(%s): %v", lib.Name, err))
-				}
-			}
+	switch {
+	case writes.observe:
+		var observeErr error
+		if len(syncErrors) > 0 {
+			observeErr = fmt.Errorf("%v", syncErrors)
 		}
-	}
-
-	if len(syncErrors) > 0 {
+		ctrlcommon.UpdateObservationStatus(ctx, r.Status(), &config, len(writes.drift) > 0, observeErr)
+	case len(syncErrors) > 0:
 		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync: %v", syncErrors))
-	} else {
+	default:
 		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, true, engine.ReasonSynced, "all configuration synced")
 	}
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
+}
+
+// plexWrites sends Plex writes, or in observe mode records them instead.
+type plexWrites struct {
+	observe bool
+	drift   []string
+}
+
+func (w *plexWrites) apply(kind, name string, write func() error) error {
+	if w.observe {
+		metrics.DriftObservedTotal.WithLabelValues("plex", kind, name).Inc()
+		w.drift = append(w.drift, kind+"/"+name)
+		return nil
+	}
+	metrics.DriftCorrectedTotal.WithLabelValues("plex", kind, name).Inc()
+	return write()
+}
+
+// reconcilePlexLibraries creates the declared libraries Plex does not have.
+// Libraries are create-only: an existing one is never changed.
+func reconcilePlexLibraries(
+	ctx context.Context, pc *plexclient.Client, w *plexWrites, libraries []mediaserversv1alpha1.PlexLibrary,
+) []string {
+	if len(libraries) == 0 {
+		return nil
+	}
+	existing, err := pc.ListLibraries(ctx)
+	if err != nil {
+		return []string{fmt.Sprintf("listLibraries: %v", err)}
+	}
+	existingNames := make(map[string]bool)
+	for _, lib := range existing {
+		if name, ok := lib["title"].(string); ok {
+			existingNames[name] = true
+		}
+	}
+	var syncErrors []string
+	for _, lib := range libraries {
+		if existingNames[lib.Name] {
+			continue
+		}
+		agent, scanner, lang := plexLibraryDefaults(lib)
+		err := w.apply("libraries", lib.Name, func() error {
+			return pc.CreateLibrary(ctx, lib.Name, lib.Type, agent, scanner, lang, lib.Paths)
+		})
+		if err != nil {
+			syncErrors = append(syncErrors, fmt.Sprintf("createLibrary(%s): %v", lib.Name, err))
+		}
+	}
+	return syncErrors
+}
+
+// plexLibraryDefaults fills in the agent, scanner and language Plex needs for a
+// library type when the spec leaves them out.
+func plexLibraryDefaults(lib mediaserversv1alpha1.PlexLibrary) (agent, scanner, lang string) {
+	agent, scanner, lang = lib.Agent, lib.Scanner, lib.Language
+	if agent == "" {
+		switch lib.Type {
+		case "movie":
+			agent = "tv.plex.agents.movie"
+		case "show":
+			agent = "tv.plex.agents.series"
+		case "artist":
+			agent = "tv.plex.agents.music"
+		}
+	}
+	if scanner == "" {
+		switch lib.Type {
+		case "movie":
+			scanner = "Plex Movie"
+		case "show":
+			scanner = "Plex TV Series"
+		case "artist":
+			scanner = "Plex Music"
+		}
+	}
+	if lang == "" {
+		// Plex takes a locale; a bare "en" is rejected.
+		lang = "en-US"
+	}
+	return agent, scanner, lang
 }
 
 func (r *PlexConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -243,8 +274,11 @@ func plexPreferenceChanges(desired, current map[string]string) (map[string]strin
 }
 
 // reconcilePlexPreferences writes the declared preferences that differ, one
-// per request, and returns what could not be read or written.
-func reconcilePlexPreferences(ctx context.Context, pc *plexclient.Client, owner string, desiredPrefs map[string]string) []string {
+// per request, and returns what could not be read or written. Observe mode
+// compares only the preferences Plex lists: the others cannot be read back.
+func reconcilePlexPreferences(
+	ctx context.Context, pc *plexclient.Client, w *plexWrites, owner string, desiredPrefs map[string]string,
+) []string {
 	logger := log.FromContext(ctx)
 	var syncErrors []string
 	if len(desiredPrefs) > 0 {
@@ -257,21 +291,25 @@ func reconcilePlexPreferences(ctx context.Context, pc *plexclient.Client, owner 
 			// but never listed, so what was last written is remembered instead.
 			remember := func(key string) string { return fmt.Sprintf("plex/%s/pref/%s", owner, key) }
 			for _, key := range unlisted {
-				if reconciler.SecretsChangedSince(remember(key), desiredPrefs[key]) {
+				if !w.observe && reconciler.SecretsChangedSince(remember(key), desiredPrefs[key]) {
 					changes[key] = desiredPrefs[key]
 				}
 			}
 			// One key per request: Plex rejects a whole update over one setting it
 			// does not have, which would block every other setting.
 			for _, key := range slices.Sorted(maps.Keys(changes)) {
-				metrics.DriftCorrectedTotal.WithLabelValues("plex", "settings", key).Inc()
-				if err := pc.SetPreferences(ctx, map[string]string{key: changes[key]}); err != nil {
+				err := w.apply("settings", key, func() error {
+					if err := pc.SetPreferences(ctx, map[string]string{key: changes[key]}); err != nil {
+						return err
+					}
+					if slices.Contains(unlisted, key) {
+						reconciler.RecordSecrets(remember(key), changes[key])
+					}
+					return nil
+				})
+				if err != nil {
 					logger.Error(err, "Plex rejected a preference", "setting", key)
 					syncErrors = append(syncErrors, fmt.Sprintf("preference %s: Plex rejected it (%v); it may need Plex Pass or not exist in this version", key, err))
-					continue
-				}
-				if slices.Contains(unlisted, key) {
-					reconciler.RecordSecrets(remember(key), changes[key])
 				}
 			}
 		}
