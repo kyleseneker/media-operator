@@ -24,6 +24,7 @@ func newConfig(policy string, deletedAgo time.Duration) *pvrv1alpha1.SonarrConfi
 	c := &pvrv1alpha1.SonarrConfig{
 		Name: "s", Namespace: "arr", Finalizers: []string{Finalizer},
 	}
+	c.Status.ManagedResources = map[string][]string{"indexers": {"created"}}
 	if policy != "" {
 		c.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DeletionPolicy: &policy}
 	}
@@ -65,6 +66,18 @@ func TestDeletePolicyRemovesThenReleases(t *testing.T) {
 	require.True(t, handled)
 	assert.True(t, called, "remove should run under the delete policy")
 	assert.False(t, controllerutil.ContainsFinalizer(c, Finalizer), "finalizer should have been released")
+}
+
+func TestDeletePolicyWithNothingOwnedSkipsTheApp(t *testing.T) {
+	c := newConfig(DeletionPolicyDelete, time.Minute)
+	c.Status.ManagedResources = map[string][]string{"indexers": {}}
+	cl := testClient(c).Build()
+	handled, err := HandleDeletion(context.Background(), cl, nil, c, func(context.Context) error {
+		return errors.New("app is gone")
+	})
+	require.NoError(t, err)
+	require.True(t, handled)
+	assert.False(t, controllerutil.ContainsFinalizer(c, Finalizer), "a resource that owns nothing must not wait on its app")
 }
 
 func TestUnreachableAppRetriesButDoesNotWedgeForever(t *testing.T) {

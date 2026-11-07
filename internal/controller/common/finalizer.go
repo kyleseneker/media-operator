@@ -63,6 +63,7 @@ func HandleDeletion(ctx context.Context, c client.Client, recorder events.EventR
 			cleanupErr = fmt.Errorf("deletionPolicy delete conflicts with driftPolicy observe")
 		case remove == nil:
 			cleanupErr = fmt.Errorf("deletionPolicy delete is not supported by this integration")
+		case ownsNothing(obj):
 		default:
 			cleanupErr = remove(ctx)
 		}
@@ -176,4 +177,15 @@ func CleanupApp(ctx context.Context, c client.Reader, recorder events.EventRecor
 	deleted, err := engine.DeleteManagedResources(ctx, hc, def, managed)
 	EmitPruneEvents(recorder, obj, deleted)
 	return err
+}
+
+// ownsNothing reports whether status.managedResources records nothing, so
+// deletion has nothing to remove and needs no connection to the app.
+func ownsNothing(obj ConfigResource) bool {
+	for _, names := range *obj.GetManagedResources() {
+		if len(names) > 0 {
+			return false
+		}
+	}
+	return true
 }
