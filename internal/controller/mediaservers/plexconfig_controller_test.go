@@ -24,6 +24,7 @@ import (
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	mediaserversv1alpha1 "github.com/kyleseneker/media-operator/api/mediaservers/v1alpha1"
+	"github.com/kyleseneker/media-operator/internal/controller/internal/contract"
 )
 
 // fakePlex serves the two endpoints the reconciler drives: the section list and
@@ -211,4 +212,33 @@ func TestPlexPreferencesUseCurrentPlexNames(t *testing.T) {
 	assert.Equal(t, map[string]string{
 		"FSEventLibraryUpdatesEnabled": "1", "ScheduledLibraryUpdatesEnabled": "1", "TranscodeCountLimit": "2",
 	}, prefs)
+}
+
+// Plex accepts a preferences PUT for keys it does not recognise and answers 200,
+// so a spec field the builder never maps is silently inert.
+func TestPlexServerFieldsAllMapToPreferences(t *testing.T) {
+	contract.AssertEveryFieldEmitted(t, &mediaserversv1alpha1.PlexServer{},
+		func(s *mediaserversv1alpha1.PlexServer) map[string]string {
+			return buildPlexPreferences(mediaserversv1alpha1.PlexConfigSpec{Server: s})
+		})
+}
+
+func TestPlexTranscoderFieldsAllMapToPreferences(t *testing.T) {
+	contract.AssertEveryFieldEmitted(t, &mediaserversv1alpha1.PlexTranscoder{},
+		func(s *mediaserversv1alpha1.PlexTranscoder) map[string]string {
+			return buildPlexPreferences(mediaserversv1alpha1.PlexConfigSpec{Transcoder: s})
+		})
+}
+
+func TestPlexNetworkFieldsAllMapToPreferences(t *testing.T) {
+	contract.AssertEveryFieldEmitted(t, &mediaserversv1alpha1.PlexNetwork{},
+		func(s *mediaserversv1alpha1.PlexNetwork) map[string]string {
+			return buildPlexPreferences(mediaserversv1alpha1.PlexConfigSpec{Network: s})
+		})
+}
+
+// An empty spec must not send preferences at all, so an unset section never
+// overwrites settings the CR does not manage.
+func TestPlexEmptySpecSendsNoPreferences(t *testing.T) {
+	assert.Empty(t, buildPlexPreferences(mediaserversv1alpha1.PlexConfigSpec{}), "empty spec produced preferences")
 }

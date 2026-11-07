@@ -1,4 +1,4 @@
-package common
+package hack
 
 import (
 	"os"
@@ -34,7 +34,7 @@ type crdFile struct {
 // block, which makes the CRD unusable while still generating and linting fine.
 // Only spec belongs in the root required list.
 func TestCRDRootRequiredIsSpecOnly(t *testing.T) {
-	paths, err := filepath.Glob("../../../config/crd/bases/*.yaml")
+	paths, err := filepath.Glob("../config/crd/bases/*.yaml")
 	require.NoError(t, err, "globbing CRDs")
 	require.NotEmpty(t, paths, "no CRDs found; run `make manifests` first")
 

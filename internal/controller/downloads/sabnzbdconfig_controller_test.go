@@ -22,6 +22,7 @@ import (
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	downloadsv1alpha1 "github.com/kyleseneker/media-operator/api/downloads/v1alpha1"
+	"github.com/kyleseneker/media-operator/internal/controller/internal/contract"
 	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
 
@@ -237,4 +238,12 @@ func TestSabnzbdPlanTreatsWrittenSwitchesAsSet(t *testing.T) {
 	assert.Empty(t, planSabnzbd(map[string]any{"misc": map[string]any{"pre_check": true}}, spec, nil, "switch"))
 	assert.Empty(t, planSabnzbd(map[string]any{"misc": map[string]any{"pre_check": float64(1)}}, spec, nil, "switch"))
 	assert.Len(t, planSabnzbd(map[string]any{"misc": map[string]any{"pre_check": false}}, spec, nil, "switch"), 1)
+}
+
+func TestSabnzbdGeneralValuesCoversEveryField(t *testing.T) {
+	contract.AssertEveryFieldEmitted(t, &downloadsv1alpha1.SabnzbdGeneral{}, buildSabnzbdGeneralValues)
+}
+
+func TestSabnzbdFolderValuesCoversEveryField(t *testing.T) {
+	contract.AssertEveryFieldEmitted(t, &downloadsv1alpha1.SabnzbdFolders{}, buildSabnzbdFolderValues)
 }
