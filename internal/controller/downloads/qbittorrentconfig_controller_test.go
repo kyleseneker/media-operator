@@ -14,35 +14,32 @@ import (
 	downloadsv1alpha1 "github.com/kyleseneker/media-operator/api/downloads/v1alpha1"
 	"github.com/kyleseneker/media-operator/internal/controller/internal/contract"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-func ptr[T any](v T) *T { return &v }
-
 func TestQBPreferencePayloadUsesAPIKeyNames(t *testing.T) {
 	prefs := &downloadsv1alpha1.QBittorrentPreferences{
 		SavePath:              "/data/torrents",
 		Locale:                "en",
-		TempPathEnabled:       ptr(true),
-		DHT:                   ptr(false),
-		PEX:                   ptr(false),
-		LSD:                   ptr(false),
-		Encryption:            ptr(1),
-		MaxConnec:             ptr(200),
-		MaxConnecPerTorrent:   ptr(50),
-		MaxUploads:            ptr(20),
-		MaxUploadsPerTorrent:  ptr(5),
-		MaxRatioEnabled:       ptr(true),
-		MaxRatio:              ptr("2.0"),
-		MaxRatioAction:        ptr("stop"),
-		MaxSeedingTimeEnabled: ptr(true),
-		MaxSeedingTime:        ptr(10080),
-		PreallocateAll:        ptr(true),
-		WebUIPort:             ptr(8080),
+		TempPathEnabled:       new(true),
+		DHT:                   new(false),
+		PEX:                   new(false),
+		LSD:                   new(false),
+		Encryption:            new(1),
+		MaxConnec:             new(200),
+		MaxConnecPerTorrent:   new(50),
+		MaxUploads:            new(20),
+		MaxUploadsPerTorrent:  new(5),
+		MaxRatioEnabled:       new(true),
+		MaxRatio:              new("2.0"),
+		MaxRatioAction:        new("stop"),
+		MaxSeedingTimeEnabled: new(true),
+		MaxSeedingTime:        new(10080),
+		PreallocateAll:        new(true),
+		WebUIPort:             new(8080),
 	}
 
 	got, err := qbPreferencePayload(prefs)
@@ -86,22 +83,22 @@ func TestQBPreferencePayloadCoversEverySpecField(t *testing.T) {
 			return out
 		},
 		func(p *downloadsv1alpha1.QBittorrentPreferences) {
-			p.MaxRatio = ptr("1.0")
-			p.MaxRatioAction = ptr("stop")
+			p.MaxRatio = new("1.0")
+			p.MaxRatioAction = new("stop")
 		})
 }
 
 func TestQBPreferencePayloadRejectsBadValues(t *testing.T) {
-	if _, err := qbPreferencePayload(&downloadsv1alpha1.QBittorrentPreferences{MaxRatio: ptr("abc")}); err == nil {
+	if _, err := qbPreferencePayload(&downloadsv1alpha1.QBittorrentPreferences{MaxRatio: new("abc")}); err == nil {
 		t.Error("expected error for unparseable maxRatio")
 	}
-	if _, err := qbPreferencePayload(&downloadsv1alpha1.QBittorrentPreferences{MaxRatioAction: ptr("nope")}); err == nil {
+	if _, err := qbPreferencePayload(&downloadsv1alpha1.QBittorrentPreferences{MaxRatioAction: new("nope")}); err == nil {
 		t.Error("expected error for unknown maxRatioAction")
 	}
 }
 
 func TestQBPreferencePayloadOmitsUnsetFields(t *testing.T) {
-	got, err := qbPreferencePayload(&downloadsv1alpha1.QBittorrentPreferences{MaxRatioAction: ptr("removeWithContent")})
+	got, err := qbPreferencePayload(&downloadsv1alpha1.QBittorrentPreferences{MaxRatioAction: new("removeWithContent")})
 	if err != nil {
 		t.Fatalf("qbPreferencePayload: %v", err)
 	}
@@ -162,7 +159,7 @@ func TestQBObserveReadsWithoutChangingPreferencesOrCategories(t *testing.T) {
 				t.Fatal(err)
 			}
 			policy := "observe"
-			cfg := &downloadsv1alpha1.QBittorrentConfig{ObjectMeta: metav1.ObjectMeta{Name: "qbit", Namespace: "media"}}
+			cfg := &downloadsv1alpha1.QBittorrentConfig{Name: "qbit", Namespace: "media"}
 			cfg.Spec.Connection = downloadsv1alpha1.QBittorrentConnection{URL: srv.URL,
 				UsernameSecretRef: commonv1alpha1.SecretKeyRef{Name: "creds", Key: "user"}, PasswordSecretRef: commonv1alpha1.SecretKeyRef{Name: "creds", Key: "password"}}
 			cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &policy}
@@ -176,12 +173,12 @@ func TestQBObserveReadsWithoutChangingPreferencesOrCategories(t *testing.T) {
 				cfg.Spec.Preferences = &downloadsv1alpha1.QBittorrentPreferences{}
 				cfg.Spec.Categories = nil
 			case "invalid ratio":
-				cfg.Spec.Preferences.MaxRatio = ptr("invalid")
+				cfg.Spec.Preferences.MaxRatio = new("invalid")
 			}
 			if tt.name == "drift" {
 				cfg.Spec.Categories = append(cfg.Spec.Categories, downloadsv1alpha1.QBittorrentCategory{Name: "missing"})
 			}
-			secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "creds", Namespace: "media"}, Data: map[string][]byte{"user": []byte("user"), "password": []byte("password")}}
+			secret := &corev1.Secret{Name: "creds", Namespace: "media", Data: map[string][]byte{"user": []byte("user"), "password": []byte("password")}}
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(cfg).WithObjects(cfg, secret).Build()
 			rec := &QBittorrentConfigReconciler{Client: c, Scheme: scheme}
 			key := types.NamespacedName{Name: cfg.Name, Namespace: cfg.Namespace}

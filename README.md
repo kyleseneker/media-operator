@@ -123,7 +123,7 @@ a resource stops reconciling, which no error counter will tell you.
 
 ## Development
 
-Needs Go 1.25+ and kubebuilder.
+Needs Go 1.27+ and kubebuilder.
 
 ```bash
 BINARY=pvr make run          # run one operator against your current kube context

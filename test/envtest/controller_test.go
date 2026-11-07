@@ -17,7 +17,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -136,7 +135,7 @@ func fakeTdarrServer(t *testing.T) string {
 func tdarrCR(url string) *transcodev1alpha1.TdarrConfig {
 	orphan := "orphan"
 	return &transcodev1alpha1.TdarrConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "tdarr", Namespace: "default"},
+		Name: "tdarr", Namespace: "default",
 		Spec: transcodev1alpha1.TdarrConfigSpec{
 			Connection: commonv1alpha1.AppConnection{
 				URL:             url,
@@ -155,8 +154,8 @@ func TestReconcilePersistsStatusThroughSubresource(t *testing.T) {
 	url := fakeTdarrServer(t)
 
 	if err := c.Create(ctx, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "tdarr-credentials", Namespace: "default"},
-		Data:       map[string][]byte{"api-key": []byte("k")},
+		Name: "tdarr-credentials", Namespace: "default",
+		Data: map[string][]byte{"api-key": []byte("k")},
 	}); err != nil {
 		t.Fatalf("creating secret: %v", err)
 	}
@@ -190,8 +189,8 @@ func TestDeleteWithOrphanPolicyReleasesTheObject(t *testing.T) {
 	url := fakeTdarrServer(t)
 
 	if err := c.Create(ctx, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "tdarr-credentials", Namespace: "default"},
-		Data:       map[string][]byte{"api-key": []byte("k")},
+		Name: "tdarr-credentials", Namespace: "default",
+		Data: map[string][]byte{"api-key": []byte("k")},
 	}); err != nil {
 		t.Fatalf("creating secret: %v", err)
 	}

@@ -15,8 +15,7 @@ func AssertEveryFieldEmitted[T any, V any](t *testing.T, spec *T, build func(*T)
 	t.Helper()
 
 	v := reflect.ValueOf(spec).Elem()
-	for i := range v.NumField() {
-		f := v.Field(i)
+	for _, f := range v.Fields() {
 		switch f.Kind() {
 		case reflect.Pointer:
 			f.Set(reflect.New(f.Type().Elem()))

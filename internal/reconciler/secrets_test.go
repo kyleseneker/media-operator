@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -23,8 +22,8 @@ func newFakeClient(objs ...client.Object) client.Reader {
 
 func TestResolveSecretKeyRef_Success(t *testing.T) {
 	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-secret", Namespace: "default"},
-		Data:       map[string][]byte{"API_KEY": []byte("secret-value-123")},
+		Name: "my-secret", Namespace: "default",
+		Data: map[string][]byte{"API_KEY": []byte("secret-value-123")},
 	}
 	fc := newFakeClient(secret)
 
@@ -47,8 +46,8 @@ func TestResolveSecretKeyRef_SecretNotFound(t *testing.T) {
 
 func TestResolveSecretKeyRef_KeyNotFound(t *testing.T) {
 	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-secret", Namespace: "default"},
-		Data:       map[string][]byte{"OTHER_KEY": []byte("value")},
+		Name: "my-secret", Namespace: "default",
+		Data: map[string][]byte{"OTHER_KEY": []byte("value")},
 	}
 	fc := newFakeClient(secret)
 

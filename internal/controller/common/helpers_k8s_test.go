@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -24,7 +23,7 @@ func newFakeClient(objs ...client.Object) client.Client {
 
 func TestResolveDownloadClientSecrets(t *testing.T) {
 	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "qbit-creds", Namespace: "default"},
+		Name: "qbit-creds", Namespace: "default",
 		Data: map[string][]byte{
 			"username": []byte("admin"),
 			"password": []byte("pass123"),
@@ -68,7 +67,7 @@ func TestResolveDownloadClientSecrets_MissingSecret(t *testing.T) {
 func TestFindConfigsBySecret_NonSecret(t *testing.T) {
 	fc := newFakeClient()
 	// Passing a non-Secret object should return nil
-	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"}}
+	pod := &corev1.Pod{Name: "test", Namespace: "default"}
 	result := FindConfigsBySecret(context.Background(), fc, pod, &corev1.SecretList{}, func(_ *corev1.SecretList) []reconcile.Request {
 		return nil
 	})

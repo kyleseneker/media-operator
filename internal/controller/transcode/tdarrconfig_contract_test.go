@@ -38,25 +38,23 @@ func fullyPopulatedLibrary() transcodev1alpha1.TdarrLibrary {
 	return transcodev1alpha1.TdarrLibrary{
 		ID: "movies", Name: "Movies", Folder: "/data/media/movies",
 		Cache: "/temp", Container: "mkv", ContainerFilter: "mkv,mp4",
-		FoldersToIgnore: "extras", FolderWatching: ptr(false),
-		ProcessLibrary: ptr(true), ProcessTranscodes: ptr(true), ProcessHealthChecks: ptr(true),
+		FoldersToIgnore: "extras", FolderWatching: new(false),
+		ProcessLibrary: new(true), ProcessTranscodes: new(true), ProcessHealthChecks: new(true),
 		HealthCheckMode: "thorough", DecisionMode: "flows",
-		ScanOnStart: ptr(true), ScheduledScanFindNew: ptr(true), ScannerThreadCount: ptr(1),
-		FFmpeg: ptr(true), Priority: ptr(1), FlowID: "hevc-qsv",
+		ScanOnStart: new(true), ScheduledScanFindNew: new(true), ScannerThreadCount: new(1),
+		FFmpeg: new(true), Priority: new(1), FlowID: "hevc-qsv",
 		PluginStack: []string{"Tdarr_Plugin_x"},
 		Variables:   map[string]string{"k": "v"},
 	}
 }
-
-func ptr[T any](v T) *T { return &v }
 
 func TestEveryLibraryFieldReachesTdarr(t *testing.T) {
 	lib := fullyPopulatedLibrary()
 	doc := buildTdarrLibraryDoc(lib)
 
 	declared := reflect.TypeOf(lib)
-	for i := range declared.NumField() {
-		name := declared.Field(i).Name
+	for field := range declared.Fields() {
+		name := field.Name
 		keys, mapped := specFieldToDocKeys[name]
 		if !mapped {
 			t.Errorf("spec field %s has no documented Tdarr key; Tdarr will accept the payload and ignore it", name)

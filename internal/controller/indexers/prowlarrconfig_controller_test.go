@@ -122,8 +122,8 @@ func (f *fakeProwlarr) serve(t *testing.T) string {
 
 func prowlarrSecret() *corev1.Secret {
 	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "prowlarr-credentials", Namespace: "media"},
-		Data:       map[string][]byte{"api-key": []byte("test-key")},
+		Name: "prowlarr-credentials", Namespace: "media",
+		Data: map[string][]byte{"api-key": []byte("test-key")},
 	}
 }
 
@@ -144,7 +144,7 @@ func runProwlarr(t *testing.T, cfg *indexersv1alpha1.ProwlarrConfig, objs ...cli
 	c := b.Build()
 	r := &ProwlarrConfigReconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(50)}
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "prowlarr", Namespace: "media"},
+		Name: "prowlarr", Namespace: "media",
 	}); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
@@ -153,7 +153,7 @@ func runProwlarr(t *testing.T, cfg *indexersv1alpha1.ProwlarrConfig, objs ...cli
 
 func prowlarrConfig(url string) *indexersv1alpha1.ProwlarrConfig {
 	return &indexersv1alpha1.ProwlarrConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "prowlarr", Namespace: "media"},
+		Name: "prowlarr", Namespace: "media",
 		Spec: indexersv1alpha1.ProwlarrConfigSpec{
 			Connection: commonv1alpha1.AppConnection{
 				URL:             url,

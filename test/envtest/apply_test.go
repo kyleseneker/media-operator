@@ -19,7 +19,6 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
@@ -74,7 +73,7 @@ func TestSamplesApply(t *testing.T) {
 			// and span several namespaces; isolating them keeps a collision from
 			// masking a genuine schema rejection.
 			ns := namespaceFor(path)
-			if err := c.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}}); err != nil {
+			if err := c.Create(ctx, &corev1.Namespace{Name: ns}); err != nil {
 				t.Fatalf("creating namespace %s: %v", ns, err)
 			}
 			for _, obj := range decode(t, path) {

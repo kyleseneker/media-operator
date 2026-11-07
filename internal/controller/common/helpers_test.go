@@ -38,8 +38,6 @@ func TestReconcileInterval(t *testing.T) {
 	}
 }
 
-func boolPtr(b bool) *bool { return &b }
-
 func TestPruneEnabled(t *testing.T) {
 	tests := []struct {
 		name string
@@ -48,8 +46,8 @@ func TestPruneEnabled(t *testing.T) {
 	}{
 		{"nil config", nil, false},
 		{"nil prune", &commonv1alpha1.ReconcileConfig{}, false},
-		{"false", &commonv1alpha1.ReconcileConfig{Prune: boolPtr(false)}, false},
-		{"true", &commonv1alpha1.ReconcileConfig{Prune: boolPtr(true)}, true},
+		{"false", &commonv1alpha1.ReconcileConfig{Prune: new(false)}, false},
+		{"true", &commonv1alpha1.ReconcileConfig{Prune: new(true)}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

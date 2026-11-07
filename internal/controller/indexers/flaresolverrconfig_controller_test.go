@@ -73,7 +73,7 @@ func (f *fakeFlareSolverr) serve(t *testing.T) string {
 
 func flareConfig(url string, prune bool, managed []string, sessions ...string) *indexersv1alpha1.FlareSolverrConfig {
 	cfg := &indexersv1alpha1.FlareSolverrConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "flaresolverr", Namespace: "media"},
+		Name: "flaresolverr", Namespace: "media",
 		Spec: indexersv1alpha1.FlareSolverrConfigSpec{
 			Connection: indexersv1alpha1.FlareSolverrConnection{URL: url},
 		},
@@ -105,7 +105,7 @@ func runFlare(t *testing.T, cfg *indexersv1alpha1.FlareSolverrConfig) client.Cli
 		WithObjects(cfg).Build()
 	r := &FlareSolverrConfigReconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(50)}
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "flaresolverr", Namespace: "media"},
+		Name: "flaresolverr", Namespace: "media",
 	}); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}

@@ -79,14 +79,14 @@ func (f *fakeSabnzbd) serve(t *testing.T) string {
 
 func sabnzbdSecret() *corev1.Secret {
 	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "sabnzbd-credentials", Namespace: "media"},
-		Data:       map[string][]byte{"api-key": []byte("test-key")},
+		Name: "sabnzbd-credentials", Namespace: "media",
+		Data: map[string][]byte{"api-key": []byte("test-key")},
 	}
 }
 
 func sabnzbdConfig(addr string) *downloadsv1alpha1.SabnzbdConfig {
 	return &downloadsv1alpha1.SabnzbdConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "sabnzbd", Namespace: "media"},
+		Name: "sabnzbd", Namespace: "media",
 		Spec: downloadsv1alpha1.SabnzbdConfigSpec{
 			Connection: commonv1alpha1.AppConnection{
 				URL:             addr,
@@ -113,7 +113,7 @@ func runSabnzbd(t *testing.T, cfg *downloadsv1alpha1.SabnzbdConfig, withSecret b
 	c := b.Build()
 	r := &SabnzbdConfigReconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(50)}
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "sabnzbd", Namespace: "media"},
+		Name: "sabnzbd", Namespace: "media",
 	}); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestSabnzbdObserveRejectedBeforeApplicationAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	policy := "observe"
-	cfg := &downloadsv1alpha1.SabnzbdConfig{ObjectMeta: metav1.ObjectMeta{Name: "observe", Namespace: "media"}}
+	cfg := &downloadsv1alpha1.SabnzbdConfig{Name: "observe", Namespace: "media"}
 	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &policy}
 	// No URL or Secrets: rejection must happen before application access or authentication.
 	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(cfg).WithObjects(cfg).Build()

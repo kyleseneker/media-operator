@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -18,8 +17,8 @@ import (
 
 func newSecretClient() *fake.ClientBuilder {
 	return fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(&corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "tracker", Namespace: "arr"},
-		Data:       map[string][]byte{"passkey": []byte("s3cr3t")},
+		Name: "tracker", Namespace: "arr",
+		Data: map[string][]byte{"passkey": []byte("s3cr3t")},
 	})
 }
 
@@ -82,8 +81,8 @@ func TestListsReferenceSecret(t *testing.T) {
 
 func TestConfigSyncedGaugeTracksOutcome(t *testing.T) {
 	c := &pvrv1alpha1.SonarrConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "s", Namespace: "arr"},
-		TypeMeta:   metav1.TypeMeta{Kind: "SonarrConfig"},
+		Name: "s", Namespace: "arr",
+		Kind: "SonarrConfig",
 	}
 	_ = pvrv1alpha1.AddToScheme(scheme.Scheme)
 	cl := fake.NewClientBuilder().WithScheme(scheme.Scheme).

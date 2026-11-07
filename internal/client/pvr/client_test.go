@@ -10,9 +10,6 @@ import (
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 )
 
-func boolPtr(b bool) *bool { return &b }
-func intPtr(i int) *int    { return &i }
-
 func fieldValue(raw string) *commonv1alpha1.FieldValue {
 	fv := &commonv1alpha1.FieldValue{}
 	_ = fv.UnmarshalJSON([]byte(raw))
@@ -141,10 +138,10 @@ func TestBuildDownloadClientPayload(t *testing.T) {
 			dc: commonv1alpha1.DownloadClient{
 				Name: "qBit", Protocol: "torrent", Implementation: "QBittorrent",
 				Host: "qbit", Port: 8080, Category: "movies",
-				Enable: boolPtr(false), Priority: intPtr(5),
-				RemoveCompletedDownloads: boolPtr(false),
-				RemoveFailedDownloads:    boolPtr(false),
-				UseSsl:                   boolPtr(true),
+				Enable: new(false), Priority: new(5),
+				RemoveCompletedDownloads: new(false),
+				RemoveFailedDownloads:    new(false),
+				UseSsl:                   new(true),
 				UrlBase:                  "/qbt",
 				ConfigContract:           "CustomContract",
 				Tags:                     []int{1, 2},
@@ -254,9 +251,9 @@ func TestBuildIndexerPayload(t *testing.T) {
 			name: "all options set",
 			idx: commonv1alpha1.Indexer{
 				Name: "NZBgeek", Protocol: "usenet", Implementation: "Newznab",
-				Enable: boolPtr(false), EnableRss: boolPtr(false),
-				EnableAutomaticSearch: boolPtr(false), EnableInteractiveSearch: boolPtr(false),
-				ConfigContract: "CustomContract", Priority: intPtr(10),
+				Enable: new(false), EnableRss: new(false),
+				EnableAutomaticSearch: new(false), EnableInteractiveSearch: new(false),
+				ConfigContract: "CustomContract", Priority: new(10),
 				Tags: []int{1}, Fields: []commonv1alpha1.ConfigField{
 					{Name: "baseUrl", Value: fieldValue(`"http://nzbgeek.info"`)},
 				},
@@ -299,8 +296,8 @@ func TestBuildNotificationPayload(t *testing.T) {
 			name: "with triggers",
 			n: commonv1alpha1.Notification{
 				Name: "Slack", Implementation: "Slack",
-				OnGrab: boolPtr(true), OnDownload: boolPtr(false),
-				OnMovieAdded: boolPtr(true),
+				OnGrab: new(true), OnDownload: new(false),
+				OnMovieAdded: new(true),
 			},
 			check: func(t *testing.T, p map[string]any) {
 				assert.Equal(t, true, p["onGrab"])
@@ -339,7 +336,7 @@ func TestBuildImportListPayload(t *testing.T) {
 			il: commonv1alpha1.ImportList{
 				Name: "Trakt", Implementation: "TraktListImport",
 				QualityProfileName: "HD-1080p", RootFolderPath: "/tv",
-				Monitor: "all", ListOrder: intPtr(1),
+				Monitor: "all", ListOrder: new(1),
 			},
 			qpIDs: map[string]int{"HD-1080p": 5},
 			check: func(t *testing.T, p map[string]any) {
@@ -394,11 +391,11 @@ func TestBuildCustomFormatPayload(t *testing.T) {
 			name: "with specifications",
 			cf: commonv1alpha1.CustomFormat{
 				Name:                            "x265",
-				IncludeCustomFormatWhenRenaming: boolPtr(true),
+				IncludeCustomFormatWhenRenaming: new(true),
 				Specifications: []commonv1alpha1.CustomFormatSpecification{
 					{
 						Name: "x265", Implementation: "ReleaseTitleSpecification",
-						Negate: boolPtr(false), Required: boolPtr(true),
+						Negate: new(false), Required: new(true),
 						Fields: []commonv1alpha1.ConfigField{
 							{Name: "value", Value: fieldValue(`"x265"`)},
 						},
@@ -443,9 +440,9 @@ func TestBuildQualityProfilePayload(t *testing.T) {
 		{
 			name: "with all optional fields",
 			qp: commonv1alpha1.QualityProfile{
-				Name: "HD", UpgradeAllowed: boolPtr(true),
-				MinFormatScore: intPtr(10), CutoffFormatScore: intPtr(100),
-				MinUpgradeFormatScore: intPtr(5),
+				Name: "HD", UpgradeAllowed: new(true),
+				MinFormatScore: new(10), CutoffFormatScore: new(100),
+				MinUpgradeFormatScore: new(5),
 			},
 			cfIDs: map[string]int{},
 			check: func(t *testing.T, p map[string]any) {
@@ -565,8 +562,8 @@ func TestSetOptionalBool(t *testing.T) {
 		want    bool
 	}{
 		{"nil not set", nil, false, false},
-		{"true", boolPtr(true), true, true},
-		{"false", boolPtr(false), true, false},
+		{"true", new(true), true, true},
+		{"false", new(false), true, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -637,9 +634,9 @@ func TestBuildQualityItems(t *testing.T) {
 			items: []commonv1alpha1.QualityProfileItem{
 				{
 					Name:    "HD Group",
-					Allowed: boolPtr(true),
+					Allowed: new(true),
 					Items: []commonv1alpha1.QualityProfileGroupItem{
-						{Quality: commonv1alpha1.QualityReference{ID: 4, Name: "HDTV"}, Allowed: boolPtr(false)},
+						{Quality: commonv1alpha1.QualityReference{ID: 4, Name: "HDTV"}, Allowed: new(false)},
 					},
 				},
 			},
@@ -664,7 +661,7 @@ func TestBuildQualityItems(t *testing.T) {
 		{
 			name: "allowed explicitly false",
 			items: []commonv1alpha1.QualityProfileItem{
-				{Quality: &commonv1alpha1.QualityReference{ID: 1, Name: "SDTV"}, Allowed: boolPtr(false)},
+				{Quality: &commonv1alpha1.QualityReference{ID: 1, Name: "SDTV"}, Allowed: new(false)},
 			},
 			check: func(t *testing.T, result []map[string]any) {
 				assert.Equal(t, false, result[0]["allowed"])

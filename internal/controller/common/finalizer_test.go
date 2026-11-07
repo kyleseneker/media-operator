@@ -19,7 +19,7 @@ import (
 
 func newConfig(policy string, deletedAgo time.Duration) *pvrv1alpha1.SonarrConfig {
 	c := &pvrv1alpha1.SonarrConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "s", Namespace: "arr", Finalizers: []string{Finalizer}},
+		Name: "s", Namespace: "arr", Finalizers: []string{Finalizer},
 	}
 	if policy != "" {
 		c.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DeletionPolicy: &policy}

@@ -142,7 +142,7 @@ func settingName(section, jsonName string) string {
 func StructToFormData(section string, obj any) url.Values {
 	form := url.Values{}
 	v := reflect.ValueOf(obj)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return form
 		}
@@ -158,10 +158,10 @@ func StructToFormData(section string, obj any) url.Values {
 		if jsonTag == "" || jsonTag == "-" {
 			continue
 		}
-		jsonName := strings.Split(jsonTag, ",")[0]
+		jsonName, _, _ := strings.Cut(jsonTag, ",")
 
 		// Skip zero/nil values
-		if fv.Kind() == reflect.Ptr && fv.IsNil() {
+		if fv.Kind() == reflect.Pointer && fv.IsNil() {
 			continue
 		}
 		if fv.Kind() == reflect.String && fv.String() == "" {
@@ -171,7 +171,7 @@ func StructToFormData(section string, obj any) url.Values {
 		key := fmt.Sprintf("settings-%s-%s", section, settingName(section, jsonName))
 		var val string
 		switch fv.Kind() {
-		case reflect.Ptr:
+		case reflect.Pointer:
 			val = fmt.Sprintf("%v", fv.Elem().Interface())
 		default:
 			val = fmt.Sprintf("%v", fv.Interface())

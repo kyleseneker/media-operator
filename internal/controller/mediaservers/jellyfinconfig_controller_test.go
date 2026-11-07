@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -121,14 +120,14 @@ func (f *fakeJellyfin) serve(t *testing.T) string {
 
 func adminSecret() *corev1.Secret {
 	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "jellyfin-admin", Namespace: "media"},
-		Data:       map[string][]byte{"username": []byte("admin"), "password": []byte("hunter2")},
+		Name: "jellyfin-admin", Namespace: "media",
+		Data: map[string][]byte{"username": []byte("admin"), "password": []byte("hunter2")},
 	}
 }
 
 func jellyfinConfig(url string, libs ...mediaserversv1alpha1.JellyfinLibrary) *mediaserversv1alpha1.JellyfinConfig {
 	return &mediaserversv1alpha1.JellyfinConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "jellyfin", Namespace: "media"},
+		Name: "jellyfin", Namespace: "media",
 		Spec: mediaserversv1alpha1.JellyfinConfigSpec{
 			Connection: mediaserversv1alpha1.JellyfinConnection{URL: url},
 			AdminUser: mediaserversv1alpha1.JellyfinAdminUser{
@@ -157,7 +156,7 @@ func runJellyfin(t *testing.T, objs ...client.Object) client.Client {
 	c := b.Build()
 	r := &JellyfinConfigReconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(50)}
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "jellyfin", Namespace: "media"},
+		Name: "jellyfin", Namespace: "media",
 	}); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}

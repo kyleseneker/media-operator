@@ -119,7 +119,7 @@ func (f *fakeBazarr) serve(t *testing.T) string {
 
 func bazarrSecrets() *corev1.Secret {
 	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "bazarr-secrets", Namespace: "media"},
+		Name: "bazarr-secrets", Namespace: "media",
 		Data: map[string][]byte{
 			"bazarr-api-key": []byte("bazarr-key"),
 			"sonarr-api-key": []byte("sonarr-key"),
@@ -129,7 +129,7 @@ func bazarrSecrets() *corev1.Secret {
 
 func bazarrConfig(addr string) *subtitlesv1alpha1.BazarrConfig {
 	return &subtitlesv1alpha1.BazarrConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "bazarr", Namespace: "media"},
+		Name: "bazarr", Namespace: "media",
 		Spec: subtitlesv1alpha1.BazarrConfigSpec{
 			Connection: commonv1alpha1.AppConnection{
 				URL:             addr,
@@ -156,7 +156,7 @@ func runBazarr(t *testing.T, cfg *subtitlesv1alpha1.BazarrConfig, objs ...client
 	c := b.Build()
 	r := &BazarrConfigReconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(50)}
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "bazarr", Namespace: "media"},
+		Name: "bazarr", Namespace: "media",
 	}); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestBazarrObserveRejectedBeforeApplicationAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	policy := "observe"
-	cfg := &subtitlesv1alpha1.BazarrConfig{ObjectMeta: metav1.ObjectMeta{Name: "observe", Namespace: "media"}}
+	cfg := &subtitlesv1alpha1.BazarrConfig{Name: "observe", Namespace: "media"}
 	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &policy}
 	// No URL or Secrets: rejection must happen before application access or authentication.
 	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(cfg).WithObjects(cfg).Build()

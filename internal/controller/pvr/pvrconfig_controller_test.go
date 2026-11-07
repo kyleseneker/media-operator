@@ -284,8 +284,8 @@ func newFakeArr(t *testing.T, apiVer string, existing map[string][]map[string]an
 
 func apiKeySecret() *corev1.Secret {
 	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "app-credentials", Namespace: "media"},
-		Data:       map[string][]byte{"api-key": []byte("test-key")},
+		Name: "app-credentials", Namespace: "media",
+		Data: map[string][]byte{"api-key": []byte("test-key")},
 	}
 }
 
@@ -306,7 +306,7 @@ func run(t *testing.T, app pvrApp, objs ...client.Object) client.Client {
 	c := b.Build()
 	r := app.newRec(c, scheme)
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "app", Namespace: "media"},
+		Name: "app", Namespace: "media",
 	}); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}

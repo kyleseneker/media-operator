@@ -23,6 +23,12 @@ linters:
     - unparam
     - unused
   settings:
+    goconst:
+      # goconst 1.10 began flagging composite literals (JSON payload keys) and tests.
+      ignore-tests: true
+      exclude-types:
+        - Call
+        - CompositeLit
     revive:
       rules:
         - name: comment-spacings

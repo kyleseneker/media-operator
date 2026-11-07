@@ -10,10 +10,6 @@ import (
 	indexersv1alpha1 "github.com/kyleseneker/media-operator/api/indexers/v1alpha1"
 )
 
-func boolPtr(b bool) *bool    { return &b }
-func intPtr(i int) *int       { return &i }
-func strPtr(s string) *string { return &s }
-
 func TestProwlarrDefinition(t *testing.T) {
 	def := ProwlarrDefinition()
 	assert.Equal(t, "/api/v1/system/status", def.HealthPath)
@@ -131,9 +127,9 @@ func TestBuildProwlarrIndexerPayload(t *testing.T) {
 			name: "all options",
 			idx: indexersv1alpha1.ProwlarrIndexer{
 				Name: "NZBgeek", Implementation: "Newznab", ConfigContract: "NewznabSettings",
-				Enable: boolPtr(false), AppProfileId: intPtr(1), Priority: intPtr(25),
+				Enable: new(false), AppProfileId: new(1), Priority: new(25),
 				Fields: []indexersv1alpha1.ProwlarrField{
-					{Name: "baseUrl", Value: strPtr("http://nzbgeek.info")},
+					{Name: "baseUrl", Value: new("http://nzbgeek.info")},
 					{Name: "apiKey", Value: nil},
 				},
 				Tags: []string{"tag1"},
@@ -178,7 +174,7 @@ func TestBuildProwlarrProxyPayload(t *testing.T) {
 			name: "with timeout",
 			proxy: indexersv1alpha1.ProwlarrProxy{
 				Name: "Proxy", Implementation: "Socks5", ConfigContract: "Socks5Settings",
-				Host: "proxy.local", RequestTimeout: intPtr(30),
+				Host: "proxy.local", RequestTimeout: new(30),
 			},
 			check: func(t *testing.T, p map[string]any) {
 				fields := p["fields"].([]map[string]any)
@@ -218,12 +214,12 @@ func TestBuildProwlarrDownloadClientPayload(t *testing.T) {
 			name: "with categories and custom contract",
 			dc: indexersv1alpha1.ProwlarrDownloadClient{
 				Name: "qBit", Protocol: "torrent", Implementation: "QBittorrent",
-				ConfigContract: "CustomContract", Priority: intPtr(5),
+				ConfigContract: "CustomContract", Priority: new(5),
 				Categories: []indexersv1alpha1.ProwlarrDownloadClientCategory{
 					{ClientCategory: "tv", Categories: []int{5030, 5040}},
 				},
 				Fields: []indexersv1alpha1.ProwlarrField{
-					{Name: "host", Value: strPtr("qbit.local")},
+					{Name: "host", Value: new("qbit.local")},
 				},
 			},
 			check: func(t *testing.T, p map[string]any) {

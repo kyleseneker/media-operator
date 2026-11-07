@@ -15,8 +15,7 @@ import (
 
 // logAPIErrorDetail logs the full API response body at debug level if the error is an APIError.
 func logAPIErrorDetail(ctx context.Context, err error) {
-	var apiErr *APIError
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*APIError](err); ok {
 		log.FromContext(ctx).V(1).Info("API error detail", "response", apiErr.DetailedMessage())
 	}
 }
@@ -308,7 +307,7 @@ func isNilInterface(v any) bool {
 		return true
 	}
 	rv := reflect.ValueOf(v)
-	return rv.Kind() == reflect.Ptr && rv.IsNil()
+	return rv.Kind() == reflect.Pointer && rv.IsNil()
 }
 
 // ObserveDifference compares only desired fields, preserving the same partial
@@ -331,8 +330,7 @@ func ObserveDifference(app, resourceType, name string, current map[string]any, d
 // they reference (custom formats). Settings, root folders and tags are retained.
 func DeleteManagedResources(ctx context.Context, client *HTTPClient, def AppDefinition, managed map[string][]string) ([]PrunedResource, error) {
 	var deleted []PrunedResource
-	for i := len(def.Resources) - 1; i >= 0; i-- {
-		endpoint := def.Resources[i]
+	for _, endpoint := range slices.Backward(def.Resources) {
 		if !endpoint.Prunable || len(managed[endpoint.Name]) == 0 {
 			continue
 		}

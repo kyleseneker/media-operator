@@ -12,9 +12,7 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -161,7 +159,7 @@ func (f *fakeSeerr) serve(t *testing.T) string {
 
 func seerrSecret() *corev1.Secret {
 	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "seerr-secrets", Namespace: "media"},
+		Name: "seerr-secrets", Namespace: "media",
 		Data: map[string][]byte{
 			"api-key":  []byte("supplied-key"),
 			"username": []byte("admin"),
@@ -173,7 +171,7 @@ func seerrSecret() *corev1.Secret {
 
 func seerrConfig(addr string) *requestsv1alpha1.SeerrConfig {
 	return &requestsv1alpha1.SeerrConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "seerr", Namespace: "media"},
+		Name: "seerr", Namespace: "media",
 		Spec: requestsv1alpha1.SeerrConfigSpec{
 			Connection: requestsv1alpha1.SeerrConnection{URL: addr},
 		},
@@ -194,7 +192,7 @@ func runSeerr(t *testing.T, cfg *requestsv1alpha1.SeerrConfig) {
 		WithObjects(cfg, seerrSecret()).Build()
 	r := &SeerrConfigReconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(50)}
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "seerr", Namespace: "media"},
+		Name: "seerr", Namespace: "media",
 	}); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}

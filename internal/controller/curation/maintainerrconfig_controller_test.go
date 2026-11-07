@@ -75,14 +75,14 @@ func (f *fakeMaintainerr) serve(t *testing.T) string {
 
 func maintainerrSecret() *corev1.Secret {
 	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "maintainerr-credentials", Namespace: "media"},
-		Data:       map[string][]byte{"api-key": []byte("test-key")},
+		Name: "maintainerr-credentials", Namespace: "media",
+		Data: map[string][]byte{"api-key": []byte("test-key")},
 	}
 }
 
 func maintainerrConfig(url string, rules ...curationv1alpha1.MaintainerrRule) *curationv1alpha1.MaintainerrConfig {
 	return &curationv1alpha1.MaintainerrConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "maintainerr", Namespace: "media"},
+		Name: "maintainerr", Namespace: "media",
 		Spec: curationv1alpha1.MaintainerrConfigSpec{
 			Connection: commonv1alpha1.AppConnection{
 				URL:             url,
@@ -107,7 +107,7 @@ func runMaintainerr(t *testing.T, cfg *curationv1alpha1.MaintainerrConfig) clien
 		WithObjects(cfg, maintainerrSecret()).Build()
 	r := &MaintainerrConfigReconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(50)}
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "maintainerr", Namespace: "media"},
+		Name: "maintainerr", Namespace: "media",
 	}); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestMaintainerrObserveRejectedBeforeApplicationAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	policy := "observe"
-	cfg := &curationv1alpha1.MaintainerrConfig{ObjectMeta: metav1.ObjectMeta{Name: "observe", Namespace: "media"}}
+	cfg := &curationv1alpha1.MaintainerrConfig{Name: "observe", Namespace: "media"}
 	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &policy}
 	// No URL or Secrets: rejection must happen before application access or authentication.
 	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(cfg).WithObjects(cfg).Build()

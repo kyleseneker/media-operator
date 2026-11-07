@@ -76,14 +76,14 @@ func (f *fakeAutobrr) serve(t *testing.T) string {
 
 func autobrrSecret() *corev1.Secret {
 	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "autobrr-credentials", Namespace: "media"},
-		Data:       map[string][]byte{"api-key": []byte("test-key")},
+		Name: "autobrr-credentials", Namespace: "media",
+		Data: map[string][]byte{"api-key": []byte("test-key")},
 	}
 }
 
 func autobrrConfig(url string) *automationv1alpha1.AutobrrConfig {
 	return &automationv1alpha1.AutobrrConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "autobrr", Namespace: "media"},
+		Name: "autobrr", Namespace: "media",
 		Spec: automationv1alpha1.AutobrrConfigSpec{
 			Connection: commonv1alpha1.AppConnection{
 				URL:             url,
@@ -110,7 +110,7 @@ func runAutobrr(t *testing.T, cfg *automationv1alpha1.AutobrrConfig, withSecret 
 	c := b.Build()
 	r := &AutobrrConfigReconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(50)}
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "autobrr", Namespace: "media"},
+		Name: "autobrr", Namespace: "media",
 	}); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestAutobrrObserveRejectedBeforeApplicationAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	policy := "observe"
-	cfg := &automationv1alpha1.AutobrrConfig{ObjectMeta: metav1.ObjectMeta{Name: "observe", Namespace: "media"}}
+	cfg := &automationv1alpha1.AutobrrConfig{Name: "observe", Namespace: "media"}
 	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &policy}
 	// No URL or Secrets: rejection must happen before application access or authentication.
 	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(cfg).WithObjects(cfg).Build()

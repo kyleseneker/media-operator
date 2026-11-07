@@ -16,7 +16,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -86,8 +85,8 @@ func TestResolveTLSConfig_CASecret(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
 	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "tls-ca", Namespace: "default"},
-		Data:       map[string][]byte{"ca.crt": caPEM},
+		Name: "tls-ca", Namespace: "default",
+		Data: map[string][]byte{"ca.crt": caPEM},
 	}
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(secret).Build()
 

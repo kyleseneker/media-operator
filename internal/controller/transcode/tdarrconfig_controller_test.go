@@ -131,14 +131,14 @@ func (f *fakeTdarr) serve(t *testing.T) string {
 
 func tdarrSecret() *corev1.Secret {
 	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "tdarr-credentials", Namespace: "media"},
-		Data:       map[string][]byte{"api-key": []byte("test-key")},
+		Name: "tdarr-credentials", Namespace: "media",
+		Data: map[string][]byte{"api-key": []byte("test-key")},
 	}
 }
 
 func tdarrConfig(url string) *transcodev1alpha1.TdarrConfig {
 	return &transcodev1alpha1.TdarrConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "tdarr", Namespace: "media"},
+		Name: "tdarr", Namespace: "media",
 		Spec: transcodev1alpha1.TdarrConfigSpec{
 			Connection: commonv1alpha1.AppConnection{
 				URL:             url,
@@ -165,7 +165,7 @@ func runTdarr(t *testing.T, cfg *transcodev1alpha1.TdarrConfig, withSecret bool)
 	c := b.Build()
 	r := &TdarrConfigReconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(50)}
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "tdarr", Namespace: "media"},
+		Name: "tdarr", Namespace: "media",
 	}); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
@@ -427,7 +427,7 @@ func TestTdarrObserveRejectedBeforeApplicationAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	policy := "observe"
-	cfg := &transcodev1alpha1.TdarrConfig{ObjectMeta: metav1.ObjectMeta{Name: "observe", Namespace: "media"}}
+	cfg := &transcodev1alpha1.TdarrConfig{Name: "observe", Namespace: "media"}
 	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &policy}
 	// No URL or Secrets: rejection must happen before application access or authentication.
 	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(cfg).WithObjects(cfg).Build()

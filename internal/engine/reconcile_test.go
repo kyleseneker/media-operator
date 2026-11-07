@@ -72,7 +72,7 @@ func TestIsNilInterface(t *testing.T) {
 	}{
 		{"nil", nil, true},
 		{"typed nil pointer", (*string)(nil), true},
-		{"non-nil pointer", ptrTo("hello"), false},
+		{"non-nil pointer", new("hello"), false},
 		{"non-pointer value", "hello", false},
 		{"integer", 42, false},
 	}
@@ -82,8 +82,6 @@ func TestIsNilInterface(t *testing.T) {
 		})
 	}
 }
-
-func ptrTo[T any](v T) *T { return &v }
 
 func TestFailedUpdateDoesNotPruneOrForgetOwnership(t *testing.T) {
 	var deletes int

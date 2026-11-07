@@ -67,14 +67,14 @@ func (f *fakePlex) serve(t *testing.T) string {
 
 func plexSecret() *corev1.Secret {
 	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "plex-token", Namespace: "media"},
-		Data:       map[string][]byte{"token": []byte("plex-token")},
+		Name: "plex-token", Namespace: "media",
+		Data: map[string][]byte{"token": []byte("plex-token")},
 	}
 }
 
 func plexConfig(addr string, libs ...mediaserversv1alpha1.PlexLibrary) *mediaserversv1alpha1.PlexConfig {
 	return &mediaserversv1alpha1.PlexConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "plex", Namespace: "media"},
+		Name: "plex", Namespace: "media",
 		Spec: mediaserversv1alpha1.PlexConfigSpec{
 			Connection: mediaserversv1alpha1.PlexConnection{
 				URL:            addr,
@@ -102,7 +102,7 @@ func runPlex(t *testing.T, cfg *mediaserversv1alpha1.PlexConfig, withSecret bool
 	c := b.Build()
 	r := &PlexConfigReconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(50)}
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "plex", Namespace: "media"},
+		Name: "plex", Namespace: "media",
 	}); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestPlexObserveRejectedBeforeApplicationAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	policy := "observe"
-	cfg := &mediaserversv1alpha1.PlexConfig{ObjectMeta: metav1.ObjectMeta{Name: "observe", Namespace: "media"}}
+	cfg := &mediaserversv1alpha1.PlexConfig{Name: "observe", Namespace: "media"}
 	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &policy}
 	// No URL or Secrets: rejection must happen before application access or authentication.
 	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(cfg).WithObjects(cfg).Build()
