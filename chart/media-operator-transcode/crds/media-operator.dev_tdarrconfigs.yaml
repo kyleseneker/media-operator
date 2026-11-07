@@ -302,6 +302,11 @@ spec:
                     description: healthcheckGPU is the number of GPU health check
                       workers.
                     type: integer
+                  nodeName:
+                    description: |-
+                      nodeName is the name of the Tdarr node these limits are for. It may be
+                      left out while Tdarr has a single node, and is required once it has more.
+                    type: string
                   transcodeCPU:
                     description: transcodeCPU is the number of CPU transcode workers.
                     type: integer

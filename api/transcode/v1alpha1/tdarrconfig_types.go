@@ -165,8 +165,13 @@ type TdarrFlow struct {
 	FlowEdges []runtime.RawExtension `json:"flowEdges"`
 }
 
-// TdarrWorkers configures the number of worker threads.
+// TdarrWorkers configures the number of worker threads on one Tdarr node.
 type TdarrWorkers struct {
+	// nodeName is the name of the Tdarr node these limits are for. It may be
+	// left out while Tdarr has a single node, and is required once it has more.
+	// +optional
+	NodeName string `json:"nodeName,omitempty"`
+
 	// transcodeGPU is the number of GPU transcode workers.
 	// +optional
 	TranscodeGPU *int `json:"transcodeGPU,omitempty"`

@@ -10,6 +10,7 @@ spec:
       name: arr-config-secrets
       key: TDARR_API_KEY
   workers:
+    nodeName: InternalNode
     transcodeGPU: 1
     transcodeCPU: 0
     healthcheckGPU: 1

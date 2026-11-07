@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -372,14 +373,9 @@ func (s *tdarrSync) workers(ctx context.Context, workers *transcodev1alpha1.Tdar
 		return fmt.Errorf("getting nodes: %w", err)
 	}
 
-	// Use the first node
-	var nodeID string
-	for id := range nodes {
-		nodeID = id
-		break
-	}
-	if nodeID == "" {
-		return fmt.Errorf("no nodes registered")
+	nodeID, err := workerNode(nodes, workers.NodeName)
+	if err != nil {
+		return err
 	}
 
 	workerLimits := []struct {
@@ -423,6 +419,39 @@ func currentWorkerLimits(node any) map[string]int {
 		}
 	}
 	return out
+}
+
+// workerNode picks the node whose worker limits the spec sets: the named one,
+// or the only one. Limits are per node, and picking among several unnamed
+// nodes would let each pass step a different one.
+func workerNode(nodes map[string]any, name string) (string, error) {
+	names := make([]string, 0, len(nodes))
+	var matches []string
+	for id, node := range nodes {
+		n, _ := node.(map[string]any)
+		nodeName, _ := n["nodeName"].(string)
+		names = append(names, nodeName)
+		if name != "" && nodeName == name {
+			matches = append(matches, id)
+		}
+	}
+	slices.Sort(names)
+	switch {
+	case len(nodes) == 0:
+		return "", fmt.Errorf("no nodes registered")
+	case name == "" && len(nodes) == 1:
+		for id := range nodes {
+			return id, nil
+		}
+	case name == "":
+		return "", fmt.Errorf("found %d nodes (%s); set workers.nodeName to the one these limits are for",
+			len(nodes), strings.Join(names, ", "))
+	case len(matches) == 1:
+		return matches[0], nil
+	case len(matches) > 1:
+		return "", fmt.Errorf("node name %q is ambiguous (%d nodes)", name, len(matches))
+	}
+	return "", fmt.Errorf("no node named %q (nodes: %s)", name, strings.Join(names, ", "))
 }
 
 // convergeWorkerLimit steps a worker count toward target. Tdarr's endpoint only
