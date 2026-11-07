@@ -47,6 +47,7 @@ func TestSabnzbd(t *testing.T) {
 
 	checkCompat(t, compatCase{
 		fixture: "sabnzbd.yaml",
+		export:  "sabnzbd",
 		vars:    map[string]string{"URL": proxy.url()},
 		secrets: map[string]string{"api-key": key, "usenet-username": "compat", "usenet-password": "usenet-secret"},
 		newObj:  func() ctrlcommon.ConfigResource { return &downloadsv1alpha1.SabnzbdConfig{} },

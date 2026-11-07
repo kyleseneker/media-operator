@@ -85,6 +85,10 @@ var apps = map[string]app{
 		options: []engine.HTTPClientOption{engine.WithDisableRedirect()},
 		newObj:  func() client.Object { return &downloadsv1alpha1.QBittorrentConfig{} },
 	},
+	"sabnzbd": {
+		auth: engine.AuthNone, apiKey: true, export: exportSabnzbd,
+		newObj: func() client.Object { return &downloadsv1alpha1.SabnzbdConfig{} },
+	},
 	"bazarr": {
 		auth: engine.AuthFormEncoded, apiKey: true, export: exportBazarr,
 		options: []engine.HTTPClientOption{engine.WithAPIKeyHeader("X-API-KEY")},
@@ -143,7 +147,7 @@ func Run(ctx context.Context, o Options) (Result, error) {
 	}
 
 	r := &reader{
-		ctx: ctx, hc: hc, username: o.Username, password: o.Password,
+		ctx: ctx, hc: hc, apiKey: o.APIKey, username: o.Username, password: o.Password,
 		creds: &credentials{secret: o.SecretName, values: map[string]string{apiKeyKey: o.APIKey}},
 	}
 	spec, err := a.export(r)
@@ -290,6 +294,7 @@ func referencedKeys(obj any, secret string) []string {
 type reader struct {
 	ctx      context.Context
 	hc       *engine.HTTPClient
+	apiKey   string
 	username string
 	password string
 	prefix   string
