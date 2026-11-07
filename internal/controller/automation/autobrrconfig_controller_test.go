@@ -164,22 +164,45 @@ func TestAutobrrMissingSecretDoesNotContactApp(t *testing.T) {
 	assert.NotEqual(t, conditionTrue, autobrrCondition(t, c, "Synced"), "Synced = True despite a missing secret")
 }
 
-func TestAutobrrObserveRejectedBeforeApplicationAccess(t *testing.T) {
-	scheme := runtime.NewScheme()
-	require.NoError(t, automationv1alpha1.AddToScheme(scheme))
-	policy := "observe"
-	cfg := &automationv1alpha1.AutobrrConfig{Name: "observe", Namespace: "media"}
-	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: &policy}
-	// No URL or Secrets: rejection must happen before application access or authentication.
-	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(cfg).WithObjects(cfg).Build()
-	r := &AutobrrConfigReconciler{Client: c, Scheme: scheme}
-	key := types.NamespacedName{Namespace: cfg.Namespace, Name: cfg.Name}
-	_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
-	require.NoError(t, err)
-	require.NoError(t, c.Get(context.Background(), key, cfg))
-	require.True(t, slices.ContainsFunc(cfg.Status.Conditions, func(condition metav1.Condition) bool {
-		return condition.Type == "Synced" && condition.Reason == "InvalidConfig" && condition.Status == metav1.ConditionFalse
-	}), "expected explicit unsupported-policy status, got %+v", cfg.Status.Conditions)
+func observedAutobrr(url string, indexer string) *automationv1alpha1.AutobrrConfig {
+	cfg := autobrrConfig(url)
+	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{DriftPolicy: new("observe")}
+	cfg.Spec.Indexers = []automationv1alpha1.AutobrrIndexer{{Name: indexer, Implementation: "torznab"}}
+	return cfg
+}
+
+func autobrrWrites(f *fakeAutobrr) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []string
+	for _, r := range f.requests {
+		if !strings.HasPrefix(r, http.MethodGet) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func TestAutobrrObserveReportsMissingResourcesWithoutWriting(t *testing.T) {
+	app := &fakeAutobrr{}
+	c := runAutobrr(t, observedAutobrr(app.serve(t), "torznab-a"), true)
+
+	assert.Empty(t, autobrrWrites(app), "observe mode wrote to Autobrr")
+	var cfg automationv1alpha1.AutobrrConfig
+	require.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "autobrr", Namespace: "media"}, &cfg))
+	synced := cfg.Status.Conditions[slices.IndexFunc(cfg.Status.Conditions, func(c metav1.Condition) bool { return c.Type == "Synced" })]
+	assert.Equal(t, "DriftDetected", synced.Reason)
+}
+
+func TestAutobrrObserveMatchesWhatExists(t *testing.T) {
+	app := &fakeAutobrr{existing: map[string][]map[string]any{
+		"indexer": {{"id": float64(2), "name": "torznab-a", "enabled": true, "implementation": "torznab"}},
+	}}
+	c := runAutobrr(t, observedAutobrr(app.serve(t), "torznab-a"), true)
+
+	require.True(t, app.saw("GET", "/api/indexer"), "observe never read the indexers")
+	assert.Empty(t, autobrrWrites(app))
+	assert.Equal(t, conditionTrue, autobrrCondition(t, c, "Synced"))
 }
 
 // Autobrr accepts only its own constants; "qBittorrent" is answered with
@@ -202,14 +225,15 @@ func TestUpsertAutobrrSkipsWhatAlreadyMatches(t *testing.T) {
 	}}
 	obj := map[string]any{"name": "qBittorrent", "type": "QBITTORRENT", "password": "s3cret"}
 	updated := false
-	err := upsertAutobrr("download client", "qBittorrent", existing, obj,
+	ab := &autobrrSync{}
+	err := ab.upsert("download client", "qBittorrent", existing, obj,
 		func() error { require.Fail(t, "must not create"); return nil },
 		func(int) error { updated = true; return nil })
 	require.NoError(t, err)
 	assert.False(t, updated, "an unchanged download client was rewritten")
 
 	obj["type"] = "DELUGE_V2"
-	require.NoError(t, upsertAutobrr("download client", "qBittorrent", existing, obj,
+	require.NoError(t, ab.upsert("download client", "qBittorrent", existing, obj,
 		func() error { return nil }, func(int) error { updated = true; return nil }))
 	assert.True(t, updated, "a real change must be written")
 }

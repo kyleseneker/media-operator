@@ -49,10 +49,6 @@ func (r *AutobrrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{RequeueAfter: after}, nil
 	}
 
-	if ctrlcommon.RejectUnsupportedObserve(ctx, r.Status(), &config) {
-		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
-	}
-
 	// Resolve API key
 	apiKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Connection.APIKeySecretRef)
 	if err != nil {
@@ -83,49 +79,17 @@ func (r *AutobrrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
-	var syncErrors []string
-
-	// Reconcile download clients
-	for _, dc := range config.Spec.DownloadClients {
-		if err := reconcileAutobrrDownloadClient(ctx, r.Client, ac, config.Namespace, dc); err != nil {
-			logger.Error(err, "failed to reconcile download client", "name", dc.Name)
-			syncErrors = append(syncErrors, fmt.Sprintf("downloadClient(%s): %v", dc.Name, err))
-		}
+	sync := &autobrrSync{
+		c: r.Client, ac: ac, namespace: config.Namespace, observe: ctrlcommon.ObserveOnly(config.Spec.Reconcile),
 	}
-
-	// Reconcile indexers
-	for _, idx := range config.Spec.Indexers {
-		if err := reconcileAutobrrIndexer(ctx, r.Client, ac, config.Namespace, idx); err != nil {
-			logger.Error(err, "failed to reconcile indexer", "name", idx.Name)
-			syncErrors = append(syncErrors, fmt.Sprintf("indexer(%s): %v", idx.Name, err))
+	syncErrors := sync.run(ctx, &config.Spec)
+	if sync.observe {
+		var observeErr error
+		if len(syncErrors) > 0 {
+			observeErr = fmt.Errorf("%v", syncErrors)
 		}
-	}
-
-	// Reconcile IRC networks
-	for _, irc := range config.Spec.IRCNetworks {
-		if err := reconcileAutobrrIRCNetwork(ctx, r.Client, ac, config.Namespace, irc); err != nil {
-			logger.Error(err, "failed to reconcile IRC network", "name", irc.Name)
-			syncErrors = append(syncErrors, fmt.Sprintf("ircNetwork(%s): %v", irc.Name, err))
-		}
-	}
-
-	// Reconcile feeds
-	for _, feed := range config.Spec.Feeds {
-		if err := reconcileAutobrrFeed(ctx, r.Client, ac, config.Namespace, feed); err != nil {
-			logger.Error(err, "failed to reconcile feed", "name", feed.Name)
-			syncErrors = append(syncErrors, fmt.Sprintf("feed(%s): %v", feed.Name, err))
-		}
-	}
-
-	// Reconcile filters
-	for _, filter := range config.Spec.Filters {
-		if err := reconcileAutobrrFilter(ctx, ac, filter); err != nil {
-			logger.Error(err, "failed to reconcile filter", "name", filter.Name)
-			syncErrors = append(syncErrors, fmt.Sprintf("filter(%s): %v", filter.Name, err))
-		}
-	}
-
-	if len(syncErrors) > 0 {
+		ctrlcommon.UpdateObservationStatus(ctx, r.Status(), &config, len(sync.drift) > 0, observeErr)
+	} else if len(syncErrors) > 0 {
 		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, false, engine.ReasonSyncFailed, fmt.Sprintf("partial sync failure: %v", syncErrors))
 	} else {
 		ctrlcommon.UpdateStatus(ctx, r.Status(), &config, true, engine.ReasonSynced, "all configuration sections synced")
@@ -134,8 +98,70 @@ func (r *AutobrrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 }
 
-func reconcileAutobrrDownloadClient(ctx context.Context, c client.Reader, ac *autobrrclient.Client, namespace string, dc automationv1alpha1.AutobrrDownloadClient) error {
-	existing, err := ac.ListDownloadClients(ctx)
+// autobrrSync applies one AutobrrConfig. With observe set it only reads, and
+// records what it would have written.
+type autobrrSync struct {
+	c         client.Reader
+	ac        *autobrrclient.Client
+	namespace string
+	observe   bool
+	drift     []string
+}
+
+// apply writes a difference, or in observe mode records it instead.
+func (s *autobrrSync) apply(kind, name string, write func() error) error {
+	if s.observe {
+		s.recordDrift(kind, name)
+		return nil
+	}
+	metrics.DriftCorrectedTotal.WithLabelValues("autobrr", kind, name).Inc()
+	return write()
+}
+
+func (s *autobrrSync) recordDrift(kind, name string) {
+	metrics.DriftObservedTotal.WithLabelValues("autobrr", kind, name).Inc()
+	s.drift = append(s.drift, kind+"/"+name)
+}
+
+// run applies the sections in dependency order: filter actions refer to
+// download clients by name.
+func (s *autobrrSync) run(ctx context.Context, spec *automationv1alpha1.AutobrrConfigSpec) []string {
+	logger := log.FromContext(ctx)
+	var syncErrors []string
+	fail := func(section, name string, err error) {
+		logger.Error(err, "failed to reconcile", "section", section, "name", name)
+		syncErrors = append(syncErrors, fmt.Sprintf("%s(%s): %v", section, name, err))
+	}
+	for _, dc := range spec.DownloadClients {
+		if err := s.downloadClient(ctx, dc); err != nil {
+			fail("downloadClient", dc.Name, err)
+		}
+	}
+	for _, idx := range spec.Indexers {
+		if err := s.indexer(ctx, idx); err != nil {
+			fail("indexer", idx.Name, err)
+		}
+	}
+	for _, irc := range spec.IRCNetworks {
+		if err := s.ircNetwork(ctx, irc); err != nil {
+			fail("ircNetwork", irc.Name, err)
+		}
+	}
+	for _, feed := range spec.Feeds {
+		if err := s.feed(ctx, feed); err != nil {
+			fail("feed", feed.Name, err)
+		}
+	}
+	for _, filter := range spec.Filters {
+		if err := s.filter(ctx, filter); err != nil {
+			fail("filter", filter.Name, err)
+		}
+	}
+	return syncErrors
+}
+
+func (s *autobrrSync) downloadClient(ctx context.Context, dc automationv1alpha1.AutobrrDownloadClient) error {
+	existing, err := s.ac.ListDownloadClients(ctx)
 	if err != nil {
 		return fmt.Errorf("listing download clients: %w", err)
 	}
@@ -155,21 +181,21 @@ func reconcileAutobrrDownloadClient(ctx context.Context, c client.Reader, ac *au
 
 	// Resolve secrets
 	if dc.UsernameSecretRef != nil {
-		val, err := reconciler.ResolveSecretKeyRef(ctx, c, namespace, *dc.UsernameSecretRef)
+		val, err := reconciler.ResolveSecretKeyRef(ctx, s.c, s.namespace, *dc.UsernameSecretRef)
 		if err != nil {
 			return fmt.Errorf("resolving username: %w", err)
 		}
 		obj["username"] = val
 	}
 	if dc.PasswordSecretRef != nil {
-		val, err := reconciler.ResolveSecretKeyRef(ctx, c, namespace, *dc.PasswordSecretRef)
+		val, err := reconciler.ResolveSecretKeyRef(ctx, s.c, s.namespace, *dc.PasswordSecretRef)
 		if err != nil {
 			return fmt.Errorf("resolving password: %w", err)
 		}
 		obj["password"] = val
 	}
 	if dc.APIKeySecretRef != nil {
-		val, err := reconciler.ResolveSecretKeyRef(ctx, c, namespace, *dc.APIKeySecretRef)
+		val, err := reconciler.ResolveSecretKeyRef(ctx, s.c, s.namespace, *dc.APIKeySecretRef)
 		if err != nil {
 			return fmt.Errorf("resolving API key: %w", err)
 		}
@@ -183,13 +209,13 @@ func reconcileAutobrrDownloadClient(ctx context.Context, c client.Reader, ac *au
 		return fmt.Errorf("settings are not download client fields in Autobrr; set category, savePath and contentLayout on filter actions")
 	}
 
-	return upsertAutobrr("download client", dc.Name, existing, obj,
-		func() error { return ac.CreateDownloadClient(ctx, obj) },
-		func(id int) error { return ac.UpdateDownloadClient(ctx, id, obj) })
+	return s.upsert("download client", dc.Name, existing, obj,
+		func() error { return s.ac.CreateDownloadClient(ctx, obj) },
+		func(id int) error { return s.ac.UpdateDownloadClient(ctx, id, obj) })
 }
 
-func reconcileAutobrrIndexer(ctx context.Context, c client.Reader, ac *autobrrclient.Client, namespace string, idx automationv1alpha1.AutobrrIndexer) error {
-	existing, err := ac.ListIndexers(ctx)
+func (s *autobrrSync) indexer(ctx context.Context, idx automationv1alpha1.AutobrrIndexer) error {
+	existing, err := s.ac.ListIndexers(ctx)
 	if err != nil {
 		return fmt.Errorf("listing indexers: %w", err)
 	}
@@ -206,20 +232,20 @@ func reconcileAutobrrIndexer(ctx context.Context, c client.Reader, ac *autobrrcl
 		obj["feed_url"] = idx.FeedURL
 	}
 	if idx.APIKeySecretRef != nil {
-		val, err := reconciler.ResolveSecretKeyRef(ctx, c, namespace, *idx.APIKeySecretRef)
+		val, err := reconciler.ResolveSecretKeyRef(ctx, s.c, s.namespace, *idx.APIKeySecretRef)
 		if err != nil {
 			return fmt.Errorf("resolving API key: %w", err)
 		}
 		obj["api_key"] = val
 	}
 
-	return upsertAutobrr("indexer", idx.Name, existing, obj,
-		func() error { return ac.CreateIndexer(ctx, obj) },
-		func(id int) error { return ac.UpdateIndexer(ctx, id, obj) })
+	return s.upsert("indexer", idx.Name, existing, obj,
+		func() error { return s.ac.CreateIndexer(ctx, obj) },
+		func(id int) error { return s.ac.UpdateIndexer(ctx, id, obj) })
 }
 
-func reconcileAutobrrIRCNetwork(ctx context.Context, c client.Reader, ac *autobrrclient.Client, namespace string, irc automationv1alpha1.AutobrrIRCNetwork) error {
-	existing, err := ac.ListIRCNetworks(ctx)
+func (s *autobrrSync) ircNetwork(ctx context.Context, irc automationv1alpha1.AutobrrIRCNetwork) error {
+	existing, err := s.ac.ListIRCNetworks(ctx)
 	if err != nil {
 		return fmt.Errorf("listing IRC networks: %w", err)
 	}
@@ -244,14 +270,14 @@ func reconcileAutobrrIRCNetwork(ctx context.Context, c client.Reader, ac *autobr
 	}
 
 	if irc.AuthAccountSecretRef != nil {
-		val, err := reconciler.ResolveSecretKeyRef(ctx, c, namespace, *irc.AuthAccountSecretRef)
+		val, err := reconciler.ResolveSecretKeyRef(ctx, s.c, s.namespace, *irc.AuthAccountSecretRef)
 		if err != nil {
 			return fmt.Errorf("resolving auth account: %w", err)
 		}
 		auth["account"] = val
 	}
 	if irc.AuthPasswordSecretRef != nil {
-		val, err := reconciler.ResolveSecretKeyRef(ctx, c, namespace, *irc.AuthPasswordSecretRef)
+		val, err := reconciler.ResolveSecretKeyRef(ctx, s.c, s.namespace, *irc.AuthPasswordSecretRef)
 		if err != nil {
 			return fmt.Errorf("resolving auth password: %w", err)
 		}
@@ -267,7 +293,7 @@ func reconcileAutobrrIRCNetwork(ctx context.Context, c client.Reader, ac *autobr
 		for _, ch := range irc.Channels {
 			chObj := map[string]any{"name": ch.Name}
 			if ch.PasswordSecretRef != nil {
-				val, err := reconciler.ResolveSecretKeyRef(ctx, c, namespace, *ch.PasswordSecretRef)
+				val, err := reconciler.ResolveSecretKeyRef(ctx, s.c, s.namespace, *ch.PasswordSecretRef)
 				if err != nil {
 					return fmt.Errorf("resolving channel %q password: %w", ch.Name, err)
 				}
@@ -278,13 +304,13 @@ func reconcileAutobrrIRCNetwork(ctx context.Context, c client.Reader, ac *autobr
 		obj["channels"] = channels
 	}
 
-	return upsertAutobrr("IRC network", irc.Name, existing, obj,
-		func() error { return ac.CreateIRCNetwork(ctx, obj) },
-		func(id int) error { return ac.UpdateIRCNetwork(ctx, id, obj) })
+	return s.upsert("IRC network", irc.Name, existing, obj,
+		func() error { return s.ac.CreateIRCNetwork(ctx, obj) },
+		func(id int) error { return s.ac.UpdateIRCNetwork(ctx, id, obj) })
 }
 
-func reconcileAutobrrFeed(ctx context.Context, c client.Reader, ac *autobrrclient.Client, namespace string, feed automationv1alpha1.AutobrrFeed) error {
-	existing, err := ac.ListFeeds(ctx)
+func (s *autobrrSync) feed(ctx context.Context, feed automationv1alpha1.AutobrrFeed) error {
+	existing, err := s.ac.ListFeeds(ctx)
 	if err != nil {
 		return fmt.Errorf("listing feeds: %w", err)
 	}
@@ -302,24 +328,24 @@ func reconcileAutobrrFeed(ctx context.Context, c client.Reader, ac *autobrrclien
 		obj["indexer"] = feed.IndexerRef
 	}
 	if feed.APIKeySecretRef != nil {
-		val, err := reconciler.ResolveSecretKeyRef(ctx, c, namespace, *feed.APIKeySecretRef)
+		val, err := reconciler.ResolveSecretKeyRef(ctx, s.c, s.namespace, *feed.APIKeySecretRef)
 		if err != nil {
 			return fmt.Errorf("resolving API key: %w", err)
 		}
 		obj["api_key"] = val
 	}
 
-	return upsertAutobrr("feed", feed.Name, existing, obj,
-		func() error { return ac.CreateFeed(ctx, obj) },
-		func(id int) error { return ac.UpdateFeed(ctx, id, obj) })
+	return s.upsert("feed", feed.Name, existing, obj,
+		func() error { return s.ac.CreateFeed(ctx, obj) },
+		func(id int) error { return s.ac.UpdateFeed(ctx, id, obj) })
 }
 
-func reconcileAutobrrFilter(ctx context.Context, ac *autobrrclient.Client, filter automationv1alpha1.AutobrrFilter) error {
-	existing, err := ac.ListFilters(ctx)
+func (s *autobrrSync) filter(ctx context.Context, filter automationv1alpha1.AutobrrFilter) error {
+	existing, err := s.ac.ListFilters(ctx)
 	if err != nil {
 		return fmt.Errorf("listing filters: %w", err)
 	}
-	downloaders, err := ac.ListDownloadClients(ctx)
+	downloaders, err := s.ac.ListDownloadClients(ctx)
 	if err != nil {
 		return fmt.Errorf("listing download clients: %w", err)
 	}
@@ -379,21 +405,21 @@ func reconcileAutobrrFilter(ctx context.Context, ac *autobrrclient.Client, filte
 	// A new filter must carry these lists; Autobrr's columns reject null.
 	create := maps.Clone(obj)
 	addRequiredFilterLists(create)
-	filterID, err := upsertAutobrrFilter(ctx, ac, filter.Name, existing, obj, create)
+	filterID, err := s.upsertFilter(ctx, filter.Name, existing, obj, create)
 	if err != nil {
 		return err
 	}
 	if filterID == 0 || len(filter.Actions) == 0 {
 		return nil
 	}
-	return reconcileAutobrrActions(ctx, ac, filterID, filter, clientIDs)
+	return s.actions(ctx, filterID, filter, clientIDs)
 }
 
-// reconcileAutobrrActions creates or updates a filter's actions by name.
-func reconcileAutobrrActions(
-	ctx context.Context, ac *autobrrclient.Client, filterID int, filter automationv1alpha1.AutobrrFilter, clientIDs map[string]int,
+// actions creates or updates a filter's actions by name.
+func (s *autobrrSync) actions(
+	ctx context.Context, filterID int, filter automationv1alpha1.AutobrrFilter, clientIDs map[string]int,
 ) error {
-	existing, err := ac.ListActions(ctx, filterID)
+	existing, err := s.ac.ListActions(ctx, filterID)
 	if err != nil {
 		return fmt.Errorf("listing actions of filter %q: %w", filter.Name, err)
 	}
@@ -406,7 +432,12 @@ func reconcileAutobrrActions(
 		if a.ClientRef != "" {
 			// Autobrr links an action to a downloader by its numeric ID.
 			id, ok := clientIDs[a.ClientRef]
-			if !ok {
+			switch {
+			case !ok && s.observe && len(s.drift) > 0:
+				// The download client may be one observe mode found missing.
+				s.recordDrift("action", a.Name)
+				continue
+			case !ok:
 				return fmt.Errorf("action %q references download client %q, which does not exist", a.Name, a.ClientRef)
 			}
 			aObj["client_id"] = id
@@ -425,9 +456,9 @@ func reconcileAutobrrActions(
 			body["filter_id"] = filterID
 			return body
 		}
-		if err := upsertAutobrr("action", a.Name, existing, aObj,
-			func() error { return ac.CreateAction(ctx, withFilter()) },
-			func(id int) error { return ac.UpdateAction(ctx, id, withFilter()) }); err != nil {
+		if err := s.upsert("action", a.Name, existing, aObj,
+			func() error { return s.ac.CreateAction(ctx, withFilter()) },
+			func(id int) error { return s.ac.UpdateAction(ctx, id, withFilter()) }); err != nil {
 			return fmt.Errorf("action %q: %w", a.Name, err)
 		}
 	}
@@ -511,9 +542,9 @@ func autobrrType(name string) string {
 	return name
 }
 
-// upsertAutobrr updates an existing resource only when Autobrr does not already
-// hold every declared value; writing on every pass rewrote each one each time.
-func upsertAutobrr(kind, name string, existing []map[string]any, obj map[string]any,
+// upsert updates an existing resource only when Autobrr does not already hold
+// every declared value; writing on every pass rewrote each one each time.
+func (s *autobrrSync) upsert(kind, name string, existing []map[string]any, obj map[string]any,
 	create func() error, update func(id int) error,
 ) error {
 	for _, e := range existing {
@@ -532,17 +563,17 @@ func upsertAutobrr(kind, name string, existing []map[string]any, obj map[string]
 		if reconciler.Covers(e, desired) {
 			return nil
 		}
-		metrics.DriftCorrectedTotal.WithLabelValues("autobrr", kind, name).Inc()
-		return update(int(id))
+		return s.apply(kind, name, func() error { return update(int(id)) })
 	}
-	return create()
+	return s.apply(kind, name, create)
 }
 
-// upsertAutobrrFilter compares against the full stored filter, since the list
+// upsertFilter compares against the full stored filter, since the list
 // endpoint returns a summary. An update replaces the whole filter, so it sends
-// the stored filter with the declared values over it.
-func upsertAutobrrFilter(
-	ctx context.Context, ac *autobrrclient.Client, name string, existing []map[string]any, obj, create map[string]any,
+// the stored filter with the declared values over it. It returns the filter's
+// id, or 0 when observe mode found it missing.
+func (s *autobrrSync) upsertFilter(
+	ctx context.Context, name string, existing []map[string]any, obj, create map[string]any,
 ) (int, error) {
 	for _, e := range existing {
 		if n, _ := e["name"].(string); n != name {
@@ -553,7 +584,7 @@ func upsertAutobrrFilter(
 			return 0, fmt.Errorf("filter %q has no valid id", name)
 		}
 		id := int(raw)
-		full, err := ac.GetFilter(ctx, id)
+		full, err := s.ac.GetFilter(ctx, id)
 		if err != nil {
 			return 0, fmt.Errorf("reading filter %q: %w", name, err)
 		}
@@ -570,15 +601,19 @@ func upsertAutobrrFilter(
 		}
 		delete(merged, "actions")
 		addRequiredFilterLists(merged)
-		metrics.DriftCorrectedTotal.WithLabelValues("autobrr", "filter", name).Inc()
-		return id, ac.UpdateFilter(ctx, id, merged)
+		return id, s.apply("filter", name, func() error { return s.ac.UpdateFilter(ctx, id, merged) })
 	}
-	created, err := ac.CreateFilter(ctx, create)
-	if err != nil {
-		return 0, err
-	}
-	raw, _ := created["id"].(float64)
-	return int(raw), nil
+	var id int
+	err := s.apply("filter", name, func() error {
+		created, err := s.ac.CreateFilter(ctx, create)
+		if err != nil {
+			return err
+		}
+		raw, _ := created["id"].(float64)
+		id = int(raw)
+		return nil
+	})
+	return id, err
 }
 
 // addRequiredFilterLists sets the lists Autobrr's filter columns reject as null

@@ -44,7 +44,8 @@ func TestAutobrr(t *testing.T) {
 		reconciler: func(c client.Client) reconcile.Reconciler {
 			return &automation.AutobrrConfigReconciler{Client: c, Scheme: c.Scheme(), Recorder: events.NewFakeRecorder(100)}
 		},
-		proxy: proxy,
+		proxy:   proxy,
+		observe: true,
 		verify: func(t *testing.T) {
 			hc, err := engine.NewHTTPClient(ab.url(), engine.AuthAPIKey, engine.WithAPIKey(key),
 				engine.WithAPIKeyHeader("X-API-Token"), engine.WithAppLabel("compat"))
