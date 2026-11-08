@@ -25,36 +25,58 @@ spec:
     partialRequestsEnabled: true
     locale: en
   sonarr:
-    name: Sonarr
-    hostname: ${HOST}
-    port: ${SONARR_PORT}
-    apiKeySecretRef:
-      name: compat-credentials
-      key: sonarr-api-key
-    useSsl: false
-    activeProfileName: HD-1080p
-    activeDirectory: /data/media/tv
-    is4k: false
-    isDefault: true
-    seriesType: standard
-    enableSeasonFolders: true
+    - name: Sonarr
+      hostname: ${HOST}
+      port: ${SONARR_PORT}
+      apiKeySecretRef:
+        name: compat-credentials
+        key: sonarr-api-key
+      useSsl: false
+      activeProfileName: HD-1080p
+      activeDirectory: /data/media/tv
+      is4k: false
+      isDefault: true
+      seriesType: standard
+      enableSeasonFolders: true
+      externalUrl: https://sonarr.example.com
+      syncEnabled: true
+      preventSearch: false
+      tagRequests: true
+      activeAnimeProfileName: HD-1080p
+      activeAnimeDirectory: /data/media/tv
+      animeSeriesType: anime
+      monitorNewItems: all
+    - name: Sonarr 4K
+      hostname: ${HOST}
+      port: ${SONARR_PORT}
+      apiKeySecretRef:
+        name: compat-credentials
+        key: sonarr-api-key
+      activeProfileName: HD-1080p
+      activeDirectory: /data/media/tv
+      is4k: true
+      isDefault: true
   radarr:
-    name: Radarr
-    hostname: ${HOST}
-    port: ${RADARR_PORT}
-    apiKeySecretRef:
-      name: compat-credentials
-      key: radarr-api-key
-    useSsl: false
-    activeProfileName: HD-1080p
-    activeDirectory: /data/media/movies
-    is4k: false
-    isDefault: true
-    minimumAvailability: released
+    - name: Radarr
+      hostname: ${HOST}
+      port: ${RADARR_PORT}
+      apiKeySecretRef:
+        name: compat-credentials
+        key: radarr-api-key
+      useSsl: false
+      activeProfileName: HD-1080p
+      activeDirectory: /data/media/movies
+      is4k: false
+      isDefault: true
+      minimumAvailability: released
   notifications:
     - agent: discord
       enabled: true
       types: 4094
       options:
-        webhookUrl: ${FAKES}/webhook
         botUsername: Compat
+        enableMentions: false
+      secretOptions:
+        webhookUrl:
+          name: compat-credentials
+          key: discord-webhook

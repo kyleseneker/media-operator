@@ -16,7 +16,7 @@ import (
 // writing Seerr settings, and leave its existing connection intact on failure.
 func resolvedServicePayload(ctx context.Context, svc *requestsv1alpha1.SeerrServiceConnection, apiKey string) (map[string]any, error) {
 	payload := buildServicePayload(svc, apiKey)
-	if svc.ActiveProfileName == "" {
+	if svc.ActiveProfileName == "" && svc.ActiveAnimeProfileName == "" {
 		return payload, nil // Preserve ID-only configurations.
 	}
 	if svc.Port == nil || *svc.Port < 1 || *svc.Port > 65535 {
@@ -35,10 +35,15 @@ func resolvedServicePayload(ctx context.Context, svc *requestsv1alpha1.SeerrServ
 	if err != nil {
 		return nil, err
 	}
-	id, err := profiles.Resolve(svc.ActiveProfileName)
-	if err != nil {
-		return nil, fmt.Errorf("activeProfileName: %w", err)
+	for field, name := range map[string]string{"activeProfile": svc.ActiveProfileName, "activeAnimeProfile": svc.ActiveAnimeProfileName} {
+		if name == "" {
+			continue
+		}
+		id, err := profiles.Resolve(name)
+		if err != nil {
+			return nil, fmt.Errorf("%sName: %w", field, err)
+		}
+		payload[field+"Id"] = id
 	}
-	payload["activeProfileId"] = id
 	return payload, nil
 }

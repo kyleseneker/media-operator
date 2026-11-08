@@ -95,7 +95,7 @@ func TestSeerr(t *testing.T) {
 		},
 		secrets: map[string]string{
 			"jellyfin-username": jellyfinAdmin, "jellyfin-password": jellyfinPassword,
-			"sonarr-api-key": sonarrKey, "radarr-api-key": radarrKey,
+			"sonarr-api-key": sonarrKey, "radarr-api-key": radarrKey, "discord-webhook": fakes + "/webhook",
 		},
 		newObj: func() ctrlcommon.ConfigResource { return &requestsv1alpha1.SeerrConfig{} },
 		reconciler: func(c client.Client) reconcile.Reconciler {
@@ -124,6 +124,25 @@ func TestSeerr(t *testing.T) {
 			assert.Equal(t, hostIP, server["ip"])
 			assert.Equal(t, float64(jf.port), server["port"])
 			assert.NotContains(t, server, "hostname", "Seerr's settings migration rewrites the port from a stored hostname")
+
+			direct := directClient(t, seerr.url(), seerrAPIKey(t))
+			sonarrs, err := direct.GetJSONList(ctx, "/api/v1/settings/sonarr")
+			require.NoError(t, err)
+			require.Len(t, sonarrs, 2, "both declared Sonarr servers should be in Seerr")
+			byName := map[string]map[string]any{}
+			for _, s := range sonarrs {
+				byName[s["name"].(string)] = s
+			}
+			assert.Equal(t, true, byName["Sonarr 4K"]["is4k"])
+			assert.Equal(t, "anime", byName["Sonarr"]["animeSeriesType"])
+			assert.Equal(t, true, byName["Sonarr"]["tagRequests"])
+			assert.NotNil(t, byName["Sonarr"]["activeAnimeProfileId"], "the anime profile name was not resolved")
+
+			discord, err := direct.GetJSON(ctx, "/api/v1/settings/notifications/discord")
+			require.NoError(t, err)
+			options, _ := discord["options"].(map[string]any)
+			assert.Equal(t, false, options["enableMentions"], "a boolean option must reach Seerr as a boolean")
+			assert.Equal(t, fakes+"/webhook", options["webhookUrl"])
 		},
 	})
 }

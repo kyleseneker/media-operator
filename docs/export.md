@@ -56,8 +56,8 @@ empty and listed on stderr; fill them in before applying.
 
 Fields still at the app's defaults are omitted where the app reports its
 defaults. The command also prints a warning for anything the resource can't
-represent or the app doesn't report, such as a second Sonarr server in Seerr or
-a Plex preference Plex doesn't list.
+represent or the app doesn't report, such as a Plex preference Plex doesn't
+list. Seerr notification options that look like credentials go to the Secret.
 
 Use `--exclude` for parts managed by another tool, for example `indexers` when
 Prowlarr syncs them, or `customFormats,qualityProfiles,qualityDefinitions` when

@@ -482,8 +482,8 @@ func TestSeerrRetriedSetupDoesNotDuplicateConnections(t *testing.T) {
 	port := 8989
 	cfg := firstRunJellyfinConfig(addr)
 	key := commonv1alpha1.SecretKeyRef{Name: "seerr-secrets", Key: "api-key"}
-	cfg.Spec.Sonarr = &requestsv1alpha1.SeerrServiceConnection{Name: "Sonarr", Hostname: "sonarr", Port: &port, APIKeySecretRef: key}
-	cfg.Spec.Radarr = &requestsv1alpha1.SeerrServiceConnection{Name: "Radarr", Hostname: "radarr", Port: &port, APIKeySecretRef: key}
+	cfg.Spec.Sonarr = []requestsv1alpha1.SeerrServiceConnection{{Name: "Sonarr", Hostname: "sonarr", Port: &port, APIKeySecretRef: key}}
+	cfg.Spec.Radarr = []requestsv1alpha1.SeerrServiceConnection{{Name: "Radarr", Hostname: "radarr", Port: &port, APIKeySecretRef: key}}
 
 	runSeerr(t, cfg.DeepCopy())
 	runSeerr(t, cfg.DeepCopy())
@@ -606,10 +606,10 @@ func TestSeerrPrunesTheConnectionItCreatedUnderAnOldName(t *testing.T) {
 	}}
 	cfg := seerrWithAPIKey(app.serve(t))
 	port := 8989
-	cfg.Spec.Sonarr = &requestsv1alpha1.SeerrServiceConnection{
+	cfg.Spec.Sonarr = []requestsv1alpha1.SeerrServiceConnection{{
 		Name: "New", Hostname: "sonarr", Port: &port,
 		APIKeySecretRef: commonv1alpha1.SecretKeyRef{Name: "seerr-secrets", Key: "api-key"},
-	}
+	}}
 	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{Prune: new(true)}
 	cfg.Status.ManagedResources = map[string][]string{"sonarr": {"Old"}}
 
@@ -641,10 +641,10 @@ func TestSeerrObserveReportsAConnectionPruneWouldDelete(t *testing.T) {
 	}}
 	cfg := seerrWithAPIKey(app.serve(t))
 	port := 8989
-	cfg.Spec.Sonarr = &requestsv1alpha1.SeerrServiceConnection{
+	cfg.Spec.Sonarr = []requestsv1alpha1.SeerrServiceConnection{{
 		Name: "New", Hostname: "sonarr", Port: &port,
 		APIKeySecretRef: commonv1alpha1.SecretKeyRef{Name: "seerr-secrets", Key: "api-key"},
-	}
+	}}
 	observe := "observe"
 	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{Prune: new(true), DriftPolicy: &observe}
 	cfg.Status.ManagedResources = map[string][]string{"sonarr": {"ObserveOld"}}
@@ -702,4 +702,50 @@ func TestSeerrLeavesAMatchingPlexServerAlone(t *testing.T) {
 
 	require.True(t, app.saw("GET", "/api/v1/settings/plex"), "never read the Plex server")
 	assert.False(t, app.saw("POST", "/api/v1/settings/plex"), "rewrote a Plex server that already matched")
+}
+
+func TestSeerrManagesEveryDeclaredServer(t *testing.T) {
+	app := &fakeSeerr{initialized: true, services: map[string][]map[string]any{
+		"sonarr": {{"id": float64(0), "name": "Sonarr", "hostname": "old-sonarr"}},
+	}}
+	cfg := seerrWithAPIKey(app.serve(t))
+	port := 8989
+	key := commonv1alpha1.SecretKeyRef{Name: "seerr-secrets", Key: "api-key"}
+	cfg.Spec.Sonarr = []requestsv1alpha1.SeerrServiceConnection{
+		{Name: "Sonarr", Hostname: "sonarr", Port: &port, APIKeySecretRef: key, IsDefault: new(true)},
+		{Name: "Sonarr 4K", Hostname: "sonarr-4k", Port: &port, APIKeySecretRef: key, Is4k: new(true), IsDefault: new(true)},
+	}
+	cfg.Spec.Radarr = []requestsv1alpha1.SeerrServiceConnection{{Name: "Radarr", Hostname: "radarr", Port: &port, APIKeySecretRef: key}}
+	cfg.Spec.Reconcile = &commonv1alpha1.ReconcileConfig{Prune: new(true)}
+
+	runSeerr(t, cfg)
+
+	assert.True(t, app.saw("PUT", "/api/v1/settings/sonarr/0"), "the existing server was not updated")
+	assert.ElementsMatch(t, []string{"Sonarr", "Sonarr 4K"}, seerrServiceNames(app, "sonarr"), "prune must keep every declared server")
+	assert.Equal(t, []string{"Radarr"}, seerrServiceNames(app, "radarr"))
+	app.mu.Lock()
+	defer app.mu.Unlock()
+	assert.Equal(t, true, app.services["sonarr"][1]["is4k"])
+}
+
+func TestSeerrNotificationOptionsKeepTheirTypeAndReadSecrets(t *testing.T) {
+	app := &fakeSeerr{initialized: true}
+	cfg := seerrWithAPIKey(app.serve(t))
+	cfg.Spec.Notifications = []requestsv1alpha1.SeerrNotificationAgent{{
+		Agent: "discord", Enabled: new(true),
+		Options: map[string]commonv1alpha1.FieldValue{
+			"botUsername":    {Raw: []byte(`"Seerr"`)},
+			"enableMentions": {Raw: []byte(`false`)},
+			"webhookUrl":     {Raw: []byte(`"http://overridden"`)},
+		},
+		SecretOptions: map[string]commonv1alpha1.SecretKeyRef{"webhookUrl": {Name: "seerr-secrets", Key: "token"}},
+	}}
+
+	runSeerr(t, cfg)
+
+	app.mu.Lock()
+	defer app.mu.Unlock()
+	body := app.authBodies["/api/v1/settings/notifications/discord"]
+	require.NotNil(t, body, "the agent was never saved")
+	assert.Equal(t, map[string]any{"botUsername": "Seerr", "enableMentions": false, "webhookUrl": "plex-token"}, body["options"])
 }

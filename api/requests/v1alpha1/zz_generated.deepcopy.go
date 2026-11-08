@@ -111,13 +111,17 @@ func (in *SeerrConfigSpec) DeepCopyInto(out *SeerrConfigSpec) {
 	}
 	if in.Sonarr != nil {
 		in, out := &in.Sonarr, &out.Sonarr
-		*out = new(SeerrServiceConnection)
-		(*in).DeepCopyInto(*out)
+		*out = make([]SeerrServiceConnection, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
 	}
 	if in.Radarr != nil {
 		in, out := &in.Radarr, &out.Radarr
-		*out = new(SeerrServiceConnection)
-		(*in).DeepCopyInto(*out)
+		*out = make([]SeerrServiceConnection, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
 	}
 	if in.Notifications != nil {
 		in, out := &in.Notifications, &out.Notifications
@@ -292,7 +296,14 @@ func (in *SeerrNotificationAgent) DeepCopyInto(out *SeerrNotificationAgent) {
 	}
 	if in.Options != nil {
 		in, out := &in.Options, &out.Options
-		*out = make(map[string]string, len(*in))
+		*out = make(map[string]commonv1alpha1.FieldValue, len(*in))
+		for key, val := range *in {
+			(*out)[key] = *val.DeepCopy()
+		}
+	}
+	if in.SecretOptions != nil {
+		in, out := &in.SecretOptions, &out.SecretOptions
+		*out = make(map[string]commonv1alpha1.SecretKeyRef, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val
 		}
@@ -366,6 +377,21 @@ func (in *SeerrServiceConnection) DeepCopyInto(out *SeerrServiceConnection) {
 	}
 	if in.EnableSeasonFolders != nil {
 		in, out := &in.EnableSeasonFolders, &out.EnableSeasonFolders
+		*out = new(bool)
+		**out = **in
+	}
+	if in.SyncEnabled != nil {
+		in, out := &in.SyncEnabled, &out.SyncEnabled
+		*out = new(bool)
+		**out = **in
+	}
+	if in.PreventSearch != nil {
+		in, out := &in.PreventSearch, &out.PreventSearch
+		*out = new(bool)
+		**out = **in
+	}
+	if in.TagRequests != nil {
+		in, out := &in.TagRequests, &out.TagRequests
 		*out = new(bool)
 		**out = **in
 	}

@@ -24,38 +24,45 @@ spec:
     partialRequestsEnabled: true
     locale: en
   sonarr:
-    name: Sonarr
-    hostname: arr-sonarr.arr.svc.cluster.local
-    port: 8989
-    apiKeySecretRef:
-      name: arr-config-secrets
-      key: SONARR_API_KEY
-    activeProfileName: WEB-1080p
-    activeDirectory: /data/media/tv
-    isDefault: true
-    enableSeasonFolders: true
-    seriesType: standard
+    - name: Sonarr
+      hostname: arr-sonarr.arr.svc.cluster.local
+      port: 8989
+      apiKeySecretRef:
+        name: arr-config-secrets
+        key: SONARR_API_KEY
+      activeProfileName: WEB-1080p
+      activeDirectory: /data/media/tv
+      isDefault: true
+      enableSeasonFolders: true
+      seriesType: standard
   radarr:
-    name: Radarr
-    hostname: arr-radarr.arr.svc.cluster.local
-    port: 7878
-    apiKeySecretRef:
-      name: arr-config-secrets
-      key: RADARR_API_KEY
-    activeProfileName: HD Bluray + WEB
-    activeDirectory: /data/media/movies
-    isDefault: true
-    minimumAvailability: released
+    - name: Radarr
+      hostname: arr-radarr.arr.svc.cluster.local
+      port: 7878
+      apiKeySecretRef:
+        name: arr-config-secrets
+        key: RADARR_API_KEY
+      activeProfileName: HD Bluray + WEB
+      activeDirectory: /data/media/movies
+      isDefault: true
+      minimumAvailability: released
   notifications:
     - agent: discord
       enabled: true
       types: 4094
       options:
-        webhookUrl: "https://discord.com/api/webhooks/your-webhook-url"
         botUsername: "Seerr"
+        enableMentions: false
+      secretOptions:
+        webhookUrl:
+          name: arr-config-secrets
+          key: DISCORD_WEBHOOK_URL
     - agent: telegram
       enabled: true
       types: 4094
       options:
-        botAPI: "your-bot-token"
         chatId: "your-chat-id"
+      secretOptions:
+        botAPI:
+          name: arr-config-secrets
+          key: TELEGRAM_BOT_TOKEN

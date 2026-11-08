@@ -2,7 +2,6 @@ package export
 
 import (
 	"errors"
-	"fmt"
 	"maps"
 	"net/http"
 	"reflect"
@@ -64,18 +63,11 @@ func exportSeerr(r *reader) (map[string]any, error) {
 		if len(servers) == 0 {
 			continue
 		}
-		chosen := servers[0]
+		exported := make([]any, 0, len(servers))
 		for _, s := range servers {
-			if s["isDefault"] == true && s["is4k"] != true {
-				chosen = s
-			}
+			exported = append(exported, r.seerrService(service, s))
 		}
-		for _, s := range servers {
-			if s["id"] != chosen["id"] {
-				r.warn("Seerr has another %s server, %q; SeerrConfig holds one, so only %q is exported", service, s["name"], chosen["name"])
-			}
-		}
-		spec[service] = r.seerrService(service, chosen)
+		spec[service] = exported
 	}
 
 	var notifications []any
@@ -93,8 +85,12 @@ func exportSeerr(r *reader) (map[string]any, error) {
 		}
 		notification := pick(settings, "enabled", "types")
 		notification["agent"] = agent
-		if options := r.seerrOptions(agent, settings["options"]); len(options) > 0 {
+		options, secrets := r.seerrOptions(agent, settings["options"])
+		if len(options) > 0 {
 			notification["options"] = options
+		}
+		if len(secrets) > 0 {
+			notification["secretOptions"] = secrets
 		}
 		notifications = append(notifications, notification)
 	}
@@ -110,36 +106,35 @@ func (r *reader) seerrService(service string, s map[string]any) map[string]any {
 		delete(out, "activeProfileId")
 	}
 	key, _ := s["apiKey"].(string)
-	out["apiKeySecretRef"] = r.creds.ref(key, service, "api-key")
+	name, _ := s["name"].(string)
+	out["apiKeySecretRef"] = r.creds.ref(key, service, name, "api-key")
 	return out
 }
 
-func (r *reader) seerrOptions(agent string, v any) map[string]any {
+// seerrOptions splits an agent's options into plain ones and ones that look
+// like credentials, which go to the Secret.
+func (r *reader) seerrOptions(agent string, v any) (map[string]any, map[string]any) {
 	raw, _ := v.(map[string]any)
-	out := map[string]any{}
+	options, secrets := map[string]any{}, map[string]any{}
 	for _, key := range slices.Sorted(maps.Keys(raw)) {
-		var text string
 		switch x := raw[key].(type) {
 		case nil:
-			continue
 		case string:
-			text = x
+			lower := strings.ToLower(key)
+			switch {
+			case x == "":
+			case slices.ContainsFunc(seerrCredentialOptions, func(s string) bool { return strings.Contains(lower, s) }):
+				secrets[key] = r.creds.ref(x, "notification", agent, key)
+			default:
+				options[key] = x
+			}
 		case float64, bool:
-			text = fmt.Sprint(x)
+			options[key] = x
 		default:
-			r.warn("notification %q: SeerrConfig options hold text, so %s stays as set in Seerr", agent, key)
-			continue
+			r.warn("notification %q: SeerrConfig can't express %s, so it stays as set in Seerr", agent, key)
 		}
-		if text == "" {
-			continue
-		}
-		lower := strings.ToLower(key)
-		if slices.ContainsFunc(seerrCredentialOptions, func(s string) bool { return strings.Contains(lower, s) }) {
-			r.warn("notification %q: %s looks like a credential, and SeerrConfig holds options as plain text", agent, key)
-		}
-		out[key] = text
 	}
-	return out
+	return options, secrets
 }
 
 func seerrFields(values map[string]any, t reflect.Type) map[string]any {

@@ -211,9 +211,31 @@ spec:
                       type: boolean
                     options:
                       additionalProperties:
-                        type: string
-                      description: options contains provider-specific configuration
-                        (e.g., webhookUrl, botUsername, chatId).
+                        description: FieldValue wraps a value that can be a string,
+                          int, or bool.
+                        x-kubernetes-preserve-unknown-fields: true
+                      description: |-
+                        options sets the agent's settings, such as botUsername, chatId or
+                        enableMentions. Values keep their type, so enableMentions: false is off.
+                      type: object
+                    secretOptions:
+                      additionalProperties:
+                        description: SecretKeyRef references a key within a Kubernetes
+                          Secret.
+                        properties:
+                          key:
+                            description: key is the key within the Secret.
+                            type: string
+                          name:
+                            description: name is the name of the Secret.
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      description: |-
+                        secretOptions sets agent settings from Secrets, by setting name, such as
+                        webhookUrl, botAPI or accessToken. They take precedence over options.
                       type: object
                     types:
                       description: |-
@@ -260,82 +282,134 @@ spec:
                 - tokenSecretRef
                 type: object
               radarr:
-                description: radarr configures the Radarr service connection for movie
+                description: |-
+                  radarr lists the Radarr servers Seerr sends movie requests to, matched by
+                  name. Seerr uses the default server, and the default 4K server for 4K
                   requests.
-                properties:
-                  activeDirectory:
-                    description: activeDirectory is the root folder path for media.
-                    type: string
-                  activeProfileId:
-                    description: activeProfileId is used when activeProfileName is
-                      omitted.
-                    type: integer
-                  activeProfileName:
-                    description: |-
-                      activeProfileName is resolved against the service on each reconciliation.
-                      When set, it takes precedence over activeProfileId; exactly one match is required.
-                    type: string
-                  apiKeySecretRef:
-                    description: apiKeySecretRef references a Secret containing the
-                      service API key.
-                    properties:
-                      key:
-                        description: key is the key within the Secret.
-                        type: string
-                      name:
-                        description: name is the name of the Secret.
-                        type: string
-                    required:
-                    - key
-                    - name
-                    type: object
-                  baseUrl:
-                    description: baseUrl is the URL base path for the service.
-                    type: string
-                  enableSeasonFolders:
-                    description: |-
-                      enableSeasonFolders enables season folder organization in Sonarr.
-                      Only applicable when used with Sonarr.
-                    type: boolean
-                  hostname:
-                    description: hostname is the service hostname.
-                    type: string
-                  is4k:
-                    description: is4k indicates this is a 4K instance.
-                    type: boolean
-                  isDefault:
-                    description: isDefault indicates this is the default service for
-                      its type.
-                    type: boolean
-                  minimumAvailability:
-                    description: |-
-                      minimumAvailability is the minimum availability for Radarr.
-                      Only applicable when used with Radarr.
-                    enum:
-                    - announced
-                    - inCinemas
-                    - released
-                    type: string
-                  name:
-                    description: name is the display name for this service connection.
-                    type: string
-                  port:
-                    description: port is the service port.
-                    type: integer
-                  seriesType:
-                    description: |-
-                      seriesType is the series type for Sonarr (e.g., "standard", "anime").
-                      Only applicable when used with Sonarr.
-                    type: string
-                  useSsl:
-                    description: useSsl enables SSL for the service connection.
-                    type: boolean
-                required:
-                - apiKeySecretRef
-                - hostname
+                items:
+                  description: SeerrServiceConnection defines a connection to a Sonarr
+                    or Radarr instance.
+                  properties:
+                    activeAnimeDirectory:
+                      description: |-
+                        activeAnimeDirectory is the root folder for anime. Only applicable when
+                        used with Sonarr.
+                      type: string
+                    activeAnimeProfileName:
+                      description: |-
+                        activeAnimeProfileName is the quality profile for anime, resolved against
+                        the server on each reconciliation. Only applicable when used with Sonarr.
+                      type: string
+                    activeDirectory:
+                      description: activeDirectory is the root folder path for media.
+                      type: string
+                    activeProfileId:
+                      description: activeProfileId is used when activeProfileName
+                        is omitted.
+                      type: integer
+                    activeProfileName:
+                      description: |-
+                        activeProfileName is resolved against the service on each reconciliation.
+                        When set, it takes precedence over activeProfileId; exactly one match is required.
+                      type: string
+                    animeSeriesType:
+                      description: |-
+                        animeSeriesType is the series type for anime. Only applicable when used
+                        with Sonarr.
+                      enum:
+                      - standard
+                      - daily
+                      - anime
+                      type: string
+                    apiKeySecretRef:
+                      description: apiKeySecretRef references a Secret containing
+                        the service API key.
+                      properties:
+                        key:
+                          description: key is the key within the Secret.
+                          type: string
+                        name:
+                          description: name is the name of the Secret.
+                          type: string
+                      required:
+                      - key
+                      - name
+                      type: object
+                    baseUrl:
+                      description: baseUrl is the URL base path for the service.
+                      type: string
+                    enableSeasonFolders:
+                      description: |-
+                        enableSeasonFolders enables season folder organization in Sonarr.
+                        Only applicable when used with Sonarr.
+                      type: boolean
+                    externalUrl:
+                      description: externalUrl is the address users open the server
+                        at, for links in Seerr.
+                      type: string
+                    hostname:
+                      description: hostname is the service hostname.
+                      type: string
+                    is4k:
+                      description: is4k indicates this is a 4K instance.
+                      type: boolean
+                    isDefault:
+                      description: isDefault indicates this is the default service
+                        for its type.
+                      type: boolean
+                    minimumAvailability:
+                      description: |-
+                        minimumAvailability is the minimum availability for Radarr.
+                        Only applicable when used with Radarr.
+                      enum:
+                      - announced
+                      - inCinemas
+                      - released
+                      type: string
+                    monitorNewItems:
+                      description: |-
+                        monitorNewItems decides whether seasons added to a series later are
+                        monitored. Only applicable when used with Sonarr.
+                      enum:
+                      - all
+                      - none
+                      type: string
+                    name:
+                      description: name is the display name for this service connection.
+                      type: string
+                    port:
+                      description: port is the service port.
+                      type: integer
+                    preventSearch:
+                      description: preventSearch stops the server from searching as
+                        soon as a request is approved.
+                      type: boolean
+                    seriesType:
+                      description: |-
+                        seriesType is the series type for Sonarr (e.g., "standard", "anime").
+                        Only applicable when used with Sonarr.
+                      type: string
+                    syncEnabled:
+                      description: syncEnabled scans the server for media and request
+                        status.
+                      type: boolean
+                    tagRequests:
+                      description: tagRequests tags each request with the requesting
+                        user.
+                      type: boolean
+                    useSsl:
+                      description: useSsl enables SSL for the service connection.
+                      type: boolean
+                  required:
+                  - apiKeySecretRef
+                  - hostname
+                  - name
+                  - port
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
                 - name
-                - port
-                type: object
+                x-kubernetes-list-type: map
               reconcile:
                 description: reconcile configures reconciliation behavior (e.g., sync
                   interval).
@@ -378,82 +452,134 @@ spec:
                     type: boolean
                 type: object
               sonarr:
-                description: sonarr configures the Sonarr service connection for TV
-                  show requests.
-                properties:
-                  activeDirectory:
-                    description: activeDirectory is the root folder path for media.
-                    type: string
-                  activeProfileId:
-                    description: activeProfileId is used when activeProfileName is
-                      omitted.
-                    type: integer
-                  activeProfileName:
-                    description: |-
-                      activeProfileName is resolved against the service on each reconciliation.
-                      When set, it takes precedence over activeProfileId; exactly one match is required.
-                    type: string
-                  apiKeySecretRef:
-                    description: apiKeySecretRef references a Secret containing the
-                      service API key.
-                    properties:
-                      key:
-                        description: key is the key within the Secret.
-                        type: string
-                      name:
-                        description: name is the name of the Secret.
-                        type: string
-                    required:
-                    - key
-                    - name
-                    type: object
-                  baseUrl:
-                    description: baseUrl is the URL base path for the service.
-                    type: string
-                  enableSeasonFolders:
-                    description: |-
-                      enableSeasonFolders enables season folder organization in Sonarr.
-                      Only applicable when used with Sonarr.
-                    type: boolean
-                  hostname:
-                    description: hostname is the service hostname.
-                    type: string
-                  is4k:
-                    description: is4k indicates this is a 4K instance.
-                    type: boolean
-                  isDefault:
-                    description: isDefault indicates this is the default service for
-                      its type.
-                    type: boolean
-                  minimumAvailability:
-                    description: |-
-                      minimumAvailability is the minimum availability for Radarr.
-                      Only applicable when used with Radarr.
-                    enum:
-                    - announced
-                    - inCinemas
-                    - released
-                    type: string
-                  name:
-                    description: name is the display name for this service connection.
-                    type: string
-                  port:
-                    description: port is the service port.
-                    type: integer
-                  seriesType:
-                    description: |-
-                      seriesType is the series type for Sonarr (e.g., "standard", "anime").
-                      Only applicable when used with Sonarr.
-                    type: string
-                  useSsl:
-                    description: useSsl enables SSL for the service connection.
-                    type: boolean
-                required:
-                - apiKeySecretRef
-                - hostname
+                description: |-
+                  sonarr lists the Sonarr servers Seerr sends TV requests to, matched by
+                  name. Seerr uses the default server, and the default 4K server for 4K
+                  requests.
+                items:
+                  description: SeerrServiceConnection defines a connection to a Sonarr
+                    or Radarr instance.
+                  properties:
+                    activeAnimeDirectory:
+                      description: |-
+                        activeAnimeDirectory is the root folder for anime. Only applicable when
+                        used with Sonarr.
+                      type: string
+                    activeAnimeProfileName:
+                      description: |-
+                        activeAnimeProfileName is the quality profile for anime, resolved against
+                        the server on each reconciliation. Only applicable when used with Sonarr.
+                      type: string
+                    activeDirectory:
+                      description: activeDirectory is the root folder path for media.
+                      type: string
+                    activeProfileId:
+                      description: activeProfileId is used when activeProfileName
+                        is omitted.
+                      type: integer
+                    activeProfileName:
+                      description: |-
+                        activeProfileName is resolved against the service on each reconciliation.
+                        When set, it takes precedence over activeProfileId; exactly one match is required.
+                      type: string
+                    animeSeriesType:
+                      description: |-
+                        animeSeriesType is the series type for anime. Only applicable when used
+                        with Sonarr.
+                      enum:
+                      - standard
+                      - daily
+                      - anime
+                      type: string
+                    apiKeySecretRef:
+                      description: apiKeySecretRef references a Secret containing
+                        the service API key.
+                      properties:
+                        key:
+                          description: key is the key within the Secret.
+                          type: string
+                        name:
+                          description: name is the name of the Secret.
+                          type: string
+                      required:
+                      - key
+                      - name
+                      type: object
+                    baseUrl:
+                      description: baseUrl is the URL base path for the service.
+                      type: string
+                    enableSeasonFolders:
+                      description: |-
+                        enableSeasonFolders enables season folder organization in Sonarr.
+                        Only applicable when used with Sonarr.
+                      type: boolean
+                    externalUrl:
+                      description: externalUrl is the address users open the server
+                        at, for links in Seerr.
+                      type: string
+                    hostname:
+                      description: hostname is the service hostname.
+                      type: string
+                    is4k:
+                      description: is4k indicates this is a 4K instance.
+                      type: boolean
+                    isDefault:
+                      description: isDefault indicates this is the default service
+                        for its type.
+                      type: boolean
+                    minimumAvailability:
+                      description: |-
+                        minimumAvailability is the minimum availability for Radarr.
+                        Only applicable when used with Radarr.
+                      enum:
+                      - announced
+                      - inCinemas
+                      - released
+                      type: string
+                    monitorNewItems:
+                      description: |-
+                        monitorNewItems decides whether seasons added to a series later are
+                        monitored. Only applicable when used with Sonarr.
+                      enum:
+                      - all
+                      - none
+                      type: string
+                    name:
+                      description: name is the display name for this service connection.
+                      type: string
+                    port:
+                      description: port is the service port.
+                      type: integer
+                    preventSearch:
+                      description: preventSearch stops the server from searching as
+                        soon as a request is approved.
+                      type: boolean
+                    seriesType:
+                      description: |-
+                        seriesType is the series type for Sonarr (e.g., "standard", "anime").
+                        Only applicable when used with Sonarr.
+                      type: string
+                    syncEnabled:
+                      description: syncEnabled scans the server for media and request
+                        status.
+                      type: boolean
+                    tagRequests:
+                      description: tagRequests tags each request with the requesting
+                        user.
+                      type: boolean
+                    useSsl:
+                      description: useSsl enables SSL for the service connection.
+                      type: boolean
+                  required:
+                  - apiKeySecretRef
+                  - hostname
+                  - name
+                  - port
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
                 - name
-                - port
-                type: object
+                x-kubernetes-list-type: map
             required:
             - connection
             type: object

@@ -46,13 +46,21 @@ type SeerrConfigSpec struct {
 	// +optional
 	Main *SeerrMain `json:"main,omitempty"`
 
-	// sonarr configures the Sonarr service connection for TV show requests.
+	// sonarr lists the Sonarr servers Seerr sends TV requests to, matched by
+	// name. Seerr uses the default server, and the default 4K server for 4K
+	// requests.
 	// +optional
-	Sonarr *SeerrServiceConnection `json:"sonarr,omitempty"`
+	// +listType=map
+	// +listMapKey=name
+	Sonarr []SeerrServiceConnection `json:"sonarr,omitempty"`
 
-	// radarr configures the Radarr service connection for movie requests.
+	// radarr lists the Radarr servers Seerr sends movie requests to, matched by
+	// name. Seerr uses the default server, and the default 4K server for 4K
+	// requests.
 	// +optional
-	Radarr *SeerrServiceConnection `json:"radarr,omitempty"`
+	// +listType=map
+	// +listMapKey=name
+	Radarr []SeerrServiceConnection `json:"radarr,omitempty"`
 
 	// notifications configures notification agents (Discord, Slack, Telegram, etc.).
 	// Each agent is a singleton — only one configuration per agent type.
@@ -79,9 +87,15 @@ type SeerrNotificationAgent struct {
 	// +optional
 	Types *int `json:"types,omitempty"`
 
-	// options contains provider-specific configuration (e.g., webhookUrl, botUsername, chatId).
+	// options sets the agent's settings, such as botUsername, chatId or
+	// enableMentions. Values keep their type, so enableMentions: false is off.
 	// +optional
-	Options map[string]string `json:"options,omitempty"`
+	Options map[string]commonv1alpha1.FieldValue `json:"options,omitempty"`
+
+	// secretOptions sets agent settings from Secrets, by setting name, such as
+	// webhookUrl, botAPI or accessToken. They take precedence over options.
+	// +optional
+	SecretOptions map[string]commonv1alpha1.SecretKeyRef `json:"secretOptions,omitempty"`
 }
 
 // SeerrConnection defines how the operator connects to Seerr.
@@ -245,6 +259,44 @@ type SeerrServiceConnection struct {
 	// Only applicable when used with Sonarr.
 	// +optional
 	EnableSeasonFolders *bool `json:"enableSeasonFolders,omitempty"`
+
+	// externalUrl is the address users open the server at, for links in Seerr.
+	// +optional
+	ExternalUrl string `json:"externalUrl,omitempty"`
+
+	// syncEnabled scans the server for media and request status.
+	// +optional
+	SyncEnabled *bool `json:"syncEnabled,omitempty"`
+
+	// preventSearch stops the server from searching as soon as a request is approved.
+	// +optional
+	PreventSearch *bool `json:"preventSearch,omitempty"`
+
+	// tagRequests tags each request with the requesting user.
+	// +optional
+	TagRequests *bool `json:"tagRequests,omitempty"`
+
+	// activeAnimeProfileName is the quality profile for anime, resolved against
+	// the server on each reconciliation. Only applicable when used with Sonarr.
+	// +optional
+	ActiveAnimeProfileName string `json:"activeAnimeProfileName,omitempty"`
+
+	// activeAnimeDirectory is the root folder for anime. Only applicable when
+	// used with Sonarr.
+	// +optional
+	ActiveAnimeDirectory string `json:"activeAnimeDirectory,omitempty"`
+
+	// animeSeriesType is the series type for anime. Only applicable when used
+	// with Sonarr.
+	// +optional
+	// +kubebuilder:validation:Enum=standard;daily;anime
+	AnimeSeriesType string `json:"animeSeriesType,omitempty"`
+
+	// monitorNewItems decides whether seasons added to a series later are
+	// monitored. Only applicable when used with Sonarr.
+	// +optional
+	// +kubebuilder:validation:Enum=all;none
+	MonitorNewItems string `json:"monitorNewItems,omitempty"`
 }
 
 // SeerrConfigStatus defines the observed state of SeerrConfig.

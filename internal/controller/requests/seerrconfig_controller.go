@@ -3,6 +3,7 @@ package requests
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -104,25 +105,18 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 
-	for _, svc := range []struct {
-		kind      string
-		conn      *requestsv1alpha1.SeerrServiceConnection
-		reconcile func(context.Context, *seerrclient.Client, *engine.Writes, *engine.Ownership, *requestsv1alpha1.SeerrConfig) error
-	}{
-		{"sonarr", config.Spec.Sonarr, r.reconcileSonarrConnection},
-		{"radarr", config.Spec.Radarr, r.reconcileRadarrConnection},
-	} {
-		if svc.conn == nil {
-			continue
+	for _, k := range seerrServers(config.Spec) {
+		kind, declared := k.kind, k.servers
+		problems := r.reconcileServiceConnections(ctx, sc, writes, owned, &config, kind, declared)
+		if len(problems) == 0 && ctrlcommon.PruneEnabled(config.Spec.Reconcile) {
+			if err := pruneSeerrService(ctx, sc, writes, owned, kind, declared); err != nil {
+				problems = append(problems, fmt.Sprintf("%s: %v", kind, err))
+			}
 		}
-		err := svc.reconcile(ctx, sc, writes, owned, &config)
-		if err == nil && ctrlcommon.PruneEnabled(config.Spec.Reconcile) {
-			err = pruneSeerrService(ctx, sc, writes, owned, svc.kind, svc.conn.Name)
+		for _, problem := range problems {
+			logger.Error(errors.New(problem), "failed to reconcile connection", "service", kind)
 		}
-		if err != nil {
-			logger.Error(err, "failed to reconcile connection", "service", svc.kind)
-			syncErrors = append(syncErrors, fmt.Sprintf("%s: %v", svc.kind, err))
-		}
+		syncErrors = append(syncErrors, problems...)
 	}
 
 	// Reconcile main settings
@@ -135,7 +129,11 @@ func (r *SeerrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Reconcile notification agents
 	for _, agent := range config.Spec.Notifications {
-		if err := reconcileSeerrNotificationAgent(ctx, sc, writes, agent); err != nil {
+		secrets, err := r.notificationSecrets(ctx, config.Namespace, agent)
+		if err == nil {
+			err = reconcileSeerrNotificationAgent(ctx, sc, writes, agent, secrets)
+		}
+		if err != nil {
 			logger.Error(err, "failed to reconcile notification agent", "agent", agent.Agent)
 			syncErrors = append(syncErrors, fmt.Sprintf("notification(%s): %v", agent.Agent, err))
 		}
@@ -162,14 +160,37 @@ func (r *SeerrConfigReconciler) seerrClient(ctx context.Context, config *request
 	return seerrclient.NewClient(hc), "", nil
 }
 
-// pruneSeerrService deletes the connections of a kind the operator created other
-// than the declared one.
-func pruneSeerrService(ctx context.Context, sc *seerrclient.Client, w *engine.Writes, owned *engine.Ownership, kind, declared string) error {
+type seerrServerKind struct {
+	kind    string
+	servers []requestsv1alpha1.SeerrServiceConnection
+}
+
+// seerrServers lists the declared servers of each kind that has any.
+func seerrServers(spec requestsv1alpha1.SeerrConfigSpec) []seerrServerKind {
+	var kinds []seerrServerKind
+	if len(spec.Sonarr) > 0 {
+		kinds = append(kinds, seerrServerKind{"sonarr", spec.Sonarr})
+	}
+	if len(spec.Radarr) > 0 {
+		kinds = append(kinds, seerrServerKind{"radarr", spec.Radarr})
+	}
+	return kinds
+}
+
+// pruneSeerrService deletes the connections of a kind the operator created that
+// are no longer declared.
+func pruneSeerrService(
+	ctx context.Context, sc *seerrclient.Client, w *engine.Writes, owned *engine.Ownership, kind string, servers []requestsv1alpha1.SeerrServiceConnection,
+) error {
 	names, ids, err := seerrServices(ctx, sc, kind)
 	if err != nil {
 		return err
 	}
-	return w.Prune(owned, kind, []string{declared}, names, func(name string) error {
+	declared := make([]string, 0, len(servers))
+	for _, s := range servers {
+		declared = append(declared, s.Name)
+	}
+	return w.Prune(owned, kind, declared, names, func(name string) error {
 		return sc.Delete(ctx, fmt.Sprintf("/api/v1/settings/%s/%d", kind, ids[name]))
 	})
 }
@@ -238,16 +259,10 @@ func (r *SeerrConfigReconciler) setup(
 		}
 	}
 
-	if config.Spec.Sonarr != nil {
-		if err := r.reconcileSonarrConnection(ctx, sc, writes, owned, config); err != nil {
-			logger.Error(err, "failed to configure Sonarr during initialization")
-			initErrors = append(initErrors, fmt.Sprintf("sonarr init: %v", err))
-		}
-	}
-	if config.Spec.Radarr != nil {
-		if err := r.reconcileRadarrConnection(ctx, sc, writes, owned, config); err != nil {
-			logger.Error(err, "failed to configure Radarr during initialization")
-			initErrors = append(initErrors, fmt.Sprintf("radarr init: %v", err))
+	for _, k := range seerrServers(config.Spec) {
+		for _, problem := range r.reconcileServiceConnections(ctx, sc, writes, owned, config, k.kind, k.servers) {
+			logger.Error(errors.New(problem), "failed to configure connection during initialization", "service", k.kind)
+			initErrors = append(initErrors, "init: "+problem)
 		}
 	}
 	if config.Spec.Main != nil {
@@ -268,32 +283,53 @@ func (r *SeerrConfigReconciler) setup(
 	return nil
 }
 
-// reconcileSonarrConnection updates the Sonarr connection with the declared
-// name, or creates it. Setup uses it too: a setup that failed partway runs again
-// from the start, and Seerr appends a connection on every POST.
-func (r *SeerrConfigReconciler) reconcileSonarrConnection(
-	ctx context.Context, sc *seerrclient.Client, w *engine.Writes, owned *engine.Ownership, config *requestsv1alpha1.SeerrConfig,
+// reconcileServiceConnections updates each declared Sonarr or Radarr connection
+// of the same name, or creates it. Setup uses it too: a setup that failed
+// partway runs again from the start, and Seerr appends a connection on every POST.
+func (r *SeerrConfigReconciler) reconcileServiceConnections(
+	ctx context.Context, sc *seerrclient.Client, w *engine.Writes, owned *engine.Ownership,
+	config *requestsv1alpha1.SeerrConfig, kind string, declared []requestsv1alpha1.SeerrServiceConnection,
+) []string {
+	existing, err := sc.GetList(ctx, "/api/v1/settings/"+kind)
+	if err != nil {
+		return []string{fmt.Sprintf("%s: listing connections: %v", kind, err)}
+	}
+	var problems []string
+	for i := range declared {
+		svc := &declared[i]
+		if err := r.reconcileServiceConnection(ctx, sc, w, owned, config.Namespace, kind, svc, existing); err != nil {
+			problems = append(problems, fmt.Sprintf("%s(%s): %v", kind, svc.Name, err))
+		}
+	}
+	return problems
+}
+
+// seerrServiceDefaults are values Seerr needs that a declared server may leave out.
+var seerrServiceDefaults = map[string]map[string]any{
+	"sonarr": {"enableSeasonFolders": false},
+	"radarr": {"minimumAvailability": "released"},
+}
+
+func (r *SeerrConfigReconciler) reconcileServiceConnection(
+	ctx context.Context, sc *seerrclient.Client, w *engine.Writes, owned *engine.Ownership,
+	namespace, kind string, svc *requestsv1alpha1.SeerrServiceConnection, existing []map[string]any,
 ) error {
-	sonarrAPIKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Sonarr.APIKeySecretRef)
+	apiKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, namespace, svc.APIKeySecretRef)
 	if err != nil {
-		return fmt.Errorf("resolving sonarr API key: %w", err)
+		return fmt.Errorf("resolving API key: %w", err)
 	}
-
-	payload, err := resolvedServicePayload(ctx, config.Spec.Sonarr, sonarrAPIKey)
+	payload, err := resolvedServicePayload(ctx, svc, apiKey)
 	if err != nil {
-		return fmt.Errorf("resolving sonarr profile: %w", err)
+		return fmt.Errorf("resolving profile: %w", err)
 	}
-	if _, ok := payload["enableSeasonFolders"]; !ok {
-		payload["enableSeasonFolders"] = false
-	}
-
-	existing, err := sc.GetList(ctx, "/api/v1/settings/sonarr")
-	if err != nil {
-		return fmt.Errorf("listing sonarr connections: %w", err)
+	for key, value := range seerrServiceDefaults[kind] {
+		if _, ok := payload[key]; !ok {
+			payload[key] = value
+		}
 	}
 
 	for _, e := range existing {
-		if name, ok := e["name"].(string); ok && name == config.Spec.Sonarr.Name {
+		if name, ok := e["name"].(string); ok && name == svc.Name {
 			id, ok := e["id"].(float64)
 			if !ok {
 				continue
@@ -301,64 +337,34 @@ func (r *SeerrConfigReconciler) reconcileSonarrConnection(
 			if !seerrDiffers(e, payload) {
 				return nil
 			}
-			return w.Apply("sonarr", name, func() error {
-				return sc.Put(ctx, fmt.Sprintf("/api/v1/settings/sonarr/%d", int(id)), payload)
+			return w.Apply(kind, name, func() error {
+				return sc.Put(ctx, fmt.Sprintf("/api/v1/settings/%s/%d", kind, int(id)), payload)
 			})
 		}
 	}
 
-	return w.Apply("sonarr", config.Spec.Sonarr.Name, func() error {
-		if _, err := sc.Post(ctx, "/api/v1/settings/sonarr", payload); err != nil {
+	return w.Apply(kind, svc.Name, func() error {
+		if _, err := sc.Post(ctx, "/api/v1/settings/"+kind, payload); err != nil {
 			return err
 		}
-		owned.Created("sonarr", config.Spec.Sonarr.Name)
+		owned.Created(kind, svc.Name)
 		return nil
 	})
 }
 
-func (r *SeerrConfigReconciler) reconcileRadarrConnection(
-	ctx context.Context, sc *seerrclient.Client, w *engine.Writes, owned *engine.Ownership, config *requestsv1alpha1.SeerrConfig,
-) error {
-	radarrAPIKey, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, config.Spec.Radarr.APIKeySecretRef)
-	if err != nil {
-		return fmt.Errorf("resolving radarr API key: %w", err)
-	}
-
-	payload, err := resolvedServicePayload(ctx, config.Spec.Radarr, radarrAPIKey)
-	if err != nil {
-		return fmt.Errorf("resolving radarr profile: %w", err)
-	}
-	if _, ok := payload["minimumAvailability"]; !ok {
-		payload["minimumAvailability"] = "released"
-	}
-
-	existing, err := sc.GetList(ctx, "/api/v1/settings/radarr")
-	if err != nil {
-		return fmt.Errorf("listing radarr connections: %w", err)
-	}
-
-	for _, e := range existing {
-		if name, ok := e["name"].(string); ok && name == config.Spec.Radarr.Name {
-			id, ok := e["id"].(float64)
-			if !ok {
-				continue
-			}
-			if !seerrDiffers(e, payload) {
-				return nil
-			}
-			return w.Apply("radarr", name, func() error {
-				return sc.Put(ctx, fmt.Sprintf("/api/v1/settings/radarr/%d", int(id)), payload)
-			})
+// notificationSecrets resolves an agent's secretOptions.
+func (r *SeerrConfigReconciler) notificationSecrets(
+	ctx context.Context, namespace string, agent requestsv1alpha1.SeerrNotificationAgent,
+) (map[string]string, error) {
+	secrets := make(map[string]string, len(agent.SecretOptions))
+	for name, ref := range agent.SecretOptions {
+		value, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, namespace, ref)
+		if err != nil {
+			return nil, fmt.Errorf("resolving %s: %w", name, err)
 		}
+		secrets[name] = value
 	}
-
-	return w.Apply("radarr", config.Spec.Radarr.Name, func() error {
-		if _, err := sc.Post(ctx, "/api/v1/settings/radarr", payload); err != nil {
-			return err
-		}
-		owned.Created("radarr", config.Spec.Radarr.Name)
-		return nil
-	})
+	return secrets, nil
 }
 
 func buildServicePayload(svc *requestsv1alpha1.SeerrServiceConnection, apiKey string) map[string]any {
@@ -406,6 +412,20 @@ func buildServicePayload(svc *requestsv1alpha1.SeerrServiceConnection, apiKey st
 	}
 	if svc.EnableSeasonFolders != nil {
 		payload["enableSeasonFolders"] = *svc.EnableSeasonFolders
+	}
+	for key, value := range map[string]string{
+		"externalUrl": svc.ExternalUrl, "activeAnimeProfileName": svc.ActiveAnimeProfileName,
+		"activeAnimeDirectory": svc.ActiveAnimeDirectory, "animeSeriesType": svc.AnimeSeriesType,
+		"monitorNewItems": svc.MonitorNewItems,
+	} {
+		if value != "" {
+			payload[key] = value
+		}
+	}
+	for key, value := range map[string]*bool{"syncEnabled": svc.SyncEnabled, "preventSearch": svc.PreventSearch, "tagRequests": svc.TagRequests} {
+		if value != nil {
+			payload[key] = *value
+		}
 	}
 	return payload
 }
@@ -455,7 +475,7 @@ func reconcileSeerrMainSettings(ctx context.Context, sc *seerrclient.Client, w *
 }
 
 func reconcileSeerrNotificationAgent(
-	ctx context.Context, sc *seerrclient.Client, w *engine.Writes, agent requestsv1alpha1.SeerrNotificationAgent,
+	ctx context.Context, sc *seerrclient.Client, w *engine.Writes, agent requestsv1alpha1.SeerrNotificationAgent, secrets map[string]string,
 ) error {
 	payload := map[string]any{}
 	if agent.Enabled != nil {
@@ -464,9 +484,12 @@ func reconcileSeerrNotificationAgent(
 	if agent.Types != nil {
 		payload["types"] = *agent.Types
 	}
-	if len(agent.Options) > 0 {
-		opts := make(map[string]any, len(agent.Options))
+	if len(agent.Options)+len(secrets) > 0 {
+		opts := make(map[string]any, len(agent.Options)+len(secrets))
 		for k, v := range agent.Options {
+			opts[k] = v.ToInterface()
+		}
+		for k, v := range secrets {
 			opts[k] = v
 		}
 		payload["options"] = opts

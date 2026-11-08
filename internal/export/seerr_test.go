@@ -49,18 +49,23 @@ func TestSeerrExportsSettingsServicesAndNotifications(t *testing.T) {
 	assert.Equal(t, 8096, *cfg.Spec.JellyfinAuth.Port)
 	assert.ElementsMatch(t, []string{"jellyfin-username", "jellyfin-password"}, res.Unfilled)
 
-	require.NotNil(t, cfg.Spec.Sonarr)
-	assert.Equal(t, "Sonarr", cfg.Spec.Sonarr.Name, "the default server that isn't 4K is exported")
-	assert.Equal(t, "HD-1080p", cfg.Spec.Sonarr.ActiveProfileName)
-	assert.Nil(t, cfg.Spec.Sonarr.ActiveProfileId, "the name is portable; the id is not")
-	assert.Equal(t, "sonarr-key", res.Secret.StringData[cfg.Spec.Sonarr.APIKeySecretRef.Key])
-	assert.Contains(t, res.Warnings, `Seerr has another sonarr server, "Sonarr 4K"; SeerrConfig holds one, so only "Sonarr" is exported`)
+	require.Len(t, cfg.Spec.Sonarr, 2, "every server is exported")
+	fourK, sonarr := cfg.Spec.Sonarr[0], cfg.Spec.Sonarr[1]
+	assert.Equal(t, "Sonarr 4K", fourK.Name)
+	assert.True(t, *fourK.Is4k)
+	assert.Equal(t, "k4k", res.Secret.StringData[fourK.APIKeySecretRef.Key])
+	assert.Equal(t, "HD-1080p", sonarr.ActiveProfileName)
+	assert.Nil(t, sonarr.ActiveProfileId, "the name is portable; the id is not")
+	assert.Equal(t, "sonarr-key", res.Secret.StringData[sonarr.APIKeySecretRef.Key])
+	assert.NotEqual(t, fourK.APIKeySecretRef.Key, sonarr.APIKeySecretRef.Key)
 	assert.Nil(t, cfg.Spec.Radarr)
 
 	require.Len(t, cfg.Spec.Notifications, 1)
 	discord := cfg.Spec.Notifications[0]
 	assert.Equal(t, "discord", discord.Agent)
 	assert.Equal(t, 4094, *discord.Types)
-	assert.Equal(t, map[string]string{"webhookUrl": "https://hook", "enableMentions": "true"}, discord.Options)
-	assert.Contains(t, res.Warnings, `notification "discord": webhookUrl looks like a credential, and SeerrConfig holds options as plain text`)
+	require.Len(t, discord.Options, 1)
+	assert.Equal(t, true, discord.Options["enableMentions"].ToInterface(), "a boolean option stays a boolean")
+	require.Contains(t, discord.SecretOptions, "webhookUrl")
+	assert.Equal(t, "https://hook", res.Secret.StringData[discord.SecretOptions["webhookUrl"].Key])
 }
