@@ -32,6 +32,48 @@ spec:
     webUiPort: 8080
     bypassAuthSubnetWhitelistEnabled: true
     bypassAuthSubnetWhitelist: 172.31.255.0/24
+    tempPath: /downloads/incomplete/
+    incompleteFilesExt: true
+    autoTmmEnabled: true
+    torrentChangedTmmEnabled: true
+    savePathChangedTmmEnabled: true
+    categoryChangedTmmEnabled: true
+    torrentContentLayout: Subfolder
+    addStoppedEnabled: false
+    torrentStopCondition: MetadataReceived
+    excludedFileNamesEnabled: true
+    excludedFileNames:
+      - "*.lnk"
+      - "*.exe"
+    dlLimit: 0
+    upLimit: 10240
+    altDlLimit: 5120
+    altUpLimit: 1024
+    schedulerEnabled: true
+    scheduleFromHour: 1
+    scheduleFromMin: 30
+    scheduleToHour: 7
+    scheduleToMin: 0
+    schedulerDays: weekdays
+    limitUtpRate: true
+    limitTcpOverhead: true
+    limitLanPeers: false
+    queueingEnabled: true
+    maxActiveDownloads: 5
+    maxActiveUploads: 10
+    maxActiveTorrents: 15
+    dontCountSlowTorrents: true
+    slowTorrentDlRateThreshold: 5
+    slowTorrentUlRateThreshold: 5
+    slowTorrentInactiveTimer: 120
+    listenPort: 51413
+    randomPort: false
+    upnp: false
+    networkInterface: eth0
+    networkInterfaceAddress: ""
+    anonymousMode: true
+    maxInactiveSeedingTimeEnabled: true
+    maxInactiveSeedingTime: 1440
   categories:
     - name: tv
       savePath: /downloads/complete/tv

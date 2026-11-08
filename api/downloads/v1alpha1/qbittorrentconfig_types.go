@@ -148,6 +148,200 @@ type QBittorrentPreferences struct {
 	// skip the WebUI login.
 	// +optional
 	BypassAuthSubnetWhitelist string `json:"bypassAuthSubnetWhitelist,omitempty"`
+
+	// tempPath is where incomplete downloads go while tempPathEnabled is on.
+	// +optional
+	TempPath string `json:"tempPath,omitempty"`
+
+	// incompleteFilesExt adds .!qB to the names of files still downloading.
+	// +optional
+	IncompleteFilesExt *bool `json:"incompleteFilesExt,omitempty"`
+
+	// autoTmmEnabled puts new torrents in automatic management, which saves
+	// them under their category's path.
+	// +optional
+	AutoTMMEnabled *bool `json:"autoTmmEnabled,omitempty"`
+
+	// torrentChangedTmmEnabled moves a torrent in automatic management when its
+	// category changes. When off, the torrent switches to manual management.
+	// +optional
+	TorrentChangedTMMEnabled *bool `json:"torrentChangedTmmEnabled,omitempty"`
+
+	// savePathChangedTmmEnabled moves torrents in automatic management when
+	// savePath changes. When off, they switch to manual management.
+	// +optional
+	SavePathChangedTMMEnabled *bool `json:"savePathChangedTmmEnabled,omitempty"`
+
+	// categoryChangedTmmEnabled moves a category's torrents in automatic
+	// management when its save path changes. When off, they switch to manual
+	// management.
+	// +optional
+	CategoryChangedTMMEnabled *bool `json:"categoryChangedTmmEnabled,omitempty"`
+
+	// torrentContentLayout decides whether a torrent's files go in a folder of
+	// their own.
+	// +optional
+	// +kubebuilder:validation:Enum=Original;Subfolder;NoSubfolder
+	TorrentContentLayout string `json:"torrentContentLayout,omitempty"`
+
+	// addStoppedEnabled adds new torrents stopped.
+	// +optional
+	AddStoppedEnabled *bool `json:"addStoppedEnabled,omitempty"`
+
+	// torrentStopCondition stops a new torrent once it gets this far.
+	// +optional
+	// +kubebuilder:validation:Enum=None;MetadataReceived;FilesChecked
+	TorrentStopCondition string `json:"torrentStopCondition,omitempty"`
+
+	// excludedFileNamesEnabled skips files whose names match excludedFileNames.
+	// +optional
+	ExcludedFileNamesEnabled *bool `json:"excludedFileNamesEnabled,omitempty"`
+
+	// excludedFileNames are file name patterns to skip, such as *.lnk.
+	// +optional
+	ExcludedFileNames []string `json:"excludedFileNames,omitempty"`
+
+	// dlLimit is the global download speed limit in KiB/s. 0 means unlimited.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	DlLimit *int `json:"dlLimit,omitempty"`
+
+	// upLimit is the global upload speed limit in KiB/s. 0 means unlimited.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	UpLimit *int `json:"upLimit,omitempty"`
+
+	// altDlLimit is the download speed limit in KiB/s while the alternative
+	// limits are on. 0 means unlimited.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	AltDlLimit *int `json:"altDlLimit,omitempty"`
+
+	// altUpLimit is the upload speed limit in KiB/s while the alternative limits
+	// are on. 0 means unlimited.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	AltUpLimit *int `json:"altUpLimit,omitempty"`
+
+	// schedulerEnabled turns the alternative limits on and off on a schedule.
+	// +optional
+	SchedulerEnabled *bool `json:"schedulerEnabled,omitempty"`
+
+	// scheduleFromHour is the hour the alternative limits start.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=23
+	ScheduleFromHour *int `json:"scheduleFromHour,omitempty"`
+
+	// scheduleFromMin is the minute the alternative limits start.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=59
+	ScheduleFromMin *int `json:"scheduleFromMin,omitempty"`
+
+	// scheduleToHour is the hour the alternative limits end.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=23
+	ScheduleToHour *int `json:"scheduleToHour,omitempty"`
+
+	// scheduleToMin is the minute the alternative limits end.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=59
+	ScheduleToMin *int `json:"scheduleToMin,omitempty"`
+
+	// schedulerDays is the days the schedule runs.
+	// +optional
+	// +kubebuilder:validation:Enum=everyDay;weekdays;weekends;monday;tuesday;wednesday;thursday;friday;saturday;sunday
+	SchedulerDays string `json:"schedulerDays,omitempty"`
+
+	// limitUtpRate applies the speed limits to µTP connections.
+	// +optional
+	LimitUTPRate *bool `json:"limitUtpRate,omitempty"`
+
+	// limitTcpOverhead counts transport overhead against the speed limits.
+	// +optional
+	LimitTCPOverhead *bool `json:"limitTcpOverhead,omitempty"`
+
+	// limitLanPeers applies the speed limits to peers on the local network.
+	// +optional
+	LimitLANPeers *bool `json:"limitLanPeers,omitempty"`
+
+	// queueingEnabled limits how many torrents are active at once.
+	// +optional
+	QueueingEnabled *bool `json:"queueingEnabled,omitempty"`
+
+	// maxActiveDownloads is how many torrents can download at once. -1 means unlimited.
+	// +optional
+	MaxActiveDownloads *int `json:"maxActiveDownloads,omitempty"`
+
+	// maxActiveUploads is how many torrents can seed at once. -1 means unlimited.
+	// +optional
+	MaxActiveUploads *int `json:"maxActiveUploads,omitempty"`
+
+	// maxActiveTorrents is how many torrents can be active at once. -1 means unlimited.
+	// +optional
+	MaxActiveTorrents *int `json:"maxActiveTorrents,omitempty"`
+
+	// dontCountSlowTorrents leaves slow torrents out of the active limits.
+	// +optional
+	DontCountSlowTorrents *bool `json:"dontCountSlowTorrents,omitempty"`
+
+	// slowTorrentDlRateThreshold is the download speed in KiB/s below which a
+	// torrent counts as slow.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	SlowTorrentDlRateThreshold *int `json:"slowTorrentDlRateThreshold,omitempty"`
+
+	// slowTorrentUlRateThreshold is the upload speed in KiB/s below which a
+	// torrent counts as slow.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	SlowTorrentUlRateThreshold *int `json:"slowTorrentUlRateThreshold,omitempty"`
+
+	// slowTorrentInactiveTimer is how many seconds a torrent stays under the
+	// thresholds before it counts as slow.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	SlowTorrentInactiveTimer *int `json:"slowTorrentInactiveTimer,omitempty"`
+
+	// listenPort is the port for incoming connections.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	ListenPort *int `json:"listenPort,omitempty"`
+
+	// randomPort picks a different listening port on each start.
+	// +optional
+	RandomPort *bool `json:"randomPort,omitempty"`
+
+	// upnp forwards the listening port on the router with UPnP or NAT-PMP.
+	// +optional
+	UPnP *bool `json:"upnp,omitempty"`
+
+	// networkInterface binds connections to one network interface, such as a
+	// VPN's tun0. Empty means any interface.
+	// +optional
+	NetworkInterface *string `json:"networkInterface,omitempty"`
+
+	// networkInterfaceAddress binds connections to one address of
+	// networkInterface. Empty means all of them.
+	// +optional
+	NetworkInterfaceAddress *string `json:"networkInterfaceAddress,omitempty"`
+
+	// anonymousMode hides the client's identity from peers and trackers.
+	// +optional
+	AnonymousMode *bool `json:"anonymousMode,omitempty"`
+
+	// maxInactiveSeedingTimeEnabled enables the global limit on seeding time
+	// without uploads.
+	// +optional
+	MaxInactiveSeedingTimeEnabled *bool `json:"maxInactiveSeedingTimeEnabled,omitempty"`
+
+	// maxInactiveSeedingTime is the global inactive seeding time limit in minutes.
+	// +optional
+	MaxInactiveSeedingTime *int `json:"maxInactiveSeedingTime,omitempty"`
 }
 
 // QBittorrentCategory defines a download category with its save path.

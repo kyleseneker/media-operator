@@ -24,6 +24,15 @@ spec:
     maxUploadsPerTorrent: -1
     locale: en
     webUiPort: 8080
+    autoTmmEnabled: true
+    torrentContentLayout: Original
+    excludedFileNamesEnabled: true
+    excludedFileNames:
+      - "*.lnk"
+      - "*.exe"
+    queueingEnabled: false
+    upnp: false
+    networkInterface: tun0
   categories:
     - name: tv
       savePath: /data/torrents/tv

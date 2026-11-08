@@ -90,6 +90,9 @@ func TestQBPreferencePayloadCoversEverySpecField(t *testing.T) {
 			p.MaxRatioAction = new("stop")
 			p.MaxRatioEnabled = new(true)
 			p.MaxSeedingTimeEnabled = new(true)
+			p.MaxInactiveSeedingTimeEnabled = new(true)
+			p.SchedulerDays = "weekends"
+			p.ExcludedFileNames = []string{"*.lnk"}
 		})
 }
 
@@ -98,6 +101,31 @@ func TestQBPreferencePayloadRejectsBadValues(t *testing.T) {
 	assert.Error(t, err, "expected error for unparseable maxRatio")
 	_, err = qbPreferencePayload(&downloadsv1alpha1.QBittorrentPreferences{MaxRatioAction: new("nope")})
 	assert.Error(t, err, "expected error for unknown maxRatioAction")
+	_, err = qbPreferencePayload(&downloadsv1alpha1.QBittorrentPreferences{SchedulerDays: "someday"})
+	assert.Error(t, err, "expected error for unknown schedulerDays")
+}
+
+func TestQBPreferencePayloadConvertsWhatQBittorrentStoresDifferently(t *testing.T) {
+	got, err := qbPreferencePayload(&downloadsv1alpha1.QBittorrentPreferences{
+		TempPath:                      "/downloads/incomplete/",
+		DlLimit:                       new(10240),
+		AltUpLimit:                    new(0),
+		SchedulerDays:                 "monday",
+		ExcludedFileNames:             []string{"*.lnk", "*.exe"},
+		NetworkInterface:              new(""),
+		MaxInactiveSeedingTimeEnabled: new(false),
+		MaxInactiveSeedingTime:        new(30),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{
+		"temp_path":                         "/downloads/incomplete",
+		"dl_limit":                          10485760,
+		"alt_up_limit":                      0,
+		"scheduler_days":                    3,
+		"excluded_file_names":               "*.lnk\n*.exe",
+		"current_network_interface":         "",
+		"max_inactive_seeding_time_enabled": false,
+	}, got)
 }
 
 func TestQBPreferencePayloadOmitsUnsetFields(t *testing.T) {

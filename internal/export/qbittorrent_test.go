@@ -25,7 +25,9 @@ func TestQBittorrentExportsPreferencesCategoriesAndLogin(t *testing.T) {
 			_, _ = w.Write([]byte("Ok."))
 		case "/api/v2/app/preferences":
 			_, _ = w.Write([]byte(`{"save_path":"/downloads/","dht":false,"max_connec":400,"max_ratio":2.5,` +
-				`"max_ratio_act":3,"web_ui_port":8080,"bypass_auth_subnet_whitelist":"","not_in_the_crd":1}`))
+				`"max_ratio_act":3,"web_ui_port":8080,"bypass_auth_subnet_whitelist":"","not_in_the_crd":1,` +
+				`"temp_path":"/downloads/incomplete","dl_limit":10240,"up_limit":1000,"scheduler_days":2,` +
+				`"excluded_file_names":"*.lnk\n*.exe","current_network_interface":"","auto_tmm_enabled":true}`))
 		case "/api/v2/torrents/categories":
 			_, _ = w.Write([]byte(`{"tv":{"name":"tv","savePath":"/downloads/tv"},"movies":{"name":"movies","savePath":""}}`))
 		default:
@@ -45,6 +47,15 @@ func TestQBittorrentExportsPreferencesCategoriesAndLogin(t *testing.T) {
 	assert.Equal(t, "2.5", *prefs.MaxRatio)
 	assert.Equal(t, "removeWithContent", *prefs.MaxRatioAction)
 	assert.Equal(t, []downloadsv1alpha1.QBittorrentCategory{{Name: "movies"}, {Name: "tv", SavePath: "/downloads/tv"}}, cfg.Spec.Categories)
+	assert.Equal(t, "/downloads/incomplete", prefs.TempPath)
+	assert.Equal(t, 10, *prefs.DlLimit, "qBittorrent stores bytes per second, the config takes KiB/s")
+	assert.Equal(t, 0, *prefs.UpLimit)
+	assert.Contains(t, res.Warnings,
+		"qBittorrent's upLimit is 1000 bytes per second, which isn't a whole number of KiB/s; exported rounded down")
+	assert.Equal(t, "weekends", prefs.SchedulerDays)
+	assert.Equal(t, []string{"*.lnk", "*.exe"}, prefs.ExcludedFileNames)
+	assert.Equal(t, "", *prefs.NetworkInterface, "an empty interface means any and must survive the export")
+	assert.True(t, *prefs.AutoTMMEnabled)
 
 	assert.Equal(t, "username", cfg.Spec.Connection.UsernameSecretRef.Key)
 	assert.Equal(t, "password", cfg.Spec.Connection.PasswordSecretRef.Key)

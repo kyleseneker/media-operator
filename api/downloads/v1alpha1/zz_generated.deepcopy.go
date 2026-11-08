@@ -283,6 +283,186 @@ func (in *QBittorrentPreferences) DeepCopyInto(out *QBittorrentPreferences) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.IncompleteFilesExt != nil {
+		in, out := &in.IncompleteFilesExt, &out.IncompleteFilesExt
+		*out = new(bool)
+		**out = **in
+	}
+	if in.AutoTMMEnabled != nil {
+		in, out := &in.AutoTMMEnabled, &out.AutoTMMEnabled
+		*out = new(bool)
+		**out = **in
+	}
+	if in.TorrentChangedTMMEnabled != nil {
+		in, out := &in.TorrentChangedTMMEnabled, &out.TorrentChangedTMMEnabled
+		*out = new(bool)
+		**out = **in
+	}
+	if in.SavePathChangedTMMEnabled != nil {
+		in, out := &in.SavePathChangedTMMEnabled, &out.SavePathChangedTMMEnabled
+		*out = new(bool)
+		**out = **in
+	}
+	if in.CategoryChangedTMMEnabled != nil {
+		in, out := &in.CategoryChangedTMMEnabled, &out.CategoryChangedTMMEnabled
+		*out = new(bool)
+		**out = **in
+	}
+	if in.AddStoppedEnabled != nil {
+		in, out := &in.AddStoppedEnabled, &out.AddStoppedEnabled
+		*out = new(bool)
+		**out = **in
+	}
+	if in.ExcludedFileNamesEnabled != nil {
+		in, out := &in.ExcludedFileNamesEnabled, &out.ExcludedFileNamesEnabled
+		*out = new(bool)
+		**out = **in
+	}
+	if in.ExcludedFileNames != nil {
+		in, out := &in.ExcludedFileNames, &out.ExcludedFileNames
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.DlLimit != nil {
+		in, out := &in.DlLimit, &out.DlLimit
+		*out = new(int)
+		**out = **in
+	}
+	if in.UpLimit != nil {
+		in, out := &in.UpLimit, &out.UpLimit
+		*out = new(int)
+		**out = **in
+	}
+	if in.AltDlLimit != nil {
+		in, out := &in.AltDlLimit, &out.AltDlLimit
+		*out = new(int)
+		**out = **in
+	}
+	if in.AltUpLimit != nil {
+		in, out := &in.AltUpLimit, &out.AltUpLimit
+		*out = new(int)
+		**out = **in
+	}
+	if in.SchedulerEnabled != nil {
+		in, out := &in.SchedulerEnabled, &out.SchedulerEnabled
+		*out = new(bool)
+		**out = **in
+	}
+	if in.ScheduleFromHour != nil {
+		in, out := &in.ScheduleFromHour, &out.ScheduleFromHour
+		*out = new(int)
+		**out = **in
+	}
+	if in.ScheduleFromMin != nil {
+		in, out := &in.ScheduleFromMin, &out.ScheduleFromMin
+		*out = new(int)
+		**out = **in
+	}
+	if in.ScheduleToHour != nil {
+		in, out := &in.ScheduleToHour, &out.ScheduleToHour
+		*out = new(int)
+		**out = **in
+	}
+	if in.ScheduleToMin != nil {
+		in, out := &in.ScheduleToMin, &out.ScheduleToMin
+		*out = new(int)
+		**out = **in
+	}
+	if in.LimitUTPRate != nil {
+		in, out := &in.LimitUTPRate, &out.LimitUTPRate
+		*out = new(bool)
+		**out = **in
+	}
+	if in.LimitTCPOverhead != nil {
+		in, out := &in.LimitTCPOverhead, &out.LimitTCPOverhead
+		*out = new(bool)
+		**out = **in
+	}
+	if in.LimitLANPeers != nil {
+		in, out := &in.LimitLANPeers, &out.LimitLANPeers
+		*out = new(bool)
+		**out = **in
+	}
+	if in.QueueingEnabled != nil {
+		in, out := &in.QueueingEnabled, &out.QueueingEnabled
+		*out = new(bool)
+		**out = **in
+	}
+	if in.MaxActiveDownloads != nil {
+		in, out := &in.MaxActiveDownloads, &out.MaxActiveDownloads
+		*out = new(int)
+		**out = **in
+	}
+	if in.MaxActiveUploads != nil {
+		in, out := &in.MaxActiveUploads, &out.MaxActiveUploads
+		*out = new(int)
+		**out = **in
+	}
+	if in.MaxActiveTorrents != nil {
+		in, out := &in.MaxActiveTorrents, &out.MaxActiveTorrents
+		*out = new(int)
+		**out = **in
+	}
+	if in.DontCountSlowTorrents != nil {
+		in, out := &in.DontCountSlowTorrents, &out.DontCountSlowTorrents
+		*out = new(bool)
+		**out = **in
+	}
+	if in.SlowTorrentDlRateThreshold != nil {
+		in, out := &in.SlowTorrentDlRateThreshold, &out.SlowTorrentDlRateThreshold
+		*out = new(int)
+		**out = **in
+	}
+	if in.SlowTorrentUlRateThreshold != nil {
+		in, out := &in.SlowTorrentUlRateThreshold, &out.SlowTorrentUlRateThreshold
+		*out = new(int)
+		**out = **in
+	}
+	if in.SlowTorrentInactiveTimer != nil {
+		in, out := &in.SlowTorrentInactiveTimer, &out.SlowTorrentInactiveTimer
+		*out = new(int)
+		**out = **in
+	}
+	if in.ListenPort != nil {
+		in, out := &in.ListenPort, &out.ListenPort
+		*out = new(int)
+		**out = **in
+	}
+	if in.RandomPort != nil {
+		in, out := &in.RandomPort, &out.RandomPort
+		*out = new(bool)
+		**out = **in
+	}
+	if in.UPnP != nil {
+		in, out := &in.UPnP, &out.UPnP
+		*out = new(bool)
+		**out = **in
+	}
+	if in.NetworkInterface != nil {
+		in, out := &in.NetworkInterface, &out.NetworkInterface
+		*out = new(string)
+		**out = **in
+	}
+	if in.NetworkInterfaceAddress != nil {
+		in, out := &in.NetworkInterfaceAddress, &out.NetworkInterfaceAddress
+		*out = new(string)
+		**out = **in
+	}
+	if in.AnonymousMode != nil {
+		in, out := &in.AnonymousMode, &out.AnonymousMode
+		*out = new(bool)
+		**out = **in
+	}
+	if in.MaxInactiveSeedingTimeEnabled != nil {
+		in, out := &in.MaxInactiveSeedingTimeEnabled, &out.MaxInactiveSeedingTimeEnabled
+		*out = new(bool)
+		**out = **in
+	}
+	if in.MaxInactiveSeedingTime != nil {
+		in, out := &in.MaxInactiveSeedingTime, &out.MaxInactiveSeedingTime
+		*out = new(int)
+		**out = **in
+	}
 }
 
 // DeepCopy is an autogenerated deepcopy function, copying the receiver, creating a new QBittorrentPreferences.

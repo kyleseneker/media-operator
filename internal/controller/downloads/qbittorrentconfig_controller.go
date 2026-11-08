@@ -107,37 +107,37 @@ func (r *QBittorrentConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 // qbPreferencePayload maps spec fields to the keys qBittorrent's API expects.
 func qbPreferencePayload(prefs *downloadsv1alpha1.QBittorrentPreferences) (map[string]any, error) {
 	out := map[string]any{}
-	set := func(key string, v any) {
-		if !reflect.ValueOf(v).IsNil() {
-			out[key] = reflect.ValueOf(v).Elem().Interface()
+	v := reflect.ValueOf(prefs).Elem()
+	for i := range v.NumField() {
+		name, _, _ := strings.Cut(v.Type().Field(i).Tag.Get("json"), ",")
+		field := v.Field(i)
+		key, plain := qbclient.Preferences[name]
+		bytes, speed := qbclient.SpeedLimits[name]
+		switch {
+		case field.Kind() == reflect.Pointer && field.IsNil(), field.Kind() == reflect.String && field.String() == "":
+		case plain:
+			out[key] = reflect.Indirect(field).Interface()
+		case speed:
+			out[bytes] = field.Elem().Interface().(int) * 1024
 		}
 	}
 
 	if prefs.SavePath != "" {
 		out["save_path"] = qbPath(prefs.SavePath)
 	}
-	if prefs.Locale != "" {
-		out["locale"] = prefs.Locale
+	if prefs.TempPath != "" {
+		out["temp_path"] = qbPath(prefs.TempPath)
 	}
-	set("temp_path_enabled", prefs.TempPathEnabled)
-	set("dht", prefs.DHT)
-	set("pex", prefs.PEX)
-	set("lsd", prefs.LSD)
-	set("encryption", prefs.Encryption)
-	set("max_connec", prefs.MaxConnec)
-	set("max_connec_per_torrent", prefs.MaxConnecPerTorrent)
-	set("max_uploads", prefs.MaxUploads)
-	set("max_uploads_per_torrent", prefs.MaxUploadsPerTorrent)
-	set("max_ratio_enabled", prefs.MaxRatioEnabled)
-	set("max_seeding_time_enabled", prefs.MaxSeedingTimeEnabled)
-	set("max_seeding_time", prefs.MaxSeedingTime)
-	set("preallocate_all", prefs.PreallocateAll)
-	set("web_ui_port", prefs.WebUIPort)
-	set("bypass_auth_subnet_whitelist_enabled", prefs.BypassAuthSubnetWhitelistEnabled)
-	if prefs.BypassAuthSubnetWhitelist != "" {
-		out["bypass_auth_subnet_whitelist"] = prefs.BypassAuthSubnetWhitelist
+	if len(prefs.ExcludedFileNames) > 0 {
+		out["excluded_file_names"] = strings.Join(prefs.ExcludedFileNames, "\n")
 	}
-
+	if prefs.SchedulerDays != "" {
+		days, ok := qbclient.SchedulerDays[prefs.SchedulerDays]
+		if !ok {
+			return nil, fmt.Errorf("unknown schedulerDays %q", prefs.SchedulerDays)
+		}
+		out["scheduler_days"] = days
+	}
 	if prefs.MaxRatio != nil {
 		ratio, err := strconv.ParseFloat(*prefs.MaxRatio, 64)
 		if err != nil {
@@ -154,7 +154,11 @@ func qbPreferencePayload(prefs *downloadsv1alpha1.QBittorrentPreferences) (map[s
 	}
 	// A disabled limit is stored as -1, and qBittorrent ignores a limit sent with
 	// it, so comparing the declared limit would differ on every pass.
-	for enabled, limit := range map[string]string{"max_ratio_enabled": "max_ratio", "max_seeding_time_enabled": "max_seeding_time"} {
+	for enabled, limit := range map[string]string{
+		"max_ratio_enabled":                 "max_ratio",
+		"max_seeding_time_enabled":          "max_seeding_time",
+		"max_inactive_seeding_time_enabled": "max_inactive_seeding_time",
+	} {
 		if out[enabled] == false {
 			delete(out, limit)
 		}

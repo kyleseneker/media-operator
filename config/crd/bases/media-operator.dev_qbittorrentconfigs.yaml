@@ -142,6 +142,30 @@ spec:
               preferences:
                 description: preferences configures qBittorrent application preferences.
                 properties:
+                  addStoppedEnabled:
+                    description: addStoppedEnabled adds new torrents stopped.
+                    type: boolean
+                  altDlLimit:
+                    description: |-
+                      altDlLimit is the download speed limit in KiB/s while the alternative
+                      limits are on. 0 means unlimited.
+                    minimum: 0
+                    type: integer
+                  altUpLimit:
+                    description: |-
+                      altUpLimit is the upload speed limit in KiB/s while the alternative limits
+                      are on. 0 means unlimited.
+                    minimum: 0
+                    type: integer
+                  anonymousMode:
+                    description: anonymousMode hides the client's identity from peers
+                      and trackers.
+                    type: boolean
+                  autoTmmEnabled:
+                    description: |-
+                      autoTmmEnabled puts new torrents in automatic management, which saves
+                      them under their category's path.
+                    type: boolean
                   bypassAuthSubnetWhitelist:
                     description: |-
                       bypassAuthSubnetWhitelist is the comma-separated list of subnets allowed to
@@ -152,8 +176,23 @@ spec:
                       bypassAuthSubnetWhitelistEnabled lets clients in the whitelisted subnets skip
                       the WebUI login, so an authenticating proxy does not produce a second prompt.
                     type: boolean
+                  categoryChangedTmmEnabled:
+                    description: |-
+                      categoryChangedTmmEnabled moves a category's torrents in automatic
+                      management when its save path changes. When off, they switch to manual
+                      management.
+                    type: boolean
                   dht:
                     description: dht enables the DHT (Distributed Hash Table) network.
+                    type: boolean
+                  dlLimit:
+                    description: dlLimit is the global download speed limit in KiB/s.
+                      0 means unlimited.
+                    minimum: 0
+                    type: integer
+                  dontCountSlowTorrents:
+                    description: dontCountSlowTorrents leaves slow torrents out of
+                      the active limits.
                     type: boolean
                   encryption:
                     description: encryption controls the encryption mode. 0=prefer,
@@ -161,12 +200,54 @@ spec:
                     maximum: 2
                     minimum: 0
                     type: integer
+                  excludedFileNames:
+                    description: excludedFileNames are file name patterns to skip,
+                      such as *.lnk.
+                    items:
+                      type: string
+                    type: array
+                  excludedFileNamesEnabled:
+                    description: excludedFileNamesEnabled skips files whose names
+                      match excludedFileNames.
+                    type: boolean
+                  incompleteFilesExt:
+                    description: incompleteFilesExt adds .!qB to the names of files
+                      still downloading.
+                    type: boolean
+                  limitLanPeers:
+                    description: limitLanPeers applies the speed limits to peers on
+                      the local network.
+                    type: boolean
+                  limitTcpOverhead:
+                    description: limitTcpOverhead counts transport overhead against
+                      the speed limits.
+                    type: boolean
+                  limitUtpRate:
+                    description: limitUtpRate applies the speed limits to µTP connections.
+                    type: boolean
+                  listenPort:
+                    description: listenPort is the port for incoming connections.
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
                   locale:
                     description: locale is the UI locale (e.g., "en").
                     type: string
                   lsd:
                     description: lsd enables Local Service Discovery.
                     type: boolean
+                  maxActiveDownloads:
+                    description: maxActiveDownloads is how many torrents can download
+                      at once. -1 means unlimited.
+                    type: integer
+                  maxActiveTorrents:
+                    description: maxActiveTorrents is how many torrents can be active
+                      at once. -1 means unlimited.
+                    type: integer
+                  maxActiveUploads:
+                    description: maxActiveUploads is how many torrents can seed at
+                      once. -1 means unlimited.
+                    type: integer
                   maxConnec:
                     description: maxConnec is the global maximum number of connections.
                       -1 means unlimited.
@@ -175,6 +256,15 @@ spec:
                     description: maxConnecPerTorrent is the maximum connections per
                       torrent. -1 means unlimited.
                     type: integer
+                  maxInactiveSeedingTime:
+                    description: maxInactiveSeedingTime is the global inactive seeding
+                      time limit in minutes.
+                    type: integer
+                  maxInactiveSeedingTimeEnabled:
+                    description: |-
+                      maxInactiveSeedingTimeEnabled enables the global limit on seeding time
+                      without uploads.
+                    type: boolean
                   maxRatio:
                     description: |-
                       maxRatio is the global share ratio limit (e.g., "2.0").
@@ -208,6 +298,16 @@ spec:
                     description: maxUploadsPerTorrent is the maximum upload slots
                       per torrent. -1 means unlimited.
                     type: integer
+                  networkInterface:
+                    description: |-
+                      networkInterface binds connections to one network interface, such as a
+                      VPN's tun0. Empty means any interface.
+                    type: string
+                  networkInterfaceAddress:
+                    description: |-
+                      networkInterfaceAddress binds connections to one address of
+                      networkInterface. Empty means all of them.
+                    type: string
                   pex:
                     description: pex enables Peer Exchange.
                     type: boolean
@@ -215,12 +315,120 @@ spec:
                     description: preallocateAll enables disk space pre-allocation
                       for all files.
                     type: boolean
+                  queueingEnabled:
+                    description: queueingEnabled limits how many torrents are active
+                      at once.
+                    type: boolean
+                  randomPort:
+                    description: randomPort picks a different listening port on each
+                      start.
+                    type: boolean
                   savePath:
                     description: savePath is the default save path for downloads.
+                    type: string
+                  savePathChangedTmmEnabled:
+                    description: |-
+                      savePathChangedTmmEnabled moves torrents in automatic management when
+                      savePath changes. When off, they switch to manual management.
+                    type: boolean
+                  scheduleFromHour:
+                    description: scheduleFromHour is the hour the alternative limits
+                      start.
+                    maximum: 23
+                    minimum: 0
+                    type: integer
+                  scheduleFromMin:
+                    description: scheduleFromMin is the minute the alternative limits
+                      start.
+                    maximum: 59
+                    minimum: 0
+                    type: integer
+                  scheduleToHour:
+                    description: scheduleToHour is the hour the alternative limits
+                      end.
+                    maximum: 23
+                    minimum: 0
+                    type: integer
+                  scheduleToMin:
+                    description: scheduleToMin is the minute the alternative limits
+                      end.
+                    maximum: 59
+                    minimum: 0
+                    type: integer
+                  schedulerDays:
+                    description: schedulerDays is the days the schedule runs.
+                    enum:
+                    - everyDay
+                    - weekdays
+                    - weekends
+                    - monday
+                    - tuesday
+                    - wednesday
+                    - thursday
+                    - friday
+                    - saturday
+                    - sunday
+                    type: string
+                  schedulerEnabled:
+                    description: schedulerEnabled turns the alternative limits on
+                      and off on a schedule.
+                    type: boolean
+                  slowTorrentDlRateThreshold:
+                    description: |-
+                      slowTorrentDlRateThreshold is the download speed in KiB/s below which a
+                      torrent counts as slow.
+                    minimum: 0
+                    type: integer
+                  slowTorrentInactiveTimer:
+                    description: |-
+                      slowTorrentInactiveTimer is how many seconds a torrent stays under the
+                      thresholds before it counts as slow.
+                    minimum: 0
+                    type: integer
+                  slowTorrentUlRateThreshold:
+                    description: |-
+                      slowTorrentUlRateThreshold is the upload speed in KiB/s below which a
+                      torrent counts as slow.
+                    minimum: 0
+                    type: integer
+                  tempPath:
+                    description: tempPath is where incomplete downloads go while tempPathEnabled
+                      is on.
                     type: string
                   tempPathEnabled:
                     description: tempPathEnabled enables using a temporary path for
                       incomplete downloads.
+                    type: boolean
+                  torrentChangedTmmEnabled:
+                    description: |-
+                      torrentChangedTmmEnabled moves a torrent in automatic management when its
+                      category changes. When off, the torrent switches to manual management.
+                    type: boolean
+                  torrentContentLayout:
+                    description: |-
+                      torrentContentLayout decides whether a torrent's files go in a folder of
+                      their own.
+                    enum:
+                    - Original
+                    - Subfolder
+                    - NoSubfolder
+                    type: string
+                  torrentStopCondition:
+                    description: torrentStopCondition stops a new torrent once it
+                      gets this far.
+                    enum:
+                    - None
+                    - MetadataReceived
+                    - FilesChecked
+                    type: string
+                  upLimit:
+                    description: upLimit is the global upload speed limit in KiB/s.
+                      0 means unlimited.
+                    minimum: 0
+                    type: integer
+                  upnp:
+                    description: upnp forwards the listening port on the router with
+                      UPnP or NAT-PMP.
                     type: boolean
                   webUiPort:
                     description: webUiPort is the Web UI listening port.

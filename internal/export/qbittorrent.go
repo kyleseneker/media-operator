@@ -2,22 +2,13 @@ package export
 
 import (
 	"maps"
+	"math"
 	"slices"
 	"strconv"
+	"strings"
 
 	qbclient "github.com/kyleseneker/media-operator/internal/client/qbittorrent"
 )
-
-var qbPreferences = map[string]string{
-	"savePath": "save_path", "locale": "locale", "tempPathEnabled": "temp_path_enabled",
-	"dht": "dht", "pex": "pex", "lsd": "lsd", "encryption": "encryption",
-	"maxConnec": "max_connec", "maxConnecPerTorrent": "max_connec_per_torrent",
-	"maxUploads": "max_uploads", "maxUploadsPerTorrent": "max_uploads_per_torrent",
-	"maxRatioEnabled": "max_ratio_enabled", "maxSeedingTimeEnabled": "max_seeding_time_enabled",
-	"maxSeedingTime": "max_seeding_time", "preallocateAll": "preallocate_all", "webUiPort": "web_ui_port",
-	"bypassAuthSubnetWhitelistEnabled": "bypass_auth_subnet_whitelist_enabled",
-	"bypassAuthSubnetWhitelist":        "bypass_auth_subnet_whitelist",
-}
 
 func exportQBittorrent(r *reader) (map[string]any, error) {
 	qb := qbclient.NewClient(r.hc, r.username, r.password)
@@ -29,10 +20,33 @@ func exportQBittorrent(r *reader) (map[string]any, error) {
 		return nil, err
 	}
 	preferences := map[string]any{}
-	for field, key := range qbPreferences {
+	for field, key := range qbclient.Preferences {
 		if v, ok := prefs[key]; ok && v != nil {
 			preferences[field] = v
 		}
+	}
+	for field, key := range map[string]string{"savePath": "save_path", "tempPath": "temp_path"} {
+		if v, _ := prefs[key].(string); v != "" {
+			preferences[field] = v
+		}
+	}
+	for field, key := range qbclient.SpeedLimits {
+		if limit, ok := prefs[key].(float64); ok {
+			if math.Mod(limit, 1024) != 0 {
+				r.warn("qBittorrent's %s is %v bytes per second, which isn't a whole number of KiB/s; exported rounded down", field, limit)
+			}
+			preferences[field] = int(limit) / 1024
+		}
+	}
+	if days, ok := prefs["scheduler_days"].(float64); ok {
+		for name, value := range qbclient.SchedulerDays {
+			if float64(value) == days {
+				preferences["schedulerDays"] = name
+			}
+		}
+	}
+	if names, _ := prefs["excluded_file_names"].(string); names != "" {
+		preferences["excludedFileNames"] = strings.Split(names, "\n")
 	}
 	if ratio, ok := prefs["max_ratio"].(float64); ok {
 		preferences["maxRatio"] = strconv.FormatFloat(ratio, 'f', -1, 64)

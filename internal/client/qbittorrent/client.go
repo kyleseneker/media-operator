@@ -26,6 +26,74 @@ var MaxRatioActions = map[string]int{
 	"removeWithContent":  3,
 }
 
+// SchedulerDays maps the spec's schedulerDays names to qBittorrent's scheduler_days values.
+var SchedulerDays = map[string]int{
+	"everyDay": 0, "weekdays": 1, "weekends": 2, "monday": 3, "tuesday": 4,
+	"wednesday": 5, "thursday": 6, "friday": 7, "saturday": 8, "sunday": 9,
+}
+
+// Preferences maps the preferences qBittorrent stores as written to their keys.
+// Paths, the share ratio and its action, speed limits, schedule days and
+// excluded file names need converting.
+var Preferences = map[string]string{
+	"locale":                           "locale",
+	"tempPathEnabled":                  "temp_path_enabled",
+	"dht":                              "dht",
+	"pex":                              "pex",
+	"lsd":                              "lsd",
+	"encryption":                       "encryption",
+	"maxConnec":                        "max_connec",
+	"maxConnecPerTorrent":              "max_connec_per_torrent",
+	"maxUploads":                       "max_uploads",
+	"maxUploadsPerTorrent":             "max_uploads_per_torrent",
+	"maxRatioEnabled":                  "max_ratio_enabled",
+	"maxSeedingTimeEnabled":            "max_seeding_time_enabled",
+	"maxSeedingTime":                   "max_seeding_time",
+	"preallocateAll":                   "preallocate_all",
+	"webUiPort":                        "web_ui_port",
+	"bypassAuthSubnetWhitelistEnabled": "bypass_auth_subnet_whitelist_enabled",
+	"bypassAuthSubnetWhitelist":        "bypass_auth_subnet_whitelist",
+	"incompleteFilesExt":               "incomplete_files_ext",
+	"autoTmmEnabled":                   "auto_tmm_enabled",
+	"torrentChangedTmmEnabled":         "torrent_changed_tmm_enabled",
+	"savePathChangedTmmEnabled":        "save_path_changed_tmm_enabled",
+	"categoryChangedTmmEnabled":        "category_changed_tmm_enabled",
+	"torrentContentLayout":             "torrent_content_layout",
+	"addStoppedEnabled":                "add_stopped_enabled",
+	"torrentStopCondition":             "torrent_stop_condition",
+	"excludedFileNamesEnabled":         "excluded_file_names_enabled",
+	"schedulerEnabled":                 "scheduler_enabled",
+	"scheduleFromHour":                 "schedule_from_hour",
+	"scheduleFromMin":                  "schedule_from_min",
+	"scheduleToHour":                   "schedule_to_hour",
+	"scheduleToMin":                    "schedule_to_min",
+	"limitUtpRate":                     "limit_utp_rate",
+	"limitTcpOverhead":                 "limit_tcp_overhead",
+	"limitLanPeers":                    "limit_lan_peers",
+	"queueingEnabled":                  "queueing_enabled",
+	"maxActiveDownloads":               "max_active_downloads",
+	"maxActiveUploads":                 "max_active_uploads",
+	"maxActiveTorrents":                "max_active_torrents",
+	"dontCountSlowTorrents":            "dont_count_slow_torrents",
+	"slowTorrentDlRateThreshold":       "slow_torrent_dl_rate_threshold",
+	"slowTorrentUlRateThreshold":       "slow_torrent_ul_rate_threshold",
+	"slowTorrentInactiveTimer":         "slow_torrent_inactive_timer",
+	"listenPort":                       "listen_port",
+	"randomPort":                       "random_port",
+	"upnp":                             "upnp",
+	"networkInterface":                 "current_network_interface",
+	"networkInterfaceAddress":          "current_interface_address",
+	"anonymousMode":                    "anonymous_mode",
+	"maxInactiveSeedingTimeEnabled":    "max_inactive_seeding_time_enabled",
+	"maxInactiveSeedingTime":           "max_inactive_seeding_time",
+}
+
+// SpeedLimits are the preferences the spec takes in KiB/s and qBittorrent
+// stores in bytes per second.
+var SpeedLimits = map[string]string{
+	"dlLimit": "dl_limit", "upLimit": "up_limit", "altDlLimit": "alt_dl_limit", "altUpLimit": "alt_up_limit",
+}
+
 // NewClient creates a new qBittorrent API client backed by the given engine.HTTPClient.
 func NewClient(hc *engine.HTTPClient, username, password string) *Client {
 	return &Client{
