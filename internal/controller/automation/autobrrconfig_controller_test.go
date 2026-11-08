@@ -358,3 +358,45 @@ func isID(segment string) bool {
 	_, err := strconv.Atoi(segment)
 	return err == nil
 }
+
+func TestAutobrrFilterAndActionSendTheirCriteriaUnderAutobrrKeys(t *testing.T) {
+	app := &fakeAutobrr{}
+	cfg := autobrrConfig(app.serve(t))
+	ratio := commonv1alpha1.Decimal("1.5")
+	cfg.Spec.Filters = []automationv1alpha1.AutobrrFilter{{
+		Name: "UHD", MatchHdr: []string{"DV", "HDR10+"}, ExceptReleaseGroups: "BAD", MaxDownloads: new(5),
+		MaxDownloadsUnit: "DAY", Freeleech: new(true), ExceptTags: []string{"cam", "ts"}, TagsMatchLogic: "ALL",
+		Actions: []automationv1alpha1.AutobrrFilterAction{{
+			Name: "Hook", Type: "Webhook", WebhookURL: "http://hook", WebhookMethod: "POST",
+			WebhookHeaders: []string{"X-Token=abc"}, LimitRatio: &ratio, ContentLayout: "SUBFOLDER_CREATE",
+		}},
+	}}
+
+	runAutobrr(t, cfg, true)
+
+	filter := app.posted("/api/filters")
+	require.NotNil(t, filter, "the filter was never created")
+	for key, want := range map[string]any{
+		"match_hdr": []any{"DV", "HDR10+"}, "except_release_groups": "BAD", "max_downloads": float64(5),
+		"max_downloads_unit": "DAY", "freeleech": true, "except_tags": "cam,ts", "tags_match_logic": "ALL",
+	} {
+		assert.Equal(t, want, filter[key], key)
+	}
+	action := app.posted("/api/actions")
+	require.NotNil(t, action, "the action was never created")
+	for key, want := range map[string]any{
+		"webhook_host": "http://hook", "webhook_method": "POST", "webhook_headers": []any{"X-Token=abc"},
+		"limit_ratio": 1.5, "content_layout": "SUBFOLDER_CREATE",
+	} {
+		assert.Equal(t, want, action[key], key)
+	}
+}
+
+// Autobrr leaves false, 0 and empty values out of what it returns, so a
+// declared zero value must not read back as a difference.
+func TestAutobrrCoversAZeroValueAutobrrLeftOut(t *testing.T) {
+	current := map[string]any{"name": "Send", "category": "tv"}
+	assert.True(t, autobrrCovers(current, map[string]any{"name": "Send", "category": "tv", "paused": false, "limit_seed_time": float64(0)}))
+	assert.False(t, autobrrCovers(current, map[string]any{"paused": true}))
+	assert.False(t, autobrrCovers(map[string]any{"paused": true}, map[string]any{"paused": false}), "a stored true still differs")
+}

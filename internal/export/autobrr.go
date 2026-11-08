@@ -122,24 +122,13 @@ func exportAutobrr(r *reader) (map[string]any, error) {
 }
 
 func (r *reader) autobrrFilter(f map[string]any, actions []map[string]any, clientNames map[float64]any) map[string]any {
-	filter := pick(f, "name", "priority", "delay")
+	filter := pick(f, "name")
 	filter["enable"] = f["enabled"]
-	if v, ok := f["use_regex"]; ok {
-		filter["useRegex"] = v
-	}
-	for field, key := range map[string]string{
-		"matchReleases": "match_releases", "exceptReleases": "except_releases", "matchCategories": "match_categories",
-		"minSize": "min_size", "maxSize": "max_size",
-	} {
-		setText(filter, field, f[key])
-	}
-	for _, field := range []string{"resolutions", "sources", "codecs"} {
-		if values, ok := f[field].([]any); ok && len(values) > 0 {
-			filter[field] = texts(values)
+	autobrrSetFields(filter, f, autobrrclient.FilterFields)
+	for field, key := range map[string]string{"tags": "tags", "exceptTags": "except_tags"} {
+		if tags, _ := f[key].(string); tags != "" {
+			filter[field] = strings.Split(tags, ",")
 		}
-	}
-	if tags, _ := f["tags"].(string); tags != "" {
-		filter["tags"] = strings.Split(tags, ",")
 	}
 	var indexers []string
 	for _, i := range list(f["indexers"]) {
@@ -158,18 +147,38 @@ func (r *reader) autobrrFilter(f map[string]any, actions []map[string]any, clien
 		if id := num(a["client_id"]); id != 0 {
 			action["clientRef"] = clientNames[id]
 		}
-		for field, key := range map[string]string{
-			"category": "category", "savePath": "save_path", "webhookURL": "webhook_host",
-			"execCommand": "exec_cmd", "execArgs": "exec_args", "watchFolder": "watch_folder",
-		} {
-			setText(action, field, a[key])
-		}
+		autobrrSetFields(action, a, autobrrclient.ActionFields)
 		as = append(as, action)
 	}
 	if len(as) > 0 {
 		filter["actions"] = as
 	}
 	return filter
+}
+
+// autobrrSetFields exports the values a table names, leaving out Autobrr's
+// empty defaults: an unset criterion is stored as "", false, 0 or [].
+func autobrrSetFields(out, item map[string]any, table map[string]string) {
+	for field, key := range table {
+		switch v := item[key].(type) {
+		case string:
+			if v != "" {
+				out[field] = v
+			}
+		case bool:
+			if v {
+				out[field] = v
+			}
+		case float64:
+			if v != 0 {
+				out[field] = v
+			}
+		case []any:
+			if len(v) > 0 {
+				out[field] = texts(v)
+			}
+		}
+	}
 }
 
 var autobrrFeedTypes = map[string]string{"Torznab": "TORZNAB", "Newznab": "NEWZNAB", "RSS": "RSS"}

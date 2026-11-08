@@ -287,6 +287,18 @@ spec:
                             description: clientRef is the name of the download client
                               to use (must match a downloadClients entry).
                             type: string
+                          contentLayout:
+                            description: contentLayout decides whether the torrent's
+                              files go in a folder of their own.
+                            enum:
+                            - ORIGINAL
+                            - SUBFOLDER_CREATE
+                            - SUBFOLDER_NONE
+                            type: string
+                          downloadPath:
+                            description: downloadPath is where the download client
+                              keeps the torrent while it downloads.
+                            type: string
                           enable:
                             default: true
                             description: enable controls whether this action is active.
@@ -298,12 +310,88 @@ spec:
                             description: execCommand is the command to execute (for
                               Exec action type).
                             type: string
+                          externalDownloadClient:
+                            description: |-
+                              externalDownloadClient is the download client, by name in Sonarr, Radarr, Lidarr or Readarr,
+                              that the app sends the release to.
+                            type: string
+                          firstLastPiecePrio:
+                            description: firstLastPiecePrio downloads the first and
+                              last pieces first.
+                            type: boolean
+                          ignoreRules:
+                            description: ignoreRules sends the release even when the
+                              download client is past its limits.
+                            type: boolean
+                          label:
+                            description: label is the label the download client gives
+                              the torrent.
+                            type: string
+                          limitDownloadSpeed:
+                            description: limitDownloadSpeed caps the torrent's download
+                              speed, in KiB/s.
+                            minimum: 0
+                            type: integer
+                          limitRatio:
+                            description: limitRatio is the share ratio at which the
+                              torrent stops seeding.
+                            minimum: 0
+                            type: number
+                          limitSeedTime:
+                            description: limitSeedTime is how many minutes the torrent
+                              seeds.
+                            minimum: 0
+                            type: integer
+                          limitUploadSpeed:
+                            description: limitUploadSpeed caps the torrent's upload
+                              speed, in KiB/s.
+                            minimum: 0
+                            type: integer
                           name:
                             description: name is the display name of the action.
                             type: string
+                          paused:
+                            description: paused adds the torrent paused.
+                            type: boolean
+                          priority:
+                            description: priority is where the torrent goes in the
+                              download client's queue.
+                            enum:
+                            - MAX
+                            - MIN
+                            - LOW
+                            - NORMAL
+                            - HIGH
+                            type: string
+                          reannounceDelete:
+                            description: reannounceDelete removes the torrent if it
+                              never announces.
+                            type: boolean
+                          reannounceInterval:
+                            description: reannounceInterval is how many seconds to
+                              wait between reannounce attempts.
+                            minimum: 1
+                            type: integer
+                          reannounceMaxAttempts:
+                            description: reannounceMaxAttempts is how many times to
+                              reannounce.
+                            minimum: 1
+                            type: integer
+                          reannounceSkip:
+                            description: reannounceSkip adds the torrent without waiting
+                              for it to announce.
+                            type: boolean
                           savePath:
                             description: savePath overrides the download client's
                               default save path.
+                            type: string
+                          skipHashCheck:
+                            description: skipHashCheck adds the torrent without checking
+                              existing data.
+                            type: boolean
+                          tags:
+                            description: tags is a comma-separated list of tags the
+                              download client gives the torrent.
                             type: string
                           type:
                             description: type is the action type. Deluge means Deluge
@@ -327,6 +415,30 @@ spec:
                             description: watchFolder is the folder path (for WatchFolder
                               action type).
                             type: string
+                          webhookData:
+                            description: webhookData is the body the webhook sends;
+                              Autobrr fills in its macros.
+                            type: string
+                          webhookHeaders:
+                            description: webhookHeaders are headers the webhook sends,
+                              as Name=Value.
+                            items:
+                              type: string
+                            type: array
+                          webhookMethod:
+                            description: webhookMethod is the HTTP method the webhook
+                              uses.
+                            enum:
+                            - GET
+                            - POST
+                            - PUT
+                            - PATCH
+                            - DELETE
+                            type: string
+                          webhookType:
+                            description: webhookType is the content type the webhook
+                              sends, such as JSON.
+                            type: string
                           webhookURL:
                             description: webhookURL is the webhook URL (for Webhook
                               action type).
@@ -336,12 +448,37 @@ spec:
                         - type
                         type: object
                       type: array
+                    albums:
+                      description: albums is a comma-separated list of albums to match.
+                      type: string
+                    announceTypes:
+                      description: announceTypes is a list of announce types to match,
+                        such as NEW or PROMO.
+                      items:
+                        type: string
+                      type: array
+                    artists:
+                      description: artists is a comma-separated list of artists to
+                        match.
+                      type: string
                     codecs:
                       description: codecs is a list of acceptable codecs (e.g., "x264",
                         "x265", "HEVC").
                       items:
                         type: string
                       type: array
+                    containers:
+                      description: containers is a list of acceptable containers,
+                        such as mkv.
+                      items:
+                        type: string
+                      type: array
+                    cue:
+                      description: cue matches only releases with a cue file.
+                      type: boolean
+                    days:
+                      description: days is a comma-separated list of days to match.
+                      type: string
                     delay:
                       description: delay is the delay in seconds before grabbing a
                         matched release.
@@ -350,9 +487,83 @@ spec:
                       default: true
                       description: enable controls whether this filter is active.
                       type: boolean
+                    episodes:
+                      description: episodes is a comma-separated list of episodes
+                        or ranges to match.
+                      type: string
+                    exceptCategories:
+                      description: exceptCategories is a comma-separated list of categories
+                        to skip.
+                      type: string
+                    exceptDescription:
+                      description: exceptDescription is a comma-separated list of
+                        description patterns to skip.
+                      type: string
+                    exceptHdr:
+                      description: exceptHdr is a list of HDR formats to skip.
+                      items:
+                        type: string
+                      type: array
+                    exceptLanguage:
+                      description: exceptLanguage is a list of languages to skip.
+                      items:
+                        type: string
+                      type: array
+                    exceptOrigins:
+                      description: exceptOrigins is a list of origins to skip.
+                      items:
+                        type: string
+                      type: array
+                    exceptOther:
+                      description: exceptOther is a list of other release attributes
+                        to skip.
+                      items:
+                        type: string
+                      type: array
+                    exceptReleaseGroups:
+                      description: exceptReleaseGroups is a comma-separated list of
+                        release groups to skip.
+                      type: string
+                    exceptReleaseTags:
+                      description: exceptReleaseTags is a comma-separated list of
+                        release tags to skip.
+                      type: string
+                    exceptReleaseTypes:
+                      description: exceptReleaseTypes is a comma-separated list of
+                        music release types to skip.
+                      type: string
                     exceptReleases:
                       description: exceptReleases is a comma-separated list of release
                         name patterns to exclude.
+                      type: string
+                    exceptTags:
+                      description: exceptTags is a list of tags to skip.
+                      items:
+                        type: string
+                      type: array
+                    exceptTagsMatchLogic:
+                      description: exceptTagsMatchLogic decides whether any or all
+                        of exceptTags skip a release.
+                      enum:
+                      - ANY
+                      - ALL
+                      type: string
+                    exceptUploaders:
+                      description: exceptUploaders is a comma-separated list of uploaders
+                        to skip.
+                      type: string
+                    formats:
+                      description: formats is a list of audio formats to match, such
+                        as FLAC or MP3.
+                      items:
+                        type: string
+                      type: array
+                    freeleech:
+                      description: freeleech matches only freeleech releases.
+                      type: boolean
+                    freeleechPercent:
+                      description: freeleechPercent is the freeleech percentages to
+                        match, such as 50%,75%-100%.
                       type: string
                     indexers:
                       description: |-
@@ -361,33 +572,151 @@ spec:
                       items:
                         type: string
                       type: array
+                    log:
+                      description: log matches only releases with a rip log.
+                      type: boolean
+                    logScore:
+                      description: logScore is the lowest rip log score to match.
+                      maximum: 100
+                      minimum: 0
+                      type: integer
                     matchCategories:
                       description: matchCategories is a comma-separated list of categories
                         to match.
                       type: string
+                    matchDescription:
+                      description: matchDescription is a comma-separated list of description
+                        patterns to match.
+                      type: string
+                    matchHdr:
+                      description: matchHdr is a list of HDR formats to match, such
+                        as DV or HDR10+.
+                      items:
+                        type: string
+                      type: array
+                    matchLanguage:
+                      description: matchLanguage is a list of languages to match.
+                      items:
+                        type: string
+                      type: array
+                    matchOther:
+                      description: matchOther is a list of other release attributes
+                        to match, such as REMUX.
+                      items:
+                        type: string
+                      type: array
+                    matchReleaseGroups:
+                      description: matchReleaseGroups is a comma-separated list of
+                        release groups to match.
+                      type: string
+                    matchReleaseTags:
+                      description: matchReleaseTags is a comma-separated list of release
+                        tags to match.
+                      type: string
+                    matchReleaseTypes:
+                      description: matchReleaseTypes is a list of music release types
+                        to match, such as Album or EP.
+                      items:
+                        type: string
+                      type: array
                     matchReleases:
                       description: matchReleases is a comma-separated list of release
                         name patterns to match (supports wildcards).
                       type: string
+                    matchUploaders:
+                      description: matchUploaders is a comma-separated list of uploaders
+                        to match.
+                      type: string
+                    maxDownloads:
+                      description: maxDownloads caps how many releases the filter
+                        grabs per maxDownloadsUnit.
+                      minimum: 0
+                      type: integer
+                    maxDownloadsUnit:
+                      description: maxDownloadsUnit is the period maxDownloads counts
+                        over.
+                      enum:
+                      - MINUTE
+                      - HOUR
+                      - DAY
+                      - WEEK
+                      - MONTH
+                      - EVER
+                      type: string
+                    maxLeechers:
+                      description: maxLeechers is the most leechers a release may
+                        have.
+                      minimum: 0
+                      type: integer
+                    maxSeeders:
+                      description: maxSeeders is the most seeders a release may have.
+                      minimum: 0
+                      type: integer
                     maxSize:
                       description: maxSize is the maximum release size (e.g., "50GB").
                       type: string
+                    media:
+                      description: media is a list of music media to match, such as
+                        CD or WEB.
+                      items:
+                        type: string
+                      type: array
+                    minLeechers:
+                      description: minLeechers is the fewest leechers a release may
+                        have.
+                      minimum: 0
+                      type: integer
+                    minSeeders:
+                      description: minSeeders is the fewest seeders a release may
+                        have.
+                      minimum: 0
+                      type: integer
                     minSize:
                       description: minSize is the minimum release size (e.g., "100MB",
                         "1GB").
                       type: string
+                    months:
+                      description: months is a comma-separated list of months to match.
+                      type: string
                     name:
                       description: name is the display name of the filter.
                       type: string
+                    origins:
+                      description: origins is a list of origins to match, such as
+                        P2P, INTERNAL or SCENE.
+                      items:
+                        type: string
+                      type: array
+                    perfectFlac:
+                      description: perfectFlac matches only lossless rips with a log
+                        of 100 and a cue.
+                      type: boolean
                     priority:
                       description: priority controls filter evaluation order. Lower
                         values are evaluated first.
                       type: integer
+                    quality:
+                      description: quality is a list of audio qualities to match,
+                        such as Lossless or 320.
+                      items:
+                        type: string
+                      type: array
                     resolutions:
                       description: resolutions is a list of acceptable resolutions.
                       items:
                         type: string
                       type: array
+                    seasons:
+                      description: seasons is a comma-separated list of seasons or
+                        ranges to match, such as 1,3-5.
+                      type: string
+                    shows:
+                      description: shows is a comma-separated list of shows to match.
+                      type: string
+                    smartEpisode:
+                      description: smartEpisode skips episodes older than ones already
+                        grabbed.
+                      type: boolean
                     sources:
                       description: sources is a list of acceptable sources (e.g.,
                         "BluRay", "WEB-DL").
@@ -399,9 +728,28 @@ spec:
                       items:
                         type: string
                       type: array
+                    tagsMatchLogic:
+                      description: tagsMatchLogic decides whether a release needs
+                        any or all of tags.
+                      enum:
+                      - ANY
+                      - ALL
+                      type: string
                     useRegex:
                       description: useRegex enables regex matching for release patterns.
                       type: boolean
+                    useRegexDescription:
+                      description: useRegexDescription reads the description patterns
+                        as regular expressions.
+                      type: boolean
+                    useRegexReleaseTags:
+                      description: useRegexReleaseTags reads the release tag patterns
+                        as regular expressions.
+                      type: boolean
+                    years:
+                      description: years is a comma-separated list of years or ranges
+                        to match, such as 2018-2024.
+                      type: string
                   required:
                   - name
                   type: object

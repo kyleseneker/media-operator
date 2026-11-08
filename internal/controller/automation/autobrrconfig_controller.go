@@ -287,7 +287,7 @@ func (s *autobrrSync) indexer(ctx context.Context, idx automationv1alpha1.Autobr
 		if err != nil {
 			return err
 		}
-		if reconciler.Covers(current, desired) {
+		if autobrrCovers(current, desired) {
 			return nil
 		}
 		// An update must carry every stored secret setting, redacted or not.
@@ -498,45 +498,18 @@ func (s *autobrrSync) filter(ctx context.Context, filter automationv1alpha1.Auto
 		}
 	}
 
-	obj := map[string]any{
-		"name":    filter.Name,
-		"enabled": filter.Enable == nil || *filter.Enable,
+	obj, err := autobrrFields(filter, autobrrclient.FilterFields)
+	if err != nil {
+		return err
 	}
-	if filter.Priority != nil {
-		obj["priority"] = *filter.Priority
-	}
-	if filter.MatchReleases != "" {
-		obj["match_releases"] = filter.MatchReleases
-	}
-	if filter.ExceptReleases != "" {
-		obj["except_releases"] = filter.ExceptReleases
-	}
-	if filter.MatchCategories != "" {
-		obj["match_categories"] = filter.MatchCategories
-	}
-	if len(filter.Resolutions) > 0 {
-		obj["resolutions"] = filter.Resolutions
-	}
-	if len(filter.Sources) > 0 {
-		obj["sources"] = filter.Sources
-	}
-	if len(filter.Codecs) > 0 {
-		obj["codecs"] = filter.Codecs
-	}
-	if filter.MinSize != "" {
-		obj["min_size"] = filter.MinSize
-	}
-	if filter.MaxSize != "" {
-		obj["max_size"] = filter.MaxSize
-	}
-	if filter.Delay != nil {
-		obj["delay"] = *filter.Delay
-	}
-	if filter.UseRegex != nil {
-		obj["use_regex"] = *filter.UseRegex
-	}
+	obj["name"] = filter.Name
+	obj["enabled"] = filter.Enable == nil || *filter.Enable
+	// Autobrr keeps tags as one comma-separated string.
 	if len(filter.Tags) > 0 {
 		obj["tags"] = strings.Join(filter.Tags, ",")
+	}
+	if len(filter.ExceptTags) > 0 {
+		obj["except_tags"] = strings.Join(filter.ExceptTags, ",")
 	}
 	if len(filter.Indexers) > 0 {
 		indexers, missing, err := s.filterIndexers(ctx, filter.Indexers)
@@ -598,11 +571,13 @@ func (s *autobrrSync) actions(
 		return fmt.Errorf("listing actions of filter %q: %w", filter.Name, err)
 	}
 	for _, a := range filter.Actions {
-		aObj := map[string]any{
-			"name":    a.Name,
-			"type":    autobrrType(a.Type),
-			"enabled": a.Enable == nil || *a.Enable,
+		aObj, err := autobrrFields(a, autobrrclient.ActionFields)
+		if err != nil {
+			return fmt.Errorf("action %q: %w", a.Name, err)
 		}
+		aObj["name"] = a.Name
+		aObj["type"] = autobrrType(a.Type)
+		aObj["enabled"] = a.Enable == nil || *a.Enable
 		if a.ClientRef != "" {
 			// Autobrr links an action to a downloader by its numeric ID.
 			id, ok := clientIDs[a.ClientRef]
@@ -615,14 +590,6 @@ func (s *autobrrSync) actions(
 				return fmt.Errorf("action %q references download client %q, which does not exist", a.Name, a.ClientRef)
 			}
 			aObj["client_id"] = id
-		}
-		for key, value := range map[string]string{
-			"category": a.Category, "save_path": a.SavePath, "webhook_host": a.WebhookURL,
-			"exec_cmd": a.ExecCommand, "exec_args": a.ExecArgs, "watch_folder": a.WatchFolder,
-		} {
-			if value != "" {
-				aObj[key] = value
-			}
 		}
 		// Actions read back without their filter_id, so it is sent but not compared.
 		withFilter := func() map[string]any {
@@ -646,6 +613,26 @@ func (r *AutobrrConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&corev1.Secret{}, ctrlcommon.EnqueueForSecret(r.Client, &automationv1alpha1.AutobrrConfigList{})).
 		Named("autobrrconfig").
 		Complete(r)
+}
+
+// autobrrFields renders the spec fields a table names under Autobrr's keys,
+// leaving out the ones the spec leaves unset.
+func autobrrFields(spec any, table map[string]string) (map[string]any, error) {
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	out := map[string]any{}
+	for name, key := range table {
+		if v, ok := fields[name]; ok {
+			out[key] = v
+		}
+	}
+	return out, nil
 }
 
 func autobrrType(name string) string {
@@ -673,12 +660,47 @@ func (s *autobrrSync) upsert(kind, name string, existing []map[string]any, obj m
 		if err != nil {
 			return err
 		}
-		if reconciler.Covers(e, desired) {
+		if autobrrCovers(e, desired) {
 			return nil
 		}
 		return s.Apply(kind, name, func() error { return update(int(id), e) })
 	}
 	return s.Apply(kind, name, create)
+}
+
+// autobrrCovers compares as reconciler.Covers does, except that a declared
+// false, 0 or empty value matches a key Autobrr left out: it omits zero values
+// from what it returns.
+func autobrrCovers(current map[string]any, desired any) bool {
+	fields, ok := desired.(map[string]any)
+	if !ok {
+		return reconciler.Covers(current, desired)
+	}
+	filled := maps.Clone(current)
+	for key, value := range fields {
+		if _, present := filled[key]; present {
+			continue
+		}
+		switch v := value.(type) {
+		case bool:
+			if !v {
+				filled[key] = v
+			}
+		case float64:
+			if v == 0 {
+				filled[key] = v
+			}
+		case string:
+			if v == "" {
+				filled[key] = v
+			}
+		case []any:
+			if len(v) == 0 {
+				filled[key] = v
+			}
+		}
+	}
+	return reconciler.Covers(filled, desired)
 }
 
 // upsertFilter compares against the full stored filter, since the list
@@ -706,7 +728,7 @@ func (s *autobrrSync) upsertFilter(
 			return 0, err
 		}
 		sortByID(full["indexers"])
-		if reconciler.Covers(full, desired) {
+		if autobrrCovers(full, desired) {
 			return id, nil
 		}
 		merged, _, err := reconciler.MergeDesiredOverCurrent(full, obj)

@@ -42,8 +42,14 @@ spec:
         - "BluRay"
         - "WEB-DL"
         - "WEB"
+      exceptReleaseGroups: "YIFY,RARBG"
+      smartEpisode: true
+      maxDownloads: 10
+      maxDownloadsUnit: DAY
       actions:
         - name: "Send to qBittorrent"
           type: qBittorrent
           clientRef: qBittorrent
           category: tv
+          contentLayout: ORIGINAL
+          limitSeedTime: 10080

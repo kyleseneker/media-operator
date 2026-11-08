@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	automationv1alpha1 "github.com/kyleseneker/media-operator/api/automation/v1alpha1"
 	"github.com/kyleseneker/media-operator/internal/engine"
 )
 
@@ -112,4 +116,24 @@ func TestListIRCNetworks(t *testing.T) {
 	nets, err := c.ListIRCNetworks(context.Background())
 	require.NoError(t, err)
 	assert.Empty(t, nets)
+}
+
+func TestEveryFilterAndActionFieldReachesAutobrr(t *testing.T) {
+	for _, tc := range []struct {
+		typ     reflect.Type
+		table   map[string]string
+		special []string
+	}{
+		{reflect.TypeFor[automationv1alpha1.AutobrrFilter](), FilterFields, []string{"name", "enable", "tags", "exceptTags", "indexers", "actions"}},
+		{reflect.TypeFor[automationv1alpha1.AutobrrFilterAction](), ActionFields, []string{"name", "enable", "type", "clientRef"}},
+	} {
+		for field := range tc.typ.Fields() {
+			name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+			if slices.Contains(tc.special, name) {
+				continue
+			}
+			assert.Contains(t, tc.table, name, "%s.%s has no Autobrr key, so Autobrr would never see it", tc.typ.Name(), name)
+		}
+		assert.Len(t, tc.table, tc.typ.NumField()-len(tc.special), "%s's table has an entry for a field it doesn't have", tc.typ.Name())
+	}
 }

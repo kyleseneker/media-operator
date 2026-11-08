@@ -28,9 +28,11 @@ var fakeAutobrrAPI = map[string]string{
 		"indexer":{"id":5,"name":"Feed","identifier":"torznab-feed"}}]`,
 	"/api/filters": `[{"id":7,"name":"TV"}]`,
 	"/api/filters/7": `{"id":7,"name":"TV","enabled":true,"priority":1,"use_regex":false,"match_releases":"",
-		"resolutions":["1080p"],"sources":["WEB-DL"],"codecs":[],"tags":"tv,hd",
+		"resolutions":["1080p"],"sources":["WEB-DL"],"codecs":[],"tags":"tv,hd","except_tags":"cam",
+		"match_hdr":["DV"],"max_downloads":5,"max_downloads_unit":"DAY","freeleech":false,"min_seeders":0,
 		"indexers":[{"id":1,"name":"Tracker","identifier":"ipt"}]}`,
-	"/api/actions": `[{"id":2,"name":"Send","type":"QBITTORRENT","enabled":true,"client_id":3,"category":"tv","save_path":""}]`,
+	"/api/actions": `[{"id":2,"name":"Send","type":"QBITTORRENT","enabled":true,"client_id":3,"category":"tv","save_path":"",
+		"limit_ratio":1.5,"content_layout":"SUBFOLDER_CREATE","paused":false,"webhook_headers":[]}]`,
 }
 
 func TestAutobrrExportsEachResourceWithSecretsInTheSecret(t *testing.T) {
@@ -96,4 +98,17 @@ func TestAutobrrExportsEachResourceWithSecretsInTheSecret(t *testing.T) {
 	assert.Equal(t, "qBit", filter.Actions[0].ClientRef, "an action names its download client")
 	assert.Equal(t, "qBittorrent", filter.Actions[0].Type)
 	assert.Equal(t, "tv", filter.Actions[0].Category)
+
+	assert.Equal(t, []string{"cam"}, filter.ExceptTags)
+	assert.Equal(t, []string{"DV"}, filter.MatchHdr)
+	assert.Equal(t, 5, *filter.MaxDownloads)
+	assert.Equal(t, "DAY", filter.MaxDownloadsUnit)
+	assert.Nil(t, filter.Freeleech, "Autobrr's empty defaults aren't exported")
+	assert.Nil(t, filter.MinSeeders)
+	assert.Equal(t, 1, *filter.Priority)
+	action := filter.Actions[0]
+	assert.Equal(t, "1.5", string(*action.LimitRatio))
+	assert.Equal(t, "SUBFOLDER_CREATE", action.ContentLayout)
+	assert.Nil(t, action.Paused)
+	assert.Empty(t, action.WebhookHeaders)
 }

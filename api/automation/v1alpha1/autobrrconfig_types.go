@@ -303,6 +303,216 @@ type AutobrrFilter struct {
 	// +optional
 	Indexers []string `json:"indexers,omitempty"`
 
+	// matchReleaseGroups is a comma-separated list of release groups to match.
+	// +optional
+	MatchReleaseGroups string `json:"matchReleaseGroups,omitempty"`
+
+	// exceptReleaseGroups is a comma-separated list of release groups to skip.
+	// +optional
+	ExceptReleaseGroups string `json:"exceptReleaseGroups,omitempty"`
+
+	// exceptCategories is a comma-separated list of categories to skip.
+	// +optional
+	ExceptCategories string `json:"exceptCategories,omitempty"`
+
+	// matchUploaders is a comma-separated list of uploaders to match.
+	// +optional
+	MatchUploaders string `json:"matchUploaders,omitempty"`
+
+	// exceptUploaders is a comma-separated list of uploaders to skip.
+	// +optional
+	ExceptUploaders string `json:"exceptUploaders,omitempty"`
+
+	// matchReleaseTags is a comma-separated list of release tags to match.
+	// +optional
+	MatchReleaseTags string `json:"matchReleaseTags,omitempty"`
+
+	// exceptReleaseTags is a comma-separated list of release tags to skip.
+	// +optional
+	ExceptReleaseTags string `json:"exceptReleaseTags,omitempty"`
+
+	// useRegexReleaseTags reads the release tag patterns as regular expressions.
+	// +optional
+	UseRegexReleaseTags *bool `json:"useRegexReleaseTags,omitempty"`
+
+	// matchDescription is a comma-separated list of description patterns to match.
+	// +optional
+	MatchDescription string `json:"matchDescription,omitempty"`
+
+	// exceptDescription is a comma-separated list of description patterns to skip.
+	// +optional
+	ExceptDescription string `json:"exceptDescription,omitempty"`
+
+	// useRegexDescription reads the description patterns as regular expressions.
+	// +optional
+	UseRegexDescription *bool `json:"useRegexDescription,omitempty"`
+
+	// containers is a list of acceptable containers, such as mkv.
+	// +optional
+	Containers []string `json:"containers,omitempty"`
+
+	// matchHdr is a list of HDR formats to match, such as DV or HDR10+.
+	// +optional
+	MatchHdr []string `json:"matchHdr,omitempty"`
+
+	// exceptHdr is a list of HDR formats to skip.
+	// +optional
+	ExceptHdr []string `json:"exceptHdr,omitempty"`
+
+	// matchOther is a list of other release attributes to match, such as REMUX.
+	// +optional
+	MatchOther []string `json:"matchOther,omitempty"`
+
+	// exceptOther is a list of other release attributes to skip.
+	// +optional
+	ExceptOther []string `json:"exceptOther,omitempty"`
+
+	// origins is a list of origins to match, such as P2P, INTERNAL or SCENE.
+	// +optional
+	Origins []string `json:"origins,omitempty"`
+
+	// exceptOrigins is a list of origins to skip.
+	// +optional
+	ExceptOrigins []string `json:"exceptOrigins,omitempty"`
+
+	// announceTypes is a list of announce types to match, such as NEW or PROMO.
+	// +optional
+	AnnounceTypes []string `json:"announceTypes,omitempty"`
+
+	// matchLanguage is a list of languages to match.
+	// +optional
+	MatchLanguage []string `json:"matchLanguage,omitempty"`
+
+	// exceptLanguage is a list of languages to skip.
+	// +optional
+	ExceptLanguage []string `json:"exceptLanguage,omitempty"`
+
+	// shows is a comma-separated list of shows to match.
+	// +optional
+	Shows string `json:"shows,omitempty"`
+
+	// seasons is a comma-separated list of seasons or ranges to match, such as 1,3-5.
+	// +optional
+	Seasons string `json:"seasons,omitempty"`
+
+	// episodes is a comma-separated list of episodes or ranges to match.
+	// +optional
+	Episodes string `json:"episodes,omitempty"`
+
+	// smartEpisode skips episodes older than ones already grabbed.
+	// +optional
+	SmartEpisode *bool `json:"smartEpisode,omitempty"`
+
+	// years is a comma-separated list of years or ranges to match, such as 2018-2024.
+	// +optional
+	Years string `json:"years,omitempty"`
+
+	// months is a comma-separated list of months to match.
+	// +optional
+	Months string `json:"months,omitempty"`
+
+	// days is a comma-separated list of days to match.
+	// +optional
+	Days string `json:"days,omitempty"`
+
+	// freeleech matches only freeleech releases.
+	// +optional
+	Freeleech *bool `json:"freeleech,omitempty"`
+
+	// freeleechPercent is the freeleech percentages to match, such as 50%,75%-100%.
+	// +optional
+	FreeleechPercent string `json:"freeleechPercent,omitempty"`
+
+	// maxDownloads caps how many releases the filter grabs per maxDownloadsUnit.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	MaxDownloads *int `json:"maxDownloads,omitempty"`
+
+	// maxDownloadsUnit is the period maxDownloads counts over.
+	// +optional
+	// +kubebuilder:validation:Enum=MINUTE;HOUR;DAY;WEEK;MONTH;EVER
+	MaxDownloadsUnit string `json:"maxDownloadsUnit,omitempty"`
+
+	// minSeeders is the fewest seeders a release may have.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	MinSeeders *int `json:"minSeeders,omitempty"`
+
+	// maxSeeders is the most seeders a release may have.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	MaxSeeders *int `json:"maxSeeders,omitempty"`
+
+	// minLeechers is the fewest leechers a release may have.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	MinLeechers *int `json:"minLeechers,omitempty"`
+
+	// maxLeechers is the most leechers a release may have.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	MaxLeechers *int `json:"maxLeechers,omitempty"`
+
+	// exceptTags is a list of tags to skip.
+	// +optional
+	ExceptTags []string `json:"exceptTags,omitempty"`
+
+	// tagsMatchLogic decides whether a release needs any or all of tags.
+	// +optional
+	// +kubebuilder:validation:Enum=ANY;ALL
+	TagsMatchLogic string `json:"tagsMatchLogic,omitempty"`
+
+	// exceptTagsMatchLogic decides whether any or all of exceptTags skip a release.
+	// +optional
+	// +kubebuilder:validation:Enum=ANY;ALL
+	ExceptTagsMatchLogic string `json:"exceptTagsMatchLogic,omitempty"`
+
+	// artists is a comma-separated list of artists to match.
+	// +optional
+	Artists string `json:"artists,omitempty"`
+
+	// albums is a comma-separated list of albums to match.
+	// +optional
+	Albums string `json:"albums,omitempty"`
+
+	// matchReleaseTypes is a list of music release types to match, such as Album or EP.
+	// +optional
+	MatchReleaseTypes []string `json:"matchReleaseTypes,omitempty"`
+
+	// exceptReleaseTypes is a comma-separated list of music release types to skip.
+	// +optional
+	ExceptReleaseTypes string `json:"exceptReleaseTypes,omitempty"`
+
+	// formats is a list of audio formats to match, such as FLAC or MP3.
+	// +optional
+	Formats []string `json:"formats,omitempty"`
+
+	// quality is a list of audio qualities to match, such as Lossless or 320.
+	// +optional
+	Quality []string `json:"quality,omitempty"`
+
+	// media is a list of music media to match, such as CD or WEB.
+	// +optional
+	Media []string `json:"media,omitempty"`
+
+	// perfectFlac matches only lossless rips with a log of 100 and a cue.
+	// +optional
+	PerfectFlac *bool `json:"perfectFlac,omitempty"`
+
+	// cue matches only releases with a cue file.
+	// +optional
+	Cue *bool `json:"cue,omitempty"`
+
+	// log matches only releases with a rip log.
+	// +optional
+	Log *bool `json:"log,omitempty"`
+
+	// logScore is the lowest rip log score to match.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	LogScore *int `json:"logScore,omitempty"`
+
 	// actions defines what to do when a release matches this filter.
 	// +optional
 	Actions []AutobrrFilterAction `json:"actions,omitempty"`
@@ -351,6 +561,103 @@ type AutobrrFilterAction struct {
 	// watchFolder is the folder path (for WatchFolder action type).
 	// +optional
 	WatchFolder string `json:"watchFolder,omitempty"`
+
+	// tags is a comma-separated list of tags the download client gives the torrent.
+	// +optional
+	Tags string `json:"tags,omitempty"`
+
+	// label is the label the download client gives the torrent.
+	// +optional
+	Label string `json:"label,omitempty"`
+
+	// downloadPath is where the download client keeps the torrent while it downloads.
+	// +optional
+	DownloadPath string `json:"downloadPath,omitempty"`
+
+	// paused adds the torrent paused.
+	// +optional
+	Paused *bool `json:"paused,omitempty"`
+
+	// ignoreRules sends the release even when the download client is past its limits.
+	// +optional
+	IgnoreRules *bool `json:"ignoreRules,omitempty"`
+
+	// skipHashCheck adds the torrent without checking existing data.
+	// +optional
+	SkipHashCheck *bool `json:"skipHashCheck,omitempty"`
+
+	// firstLastPiecePrio downloads the first and last pieces first.
+	// +optional
+	FirstLastPiecePrio *bool `json:"firstLastPiecePrio,omitempty"`
+
+	// contentLayout decides whether the torrent's files go in a folder of their own.
+	// +optional
+	// +kubebuilder:validation:Enum=ORIGINAL;SUBFOLDER_CREATE;SUBFOLDER_NONE
+	ContentLayout string `json:"contentLayout,omitempty"`
+
+	// priority is where the torrent goes in the download client's queue.
+	// +optional
+	// +kubebuilder:validation:Enum=MAX;MIN;LOW;NORMAL;HIGH
+	Priority string `json:"priority,omitempty"`
+
+	// limitUploadSpeed caps the torrent's upload speed, in KiB/s.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	LimitUploadSpeed *int `json:"limitUploadSpeed,omitempty"`
+
+	// limitDownloadSpeed caps the torrent's download speed, in KiB/s.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	LimitDownloadSpeed *int `json:"limitDownloadSpeed,omitempty"`
+
+	// limitRatio is the share ratio at which the torrent stops seeding.
+	// +optional
+	LimitRatio *commonv1alpha1.Decimal `json:"limitRatio,omitempty"`
+
+	// limitSeedTime is how many minutes the torrent seeds.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	LimitSeedTime *int `json:"limitSeedTime,omitempty"`
+
+	// reannounceSkip adds the torrent without waiting for it to announce.
+	// +optional
+	ReannounceSkip *bool `json:"reannounceSkip,omitempty"`
+
+	// reannounceDelete removes the torrent if it never announces.
+	// +optional
+	ReannounceDelete *bool `json:"reannounceDelete,omitempty"`
+
+	// reannounceInterval is how many seconds to wait between reannounce attempts.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	ReannounceInterval *int `json:"reannounceInterval,omitempty"`
+
+	// reannounceMaxAttempts is how many times to reannounce.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	ReannounceMaxAttempts *int `json:"reannounceMaxAttempts,omitempty"`
+
+	// webhookType is the content type the webhook sends, such as JSON.
+	// +optional
+	WebhookType string `json:"webhookType,omitempty"`
+
+	// webhookMethod is the HTTP method the webhook uses.
+	// +optional
+	// +kubebuilder:validation:Enum=GET;POST;PUT;PATCH;DELETE
+	WebhookMethod string `json:"webhookMethod,omitempty"`
+
+	// webhookData is the body the webhook sends; Autobrr fills in its macros.
+	// +optional
+	WebhookData string `json:"webhookData,omitempty"`
+
+	// webhookHeaders are headers the webhook sends, as Name=Value.
+	// +optional
+	WebhookHeaders []string `json:"webhookHeaders,omitempty"`
+
+	// externalDownloadClient is the download client, by name in Sonarr, Radarr, Lidarr or Readarr,
+	// that the app sends the release to.
+	// +optional
+	ExternalDownloadClient string `json:"externalDownloadClient,omitempty"`
 }
 
 // AutobrrConfigStatus defines the observed state of AutobrrConfig.

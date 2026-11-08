@@ -331,6 +331,146 @@ func (in *AutobrrFilter) DeepCopyInto(out *AutobrrFilter) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.UseRegexReleaseTags != nil {
+		in, out := &in.UseRegexReleaseTags, &out.UseRegexReleaseTags
+		*out = new(bool)
+		**out = **in
+	}
+	if in.UseRegexDescription != nil {
+		in, out := &in.UseRegexDescription, &out.UseRegexDescription
+		*out = new(bool)
+		**out = **in
+	}
+	if in.Containers != nil {
+		in, out := &in.Containers, &out.Containers
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.MatchHdr != nil {
+		in, out := &in.MatchHdr, &out.MatchHdr
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.ExceptHdr != nil {
+		in, out := &in.ExceptHdr, &out.ExceptHdr
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.MatchOther != nil {
+		in, out := &in.MatchOther, &out.MatchOther
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.ExceptOther != nil {
+		in, out := &in.ExceptOther, &out.ExceptOther
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.Origins != nil {
+		in, out := &in.Origins, &out.Origins
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.ExceptOrigins != nil {
+		in, out := &in.ExceptOrigins, &out.ExceptOrigins
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.AnnounceTypes != nil {
+		in, out := &in.AnnounceTypes, &out.AnnounceTypes
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.MatchLanguage != nil {
+		in, out := &in.MatchLanguage, &out.MatchLanguage
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.ExceptLanguage != nil {
+		in, out := &in.ExceptLanguage, &out.ExceptLanguage
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.SmartEpisode != nil {
+		in, out := &in.SmartEpisode, &out.SmartEpisode
+		*out = new(bool)
+		**out = **in
+	}
+	if in.Freeleech != nil {
+		in, out := &in.Freeleech, &out.Freeleech
+		*out = new(bool)
+		**out = **in
+	}
+	if in.MaxDownloads != nil {
+		in, out := &in.MaxDownloads, &out.MaxDownloads
+		*out = new(int)
+		**out = **in
+	}
+	if in.MinSeeders != nil {
+		in, out := &in.MinSeeders, &out.MinSeeders
+		*out = new(int)
+		**out = **in
+	}
+	if in.MaxSeeders != nil {
+		in, out := &in.MaxSeeders, &out.MaxSeeders
+		*out = new(int)
+		**out = **in
+	}
+	if in.MinLeechers != nil {
+		in, out := &in.MinLeechers, &out.MinLeechers
+		*out = new(int)
+		**out = **in
+	}
+	if in.MaxLeechers != nil {
+		in, out := &in.MaxLeechers, &out.MaxLeechers
+		*out = new(int)
+		**out = **in
+	}
+	if in.ExceptTags != nil {
+		in, out := &in.ExceptTags, &out.ExceptTags
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.MatchReleaseTypes != nil {
+		in, out := &in.MatchReleaseTypes, &out.MatchReleaseTypes
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.Formats != nil {
+		in, out := &in.Formats, &out.Formats
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.Quality != nil {
+		in, out := &in.Quality, &out.Quality
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.Media != nil {
+		in, out := &in.Media, &out.Media
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.PerfectFlac != nil {
+		in, out := &in.PerfectFlac, &out.PerfectFlac
+		*out = new(bool)
+		**out = **in
+	}
+	if in.Cue != nil {
+		in, out := &in.Cue, &out.Cue
+		*out = new(bool)
+		**out = **in
+	}
+	if in.Log != nil {
+		in, out := &in.Log, &out.Log
+		*out = new(bool)
+		**out = **in
+	}
+	if in.LogScore != nil {
+		in, out := &in.LogScore, &out.LogScore
+		*out = new(int)
+		**out = **in
+	}
 	if in.Actions != nil {
 		in, out := &in.Actions, &out.Actions
 		*out = make([]AutobrrFilterAction, len(*in))
@@ -357,6 +497,71 @@ func (in *AutobrrFilterAction) DeepCopyInto(out *AutobrrFilterAction) {
 		in, out := &in.Enable, &out.Enable
 		*out = new(bool)
 		**out = **in
+	}
+	if in.Paused != nil {
+		in, out := &in.Paused, &out.Paused
+		*out = new(bool)
+		**out = **in
+	}
+	if in.IgnoreRules != nil {
+		in, out := &in.IgnoreRules, &out.IgnoreRules
+		*out = new(bool)
+		**out = **in
+	}
+	if in.SkipHashCheck != nil {
+		in, out := &in.SkipHashCheck, &out.SkipHashCheck
+		*out = new(bool)
+		**out = **in
+	}
+	if in.FirstLastPiecePrio != nil {
+		in, out := &in.FirstLastPiecePrio, &out.FirstLastPiecePrio
+		*out = new(bool)
+		**out = **in
+	}
+	if in.LimitUploadSpeed != nil {
+		in, out := &in.LimitUploadSpeed, &out.LimitUploadSpeed
+		*out = new(int)
+		**out = **in
+	}
+	if in.LimitDownloadSpeed != nil {
+		in, out := &in.LimitDownloadSpeed, &out.LimitDownloadSpeed
+		*out = new(int)
+		**out = **in
+	}
+	if in.LimitRatio != nil {
+		in, out := &in.LimitRatio, &out.LimitRatio
+		*out = new(commonv1alpha1.Decimal)
+		**out = **in
+	}
+	if in.LimitSeedTime != nil {
+		in, out := &in.LimitSeedTime, &out.LimitSeedTime
+		*out = new(int)
+		**out = **in
+	}
+	if in.ReannounceSkip != nil {
+		in, out := &in.ReannounceSkip, &out.ReannounceSkip
+		*out = new(bool)
+		**out = **in
+	}
+	if in.ReannounceDelete != nil {
+		in, out := &in.ReannounceDelete, &out.ReannounceDelete
+		*out = new(bool)
+		**out = **in
+	}
+	if in.ReannounceInterval != nil {
+		in, out := &in.ReannounceInterval, &out.ReannounceInterval
+		*out = new(int)
+		**out = **in
+	}
+	if in.ReannounceMaxAttempts != nil {
+		in, out := &in.ReannounceMaxAttempts, &out.ReannounceMaxAttempts
+		*out = new(int)
+		**out = **in
+	}
+	if in.WebhookHeaders != nil {
+		in, out := &in.WebhookHeaders, &out.WebhookHeaders
+		*out = make([]string, len(*in))
+		copy(*out, *in)
 	}
 }
 

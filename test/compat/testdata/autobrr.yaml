@@ -72,9 +72,35 @@ spec:
         - 1080p
       sources:
         - WEB-DL
+      matchHdr:
+        - DV
+      exceptReleaseGroups: BAD
+      exceptTags:
+        - cam
+        - ts
+      tagsMatchLogic: ANY
+      maxDownloads: 5
+      maxDownloadsUnit: DAY
+      freeleech: true
+      freeleechPercent: 100%
+      minSeeders: 2
+      smartEpisode: true
+      seasons: 1-10
+      origins:
+        - P2P
+        - INTERNAL
       actions:
         - name: Send to qBittorrent
           type: qBittorrent
           enable: true
           clientRef: qBittorrent
           category: tv
+          tags: autobrr
+          paused: false
+          skipHashCheck: true
+          contentLayout: SUBFOLDER_CREATE
+          limitRatio: 1.5
+          limitSeedTime: 1440
+          reannounceSkip: false
+          reannounceInterval: 7
+          reannounceMaxAttempts: 50

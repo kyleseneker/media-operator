@@ -88,6 +88,11 @@ func TestAutobrr(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, actions, 1, "the filter's action was not created")
 			assert.Equal(t, named(downloaders, "qBittorrent")["id"], actions[0]["client_id"])
+			assert.Equal(t, []any{"DV"}, filter["match_hdr"])
+			assert.Equal(t, "cam,ts", filter["except_tags"])
+			assert.Equal(t, "DAY", filter["max_downloads_unit"])
+			assert.InDelta(t, 1.5, actions[0]["limit_ratio"], 0)
+			assert.Equal(t, "SUBFOLDER_CREATE", actions[0]["content_layout"])
 		},
 		cleanup: func(t *testing.T, _ map[string][]string) {
 			hc := autobrrClient(t, ab.url(), key)
