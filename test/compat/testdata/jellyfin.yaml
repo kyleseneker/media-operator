@@ -20,6 +20,39 @@ spec:
     enableGroupingMoviesIntoCollections: true
     displaySpecialsWithinSeasons: true
     libraryMonitorDelay: 60
+    enableMetrics: true
+    quickConnectAvailable: false
+    remoteClientBitrateLimit: 20000000
+    enableGroupingShowsIntoCollections: false
+    enableFolderView: true
+    enableExternalContentInSuggestions: false
+    minResumePct: 5
+    maxResumePct: 90
+    minResumeDurationSeconds: 300
+    minAudiobookResume: 5
+    maxAudiobookResume: 5
+    activityLogRetentionDays: 30
+    libraryScanFanoutConcurrency: 2
+    libraryMetadataRefreshConcurrency: 2
+    parallelImageEncodingLimit: 2
+    enableSlowResponseWarning: true
+    slowResponseThresholdMs: 1000
+    imageSavingConvention: Compatible
+    trickplayOptions:
+      enableHwAcceleration: false
+      enableHwEncoding: false
+      enableKeyFrameOnlyExtraction: true
+      scanBehavior: NonBlocking
+      processPriority: Idle
+      interval: 10000
+      widthResolutions:
+        - 320
+        - 640
+      tileWidth: 10
+      tileHeight: 10
+      qscale: 4
+      jpegQuality: 80
+      processThreads: 1
   # No GPU in CI: software encoding, with every other setting declared.
   encoding:
     hardwareAccelerationType: none
@@ -39,6 +72,53 @@ spec:
     hardwareDecodingCodecs:
       - h264
       - hevc
+    qsvDevice: /dev/dri/renderD128
+    encodingThreadCount: 4
+    enableDecodingColorDepth10Hevc: true
+    enableDecodingColorDepth10Vp9: false
+    enableDecodingColorDepth10HevcRext: false
+    enableDecodingColorDepth12HevcRext: false
+    preferSystemNativeHwDecoder: true
+    enableEnhancedNvdecDecoder: false
+    allowAv1Encoding: false
+    tonemappingAlgorithm: hable
+    tonemappingMode: max
+    tonemappingRange: tv
+    tonemappingDesat: 0.5
+    tonemappingPeak: 100
+    tonemappingParam: 0
+    vppTonemappingBrightness: 16
+    vppTonemappingContrast: 1.2
+    deinterlaceMethod: bwdif
+    deinterlaceDoubleRate: true
+    enableSegmentDeletion: true
+    segmentKeepSeconds: 720
+    enableAudioVbr: true
+    downMixAudioBoost: 2.5
+    downMixStereoAlgorithm: Dave750
+    maxMuxingQueueSize: 4096
+    subtitleExtractionTimeoutMinutes: 30
+    allowOnDemandMetadataBasedKeyframeExtractionForExtensions:
+      - mkv
+  network:
+    enableRemoteAccess: true
+    localNetworkSubnets:
+      - 192.168.0.0/16
+      - 10.0.0.0/8
+    knownProxies:
+      - 10.0.0.1
+    autoDiscovery: false
+    enableUPnP: false
+    ignoreVirtualInterfaces: true
+    virtualInterfaceNames:
+      - veth
+      - cni
+    enablePublishedServerUriByRequest: true
+    publishedServerUriBySubnet:
+      - all=https://jellyfin.example.com
+    remoteIPFilter:
+      - 203.0.113.0/24
+    isRemoteIPFilterBlacklist: true
   libraries:
     - name: Movies
       collectionType: movies

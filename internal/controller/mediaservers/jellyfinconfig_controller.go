@@ -134,19 +134,10 @@ func (r *JellyfinConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	var syncErrors []string
 
-	// Reconcile encoding settings
-	if config.Spec.Encoding != nil {
-		if err := reconcileJellyfinEncoding(ctx, jf, config.Spec.Encoding); err != nil {
-			logger.Error(err, "failed to reconcile encoding settings")
-			syncErrors = append(syncErrors, fmt.Sprintf("encoding: %v", err))
-		}
-	}
-
-	// Reconcile server settings
-	if config.Spec.Server != nil {
-		if err := reconcileJellyfinServer(ctx, jf, config.Spec.Server); err != nil {
-			logger.Error(err, "failed to reconcile server settings")
-			syncErrors = append(syncErrors, fmt.Sprintf("server: %v", err))
+	for _, section := range jellyfinSections(config.Spec) {
+		if err := reconcileJellyfinSection(ctx, jf, section.path, section.settings); err != nil {
+			logger.Error(err, "failed to reconcile settings", "section", section.name)
+			syncErrors = append(syncErrors, fmt.Sprintf("%s: %v", section.name, err))
 		}
 	}
 
@@ -179,53 +170,57 @@ func jellyfinSettings(section any) (map[string]any, error) {
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		return nil, err
 	}
+	return pascalKeys(fields), nil
+}
+
+func pascalKeys(fields map[string]any) map[string]any {
 	out := make(map[string]any, len(fields))
 	for k, v := range fields {
+		if nested, ok := v.(map[string]any); ok {
+			v = pascalKeys(nested)
+		}
 		out[strings.ToUpper(k[:1])+k[1:]] = v
 	}
-	return out, nil
+	return out
 }
 
-func reconcileJellyfinEncoding(ctx context.Context, jf *jellyfinclient.Client, encoding *mediaserversv1alpha1.JellyfinEncoding) error {
-	current, err := jf.GetConfig(ctx, "/System/Configuration/encoding")
-	if err != nil {
-		return fmt.Errorf("getting current encoding config: %w", err)
-	}
+type jellyfinSection struct {
+	name     string
+	path     string
+	settings any
+}
 
-	desired, err := jellyfinSettings(encoding)
+func jellyfinSections(spec mediaserversv1alpha1.JellyfinConfigSpec) []jellyfinSection {
+	var sections []jellyfinSection
+	if spec.Encoding != nil {
+		sections = append(sections, jellyfinSection{"encoding", "/System/Configuration/encoding", spec.Encoding})
+	}
+	if spec.Server != nil {
+		sections = append(sections, jellyfinSection{"server", "/System/Configuration", spec.Server})
+	}
+	if spec.Network != nil {
+		sections = append(sections, jellyfinSection{"network", "/System/Configuration/network", spec.Network})
+	}
+	return sections
+}
+
+func reconcileJellyfinSection(ctx context.Context, jf *jellyfinclient.Client, path string, section any) error {
+	current, err := jf.GetConfig(ctx, path)
+	if err != nil {
+		return fmt.Errorf("getting current config: %w", err)
+	}
+	desired, err := jellyfinSettings(section)
 	if err != nil {
 		return err
 	}
 	merged, changed, err := reconciler.MergeDesiredOverCurrent(current, desired)
 	if err != nil {
-		return fmt.Errorf("merging encoding config: %w", err)
+		return fmt.Errorf("merging config: %w", err)
 	}
 	if !changed {
 		return nil
 	}
-
-	return jf.PostConfig(ctx, "/System/Configuration/encoding", merged)
-}
-
-func reconcileJellyfinServer(ctx context.Context, jf *jellyfinclient.Client, server *mediaserversv1alpha1.JellyfinServer) error {
-	current, err := jf.GetConfig(ctx, "/System/Configuration")
-	if err != nil {
-		return fmt.Errorf("getting current server config: %w", err)
-	}
-
-	desired, err := jellyfinSettings(server)
-	if err != nil {
-		return err
-	}
-	merged, changed, err := reconciler.MergeDesiredOverCurrent(current, desired)
-	if err != nil {
-		return fmt.Errorf("merging server config: %w", err)
-	}
-	if !changed {
-		return nil
-	}
-
-	return jf.PostConfig(ctx, "/System/Configuration", merged)
+	return jf.PostConfig(ctx, path, merged)
 }
 
 func reconcileJellyfinLibrary(ctx context.Context, jf *jellyfinclient.Client, lib mediaserversv1alpha1.JellyfinLibrary) error {
@@ -280,26 +275,16 @@ func (r *JellyfinConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func observeJellyfinConfig(ctx context.Context, jf *jellyfinclient.Client, spec mediaserversv1alpha1.JellyfinConfigSpec, w *engine.Writes) error {
-	sections := map[string]any{}
-	if spec.Encoding != nil {
-		sections["/System/Configuration/encoding"] = spec.Encoding
-	}
-	if spec.Server != nil {
-		sections["/System/Configuration"] = spec.Server
-	}
-	for path, section := range sections {
-		desired, err := jellyfinSettings(section)
+	for _, section := range jellyfinSections(spec) {
+		desired, err := jellyfinSettings(section.settings)
 		if err != nil {
 			return err
 		}
-		sections[path] = desired
-	}
-	for path, desired := range sections {
-		current, err := jf.GetConfig(ctx, path)
+		current, err := jf.GetConfig(ctx, section.path)
 		if err != nil {
-			return fmt.Errorf("reading %s: %w", path, err)
+			return fmt.Errorf("reading %s: %w", section.path, err)
 		}
-		if err := w.Compare("settings", path, current, desired); err != nil {
+		if err := w.Compare("settings", section.path, current, desired); err != nil {
 			return err
 		}
 	}

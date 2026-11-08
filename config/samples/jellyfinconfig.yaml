@@ -21,6 +21,10 @@ spec:
     enableGroupingMoviesIntoCollections: true
     displaySpecialsWithinSeasons: true
     libraryMonitorDelay: 60
+    enableMetrics: true
+    trickplayOptions:
+      enableHwAcceleration: true
+      enableHwEncoding: true
   encoding:
     hardwareAccelerationType: vaapi
     vaapiDevice: /dev/dri/renderD128
@@ -45,6 +49,15 @@ spec:
       - vp8
       - vp9
       - av1
+    enableDecodingColorDepth10Hevc: true
+    enableDecodingColorDepth10Vp9: true
+    enableSegmentDeletion: true
+  network:
+    knownProxies:
+      - traefik.kube-system.svc.cluster.local
+    localNetworkSubnets:
+      - 192.168.1.0/24
+      - 10.42.0.0/16
   libraries:
     - name: TV Shows
       collectionType: tvshows

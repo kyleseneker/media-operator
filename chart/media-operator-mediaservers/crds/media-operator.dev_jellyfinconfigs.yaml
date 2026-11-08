@@ -131,8 +131,67 @@ spec:
                 description: encoding configures hardware-accelerated transcoding
                   settings.
                 properties:
+                  allowAv1Encoding:
+                    description: allowAv1Encoding allows AV1 hardware encoding.
+                    type: boolean
                   allowHevcEncoding:
                     description: allowHevcEncoding allows HEVC/H.265 hardware encoding.
+                    type: boolean
+                  allowOnDemandMetadataBasedKeyframeExtractionForExtensions:
+                    description: |-
+                      allowOnDemandMetadataBasedKeyframeExtractionForExtensions lists the file
+                      extensions, such as mkv, whose key frames Jellyfin reads from metadata
+                      when it needs them.
+                    items:
+                      type: string
+                    type: array
+                  deinterlaceDoubleRate:
+                    description: deinterlaceDoubleRate doubles the frame rate when
+                      deinterlacing.
+                    type: boolean
+                  deinterlaceMethod:
+                    description: deinterlaceMethod is the deinterlacing filter.
+                    enum:
+                    - yadif
+                    - bwdif
+                    type: string
+                  downMixAudioBoost:
+                    description: downMixAudioBoost is the volume gain when downmixing
+                      to stereo.
+                    minimum: 0
+                    type: number
+                  downMixStereoAlgorithm:
+                    description: downMixStereoAlgorithm is the algorithm for downmixing
+                      to stereo.
+                    enum:
+                    - None
+                    - Dave750
+                    - NightmodeDialogue
+                    - Rfc7845
+                    - Ac4
+                    type: string
+                  enableAudioVbr:
+                    description: enableAudioVbr encodes audio at a variable bitrate.
+                    type: boolean
+                  enableDecodingColorDepth10Hevc:
+                    description: enableDecodingColorDepth10Hevc decodes 10-bit HEVC
+                      in hardware.
+                    type: boolean
+                  enableDecodingColorDepth10HevcRext:
+                    description: enableDecodingColorDepth10HevcRext decodes 10-bit
+                      HEVC range extensions in hardware.
+                    type: boolean
+                  enableDecodingColorDepth10Vp9:
+                    description: enableDecodingColorDepth10Vp9 decodes 10-bit VP9
+                      in hardware.
+                    type: boolean
+                  enableDecodingColorDepth12HevcRext:
+                    description: enableDecodingColorDepth12HevcRext decodes 12-bit
+                      HEVC range extensions in hardware.
+                    type: boolean
+                  enableEnhancedNvdecDecoder:
+                    description: enableEnhancedNvdecDecoder uses NVIDIA's own decoder
+                      instead of CUVID.
                     type: boolean
                   enableHardwareEncoding:
                     description: enableHardwareEncoding enables hardware-accelerated
@@ -145,6 +204,10 @@ spec:
                   enableIntelLowPowerHevcHwEncoder:
                     description: enableIntelLowPowerHevcHwEncoder enables the Intel
                       low-power HEVC hardware encoder.
+                    type: boolean
+                  enableSegmentDeletion:
+                    description: enableSegmentDeletion deletes transcoded segments
+                      once clients have them.
                     type: boolean
                   enableSubtitleExtraction:
                     description: enableSubtitleExtraction enables extracting subtitles
@@ -164,6 +227,11 @@ spec:
                     description: encoderPreset is the encoder speed preset (e.g.,
                       "auto", "fast", "medium", "slow").
                     type: string
+                  encodingThreadCount:
+                    description: encodingThreadCount is how many threads ffmpeg uses.
+                      -1 picks one from the CPU count.
+                    minimum: -1
+                    type: integer
                   h264Crf:
                     description: h264Crf is the CRF value for H.264 encoding.
                     type: integer
@@ -175,9 +243,13 @@ spec:
                       method to use.
                     enum:
                     - none
-                    - vaapi
+                    - amf
                     - qsv
                     - nvenc
+                    - v4l2m2m
+                    - vaapi
+                    - videotoolbox
+                    - rkmpp
                     type: string
                   hardwareDecodingCodecs:
                     description: hardwareDecodingCodecs is the list of codecs to decode
@@ -185,14 +257,93 @@ spec:
                     items:
                       type: string
                     type: array
+                  maxMuxingQueueSize:
+                    description: maxMuxingQueueSize is the most packets ffmpeg buffers
+                      while muxing.
+                    minimum: 1
+                    type: integer
+                  preferSystemNativeHwDecoder:
+                    description: |-
+                      preferSystemNativeHwDecoder uses the operating system's hardware decoder
+                      where there is one.
+                    type: boolean
+                  qsvDevice:
+                    description: qsvDevice is the Intel Quick Sync device, when there's
+                      more than one.
+                    type: string
+                  segmentKeepSeconds:
+                    description: segmentKeepSeconds is how many seconds of segments
+                      enableSegmentDeletion keeps.
+                    minimum: 0
+                    type: integer
+                  subtitleExtractionTimeoutMinutes:
+                    description: subtitleExtractionTimeoutMinutes is how long subtitle
+                      extraction may take.
+                    minimum: 1
+                    type: integer
                   throttleDelaySeconds:
                     description: throttleDelaySeconds is the delay in seconds before
                       throttling begins.
                     type: integer
+                  tonemappingAlgorithm:
+                    description: tonemappingAlgorithm is the algorithm for HDR to
+                      SDR tone mapping.
+                    enum:
+                    - none
+                    - clip
+                    - linear
+                    - gamma
+                    - reinhard
+                    - hable
+                    - mobius
+                    - bt2390
+                    type: string
+                  tonemappingDesat:
+                    description: tonemappingDesat desaturates highlights brighter
+                      than this level.
+                    minimum: 0
+                    type: number
+                  tonemappingMode:
+                    description: tonemappingMode is what tone mapping applies to.
+                    enum:
+                    - auto
+                    - max
+                    - rgb
+                    - lum
+                    - itp
+                    type: string
+                  tonemappingParam:
+                    description: tonemappingParam tunes the tone mapping algorithm.
+                      0 uses its default.
+                    minimum: 0
+                    type: number
+                  tonemappingPeak:
+                    description: tonemappingPeak is the signal peak to assume, in
+                      nits, when the video doesn't say.
+                    minimum: 0
+                    type: number
+                  tonemappingRange:
+                    description: tonemappingRange is the output color range of tone
+                      mapping.
+                    enum:
+                    - auto
+                    - tv
+                    - pc
+                    type: string
                   vaapiDevice:
                     description: vaapiDevice is the VAAPI render device path (e.g.,
                       "/dev/dri/renderD128").
                     type: string
+                  vppTonemappingBrightness:
+                    description: vppTonemappingBrightness is the brightness gain of
+                      VPP tone mapping.
+                    minimum: 0
+                    type: number
+                  vppTonemappingContrast:
+                    description: vppTonemappingContrast is the contrast gain of VPP
+                      tone mapping.
+                    minimum: 0
+                    type: number
                 type: object
               libraries:
                 description: libraries defines media libraries to create and configure.
@@ -246,6 +397,75 @@ spec:
                   - paths
                   type: object
                 type: array
+              network:
+                description: |-
+                  network configures how Jellyfin tells local clients from remote ones and
+                  which proxies it trusts.
+                properties:
+                  autoDiscovery:
+                    description: autoDiscovery answers clients looking for servers
+                      on the local network.
+                    type: boolean
+                  enablePublishedServerUriByRequest:
+                    description: |-
+                      enablePublishedServerUriByRequest tells clients the address they reached
+                      Jellyfin on, instead of one Jellyfin works out.
+                    type: boolean
+                  enableRemoteAccess:
+                    description: |-
+                      enableRemoteAccess allows connections from outside localNetworkSubnets.
+                      With it off, localNetworkSubnets must include the operator's pod network.
+                    type: boolean
+                  enableUPnP:
+                    description: enableUPnP forwards Jellyfin's public ports on the
+                      router.
+                    type: boolean
+                  ignoreVirtualInterfaces:
+                    description: |-
+                      ignoreVirtualInterfaces leaves the interfaces named in
+                      virtualInterfaceNames out of auto-detection.
+                    type: boolean
+                  isRemoteIPFilterBlacklist:
+                    description: |-
+                      isRemoteIPFilterBlacklist blocks the addresses in remoteIPFilter instead
+                      of allowing only them.
+                    type: boolean
+                  knownProxies:
+                    description: |-
+                      knownProxies are the reverse proxies, by address or host name, whose
+                      forwarded headers Jellyfin trusts for the client's address.
+                    items:
+                      type: string
+                    type: array
+                  localNetworkSubnets:
+                    description: |-
+                      localNetworkSubnets are the networks, in CIDR form, whose clients count as
+                      local. Empty means the private address ranges.
+                    items:
+                      type: string
+                    type: array
+                  publishedServerUriBySubnet:
+                    description: |-
+                      publishedServerUriBySubnet overrides the address Jellyfin gives clients,
+                      as subnet=URL entries, such as all=https://jellyfin.example.com.
+                    items:
+                      type: string
+                    type: array
+                  remoteIPFilter:
+                    description: |-
+                      remoteIPFilter lists remote addresses or subnets to allow, or to block when
+                      isRemoteIPFilterBlacklist is on.
+                    items:
+                      type: string
+                    type: array
+                  virtualInterfaceNames:
+                    description: |-
+                      virtualInterfaceNames are interface name prefixes, such as veth, that
+                      ignoreVirtualInterfaces skips.
+                    items:
+                      type: string
+                    type: array
+                type: object
               reconcile:
                 description: reconcile configures reconciliation behavior (e.g., sync
                   interval).
@@ -290,33 +510,198 @@ spec:
               server:
                 description: server configures Jellyfin server settings.
                 properties:
+                  activityLogRetentionDays:
+                    description: activityLogRetentionDays is how many days the activity
+                      log keeps entries.
+                    minimum: 0
+                    type: integer
                   displaySpecialsWithinSeasons:
                     description: displaySpecialsWithinSeasons displays special episodes
                       within their respective seasons.
+                    type: boolean
+                  enableExternalContentInSuggestions:
+                    description: |-
+                      enableExternalContentInSuggestions includes internet trailers and live TV
+                      in suggestions.
+                    type: boolean
+                  enableFolderView:
+                    description: enableFolderView shows a Folders view of the media
+                      folders.
                     type: boolean
                   enableGroupingMoviesIntoCollections:
                     description: enableGroupingMoviesIntoCollections enables automatic
                       grouping of movies into collections.
                     type: boolean
+                  enableGroupingShowsIntoCollections:
+                    description: |-
+                      enableGroupingShowsIntoCollections shows series in collections instead of
+                      on their own.
+                    type: boolean
+                  enableMetrics:
+                    description: enableMetrics serves Prometheus metrics at /metrics.
+                    type: boolean
+                  enableSlowResponseWarning:
+                    description: enableSlowResponseWarning logs requests slower than
+                      slowResponseThresholdMs.
+                    type: boolean
+                  imageSavingConvention:
+                    description: imageSavingConvention is how Jellyfin names the artwork
+                      it saves with media.
+                    enum:
+                    - Legacy
+                    - Compatible
+                    type: string
+                  libraryMetadataRefreshConcurrency:
+                    description: |-
+                      libraryMetadataRefreshConcurrency is how many metadata refreshes run at
+                      once. 0 picks one from the CPU count.
+                    minimum: 0
+                    type: integer
                   libraryMonitorDelay:
                     description: libraryMonitorDelay is the delay in seconds before
                       processing library changes.
+                    type: integer
+                  libraryScanFanoutConcurrency:
+                    description: |-
+                      libraryScanFanoutConcurrency is how many library scan tasks run at once.
+                      0 picks one from the CPU count.
+                    minimum: 0
                     type: integer
                   logFileRetentionDays:
                     description: logFileRetentionDays is the number of days to retain
                       log files.
                     type: integer
+                  maxAudiobookResume:
+                    description: maxAudiobookResume is how many minutes from the end
+                      an audiobook counts as played.
+                    minimum: 0
+                    type: integer
+                  maxResumePct:
+                    description: maxResumePct is how far, in percent, playback must
+                      get to count as played.
+                    maximum: 100
+                    minimum: 0
+                    type: integer
                   metadataCountryCode:
                     description: metadataCountryCode is the country code for metadata
                       lookups (e.g., "US").
                     type: string
+                  minAudiobookResume:
+                    description: |-
+                      minAudiobookResume is how many minutes an audiobook must play before it
+                      can be resumed.
+                    minimum: 0
+                    type: integer
+                  minResumeDurationSeconds:
+                    description: minResumeDurationSeconds is the shortest item, in
+                      seconds, that can be resumed.
+                    minimum: 0
+                    type: integer
+                  minResumePct:
+                    description: minResumePct is how far, in percent, playback must
+                      get before it can be resumed.
+                    maximum: 100
+                    minimum: 0
+                    type: integer
+                  parallelImageEncodingLimit:
+                    description: |-
+                      parallelImageEncodingLimit is how many images are encoded at once. 0
+                      picks one from the CPU count.
+                    minimum: 0
+                    type: integer
                   preferredMetadataLanguage:
                     description: preferredMetadataLanguage is the preferred language
                       for metadata (e.g., "en").
                     type: string
+                  quickConnectAvailable:
+                    description: quickConnectAvailable lets users sign in on a new
+                      device with a code.
+                    type: boolean
+                  remoteClientBitrateLimit:
+                    description: |-
+                      remoteClientBitrateLimit caps the bitrate of each remote stream, in bits
+                      per second. 0 means no limit.
+                    minimum: 0
+                    type: integer
                   serverName:
                     description: serverName is the friendly name of the server.
                     type: string
+                  slowResponseThresholdMs:
+                    description: |-
+                      slowResponseThresholdMs is how many milliseconds a request takes before
+                      it's logged as slow.
+                    minimum: 0
+                    type: integer
+                  trickplayOptions:
+                    description: trickplayOptions configures the preview thumbnails
+                      shown while seeking.
+                    properties:
+                      enableHwAcceleration:
+                        description: enableHwAcceleration decodes video in hardware
+                          while making thumbnails.
+                        type: boolean
+                      enableHwEncoding:
+                        description: enableHwEncoding encodes thumbnails in hardware.
+                        type: boolean
+                      enableKeyFrameOnlyExtraction:
+                        description: |-
+                          enableKeyFrameOnlyExtraction takes thumbnails only at key frames, which is
+                          faster and less precise.
+                        type: boolean
+                      interval:
+                        description: interval is the time between thumbnails, in milliseconds.
+                        minimum: 1
+                        type: integer
+                      jpegQuality:
+                        description: jpegQuality is the JPEG quality of the tile images.
+                        maximum: 100
+                        minimum: 1
+                        type: integer
+                      processPriority:
+                        description: processPriority is the priority of the process
+                          making thumbnails.
+                        enum:
+                        - Idle
+                        - BelowNormal
+                        - Normal
+                        - AboveNormal
+                        - High
+                        type: string
+                      processThreads:
+                        description: processThreads is how many threads making thumbnails
+                          uses.
+                        minimum: 0
+                        type: integer
+                      qscale:
+                        description: qscale is the thumbnails' encoding quality, from
+                          2 (best) to 31.
+                        maximum: 31
+                        minimum: 2
+                        type: integer
+                      scanBehavior:
+                        description: scanBehavior decides whether a library scan waits
+                          for thumbnails.
+                        enum:
+                        - Blocking
+                        - NonBlocking
+                        type: string
+                      tileHeight:
+                        description: tileHeight is how many thumbnails go down each
+                          tile image.
+                        minimum: 1
+                        type: integer
+                      tileWidth:
+                        description: tileWidth is how many thumbnails go across each
+                          tile image.
+                        minimum: 1
+                        type: integer
+                      widthResolutions:
+                        description: widthResolutions are the thumbnail widths to
+                          make, in pixels.
+                        items:
+                          type: integer
+                        type: array
+                    type: object
                 type: object
             required:
             - adminUser

@@ -21,6 +21,10 @@ func exportJellyfin(r *reader) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	network, err := jf.GetConfig(r.ctx, "/System/Configuration/network")
+	if err != nil {
+		return nil, err
+	}
 	spec := map[string]any{
 		"adminUser": map[string]any{
 			"usernameSecretRef": r.creds.ref(r.username, "username"),
@@ -28,6 +32,7 @@ func exportJellyfin(r *reader) (map[string]any, error) {
 		},
 		"server":   jellyfinSettings(server, reflect.TypeFor[mediaserversv1alpha1.JellyfinServer]()),
 		"encoding": jellyfinSettings(encoding, reflect.TypeFor[mediaserversv1alpha1.JellyfinEncoding]()),
+		"network":  jellyfinSettings(network, reflect.TypeFor[mediaserversv1alpha1.JellyfinNetwork]()),
 	}
 
 	folders, err := jf.ListLibraries(r.ctx)
@@ -62,9 +67,14 @@ func jellyfinSettings(values map[string]any, t reflect.Type) map[string]any {
 	out := map[string]any{}
 	for field := range t.Fields() {
 		name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
-		if v, ok := values[pascal(name)]; ok && v != nil {
-			out[name] = v
+		v, ok := values[pascal(name)]
+		if !ok || v == nil {
+			continue
 		}
+		if nested, isMap := v.(map[string]any); isMap && field.Type.Kind() == reflect.Pointer && field.Type.Elem().Kind() == reflect.Struct {
+			v = jellyfinSettings(nested, field.Type.Elem())
+		}
+		out[name] = v
 	}
 	return out
 }

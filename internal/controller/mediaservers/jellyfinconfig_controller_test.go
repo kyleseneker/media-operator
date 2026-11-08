@@ -291,3 +291,31 @@ func TestJellyfinSettingsUseJellyfinNames(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, map[string]any{"H265Crf": float64(28), "EncoderPreset": "veryfast", "EnableThrottling": true}, out)
 }
+
+func TestJellyfinSettingsRenameNestedSettings(t *testing.T) {
+	out, err := jellyfinSettings(&mediaserversv1alpha1.JellyfinServer{
+		EnableMetrics: new(true),
+		TrickplayOptions: &mediaserversv1alpha1.JellyfinTrickplay{
+			EnableHwAcceleration: new(true), WidthResolutions: []int{320, 640},
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{
+		"EnableMetrics": true,
+		"TrickplayOptions": map[string]any{
+			"EnableHwAcceleration": true, "WidthResolutions": []any{float64(320), float64(640)},
+		},
+	}, out)
+}
+
+func TestReconcileWritesJellyfinNetworkSettings(t *testing.T) {
+	app := &fakeJellyfin{setupComplete: true}
+	url := app.serve(t)
+	cfg := jellyfinConfig(url)
+	cfg.Spec.Network = &mediaserversv1alpha1.JellyfinNetwork{KnownProxies: []string{"10.0.0.1"}}
+
+	c := runJellyfin(t, adminSecret(), cfg)
+
+	assert.True(t, app.saw("POST", "/System/Configuration/network"), "network settings were never written")
+	assert.Equal(t, conditionTrue, jellyfinCondition(t, c, "Synced"))
+}

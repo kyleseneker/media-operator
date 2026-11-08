@@ -43,6 +43,11 @@ type JellyfinConfigSpec struct {
 	// +optional
 	Encoding *JellyfinEncoding `json:"encoding,omitempty"`
 
+	// network configures how Jellyfin tells local clients from remote ones and
+	// which proxies it trusts.
+	// +optional
+	Network *JellyfinNetwork `json:"network,omitempty"`
+
 	// libraries defines media libraries to create and configure.
 	// +optional
 	Libraries []JellyfinLibrary `json:"libraries,omitempty"`
@@ -101,13 +106,231 @@ type JellyfinServer struct {
 	// libraryMonitorDelay is the delay in seconds before processing library changes.
 	// +optional
 	LibraryMonitorDelay *int `json:"libraryMonitorDelay,omitempty"`
+
+	// enableMetrics serves Prometheus metrics at /metrics.
+	// +optional
+	EnableMetrics *bool `json:"enableMetrics,omitempty"`
+
+	// quickConnectAvailable lets users sign in on a new device with a code.
+	// +optional
+	QuickConnectAvailable *bool `json:"quickConnectAvailable,omitempty"`
+
+	// remoteClientBitrateLimit caps the bitrate of each remote stream, in bits
+	// per second. 0 means no limit.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	RemoteClientBitrateLimit *int `json:"remoteClientBitrateLimit,omitempty"`
+
+	// enableGroupingShowsIntoCollections shows series in collections instead of
+	// on their own.
+	// +optional
+	EnableGroupingShowsIntoCollections *bool `json:"enableGroupingShowsIntoCollections,omitempty"`
+
+	// enableFolderView shows a Folders view of the media folders.
+	// +optional
+	EnableFolderView *bool `json:"enableFolderView,omitempty"`
+
+	// enableExternalContentInSuggestions includes internet trailers and live TV
+	// in suggestions.
+	// +optional
+	EnableExternalContentInSuggestions *bool `json:"enableExternalContentInSuggestions,omitempty"`
+
+	// minResumePct is how far, in percent, playback must get before it can be resumed.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	MinResumePct *int `json:"minResumePct,omitempty"`
+
+	// maxResumePct is how far, in percent, playback must get to count as played.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	MaxResumePct *int `json:"maxResumePct,omitempty"`
+
+	// minResumeDurationSeconds is the shortest item, in seconds, that can be resumed.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	MinResumeDurationSeconds *int `json:"minResumeDurationSeconds,omitempty"`
+
+	// minAudiobookResume is how many minutes an audiobook must play before it
+	// can be resumed.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	MinAudiobookResume *int `json:"minAudiobookResume,omitempty"`
+
+	// maxAudiobookResume is how many minutes from the end an audiobook counts as played.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	MaxAudiobookResume *int `json:"maxAudiobookResume,omitempty"`
+
+	// activityLogRetentionDays is how many days the activity log keeps entries.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	ActivityLogRetentionDays *int `json:"activityLogRetentionDays,omitempty"`
+
+	// libraryScanFanoutConcurrency is how many library scan tasks run at once.
+	// 0 picks one from the CPU count.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	LibraryScanFanoutConcurrency *int `json:"libraryScanFanoutConcurrency,omitempty"`
+
+	// libraryMetadataRefreshConcurrency is how many metadata refreshes run at
+	// once. 0 picks one from the CPU count.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	LibraryMetadataRefreshConcurrency *int `json:"libraryMetadataRefreshConcurrency,omitempty"`
+
+	// parallelImageEncodingLimit is how many images are encoded at once. 0
+	// picks one from the CPU count.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	ParallelImageEncodingLimit *int `json:"parallelImageEncodingLimit,omitempty"`
+
+	// enableSlowResponseWarning logs requests slower than slowResponseThresholdMs.
+	// +optional
+	EnableSlowResponseWarning *bool `json:"enableSlowResponseWarning,omitempty"`
+
+	// slowResponseThresholdMs is how many milliseconds a request takes before
+	// it's logged as slow.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	SlowResponseThresholdMs *int `json:"slowResponseThresholdMs,omitempty"`
+
+	// imageSavingConvention is how Jellyfin names the artwork it saves with media.
+	// +optional
+	// +kubebuilder:validation:Enum=Legacy;Compatible
+	ImageSavingConvention string `json:"imageSavingConvention,omitempty"`
+
+	// trickplayOptions configures the preview thumbnails shown while seeking.
+	// +optional
+	TrickplayOptions *JellyfinTrickplay `json:"trickplayOptions,omitempty"`
+}
+
+// JellyfinTrickplay configures how Jellyfin makes trickplay thumbnails.
+type JellyfinTrickplay struct {
+	// enableHwAcceleration decodes video in hardware while making thumbnails.
+	// +optional
+	EnableHwAcceleration *bool `json:"enableHwAcceleration,omitempty"`
+
+	// enableHwEncoding encodes thumbnails in hardware.
+	// +optional
+	EnableHwEncoding *bool `json:"enableHwEncoding,omitempty"`
+
+	// enableKeyFrameOnlyExtraction takes thumbnails only at key frames, which is
+	// faster and less precise.
+	// +optional
+	EnableKeyFrameOnlyExtraction *bool `json:"enableKeyFrameOnlyExtraction,omitempty"`
+
+	// scanBehavior decides whether a library scan waits for thumbnails.
+	// +optional
+	// +kubebuilder:validation:Enum=Blocking;NonBlocking
+	ScanBehavior string `json:"scanBehavior,omitempty"`
+
+	// processPriority is the priority of the process making thumbnails.
+	// +optional
+	// +kubebuilder:validation:Enum=Idle;BelowNormal;Normal;AboveNormal;High
+	ProcessPriority string `json:"processPriority,omitempty"`
+
+	// interval is the time between thumbnails, in milliseconds.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	Interval *int `json:"interval,omitempty"`
+
+	// widthResolutions are the thumbnail widths to make, in pixels.
+	// +optional
+	WidthResolutions []int `json:"widthResolutions,omitempty"`
+
+	// tileWidth is how many thumbnails go across each tile image.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	TileWidth *int `json:"tileWidth,omitempty"`
+
+	// tileHeight is how many thumbnails go down each tile image.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	TileHeight *int `json:"tileHeight,omitempty"`
+
+	// qscale is the thumbnails' encoding quality, from 2 (best) to 31.
+	// +optional
+	// +kubebuilder:validation:Minimum=2
+	// +kubebuilder:validation:Maximum=31
+	Qscale *int `json:"qscale,omitempty"`
+
+	// jpegQuality is the JPEG quality of the tile images.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=100
+	JpegQuality *int `json:"jpegQuality,omitempty"`
+
+	// processThreads is how many threads making thumbnails uses.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	ProcessThreads *int `json:"processThreads,omitempty"`
+}
+
+// JellyfinNetwork configures Jellyfin's network settings. Ports, the base URL,
+// HTTPS and bind addresses aren't here: changing them needs a restart and has
+// to match the Service and connection.url.
+type JellyfinNetwork struct {
+	// enableRemoteAccess allows connections from outside localNetworkSubnets.
+	// With it off, localNetworkSubnets must include the operator's pod network.
+	// +optional
+	EnableRemoteAccess *bool `json:"enableRemoteAccess,omitempty"`
+
+	// localNetworkSubnets are the networks, in CIDR form, whose clients count as
+	// local. Empty means the private address ranges.
+	// +optional
+	LocalNetworkSubnets []string `json:"localNetworkSubnets,omitempty"`
+
+	// knownProxies are the reverse proxies, by address or host name, whose
+	// forwarded headers Jellyfin trusts for the client's address.
+	// +optional
+	KnownProxies []string `json:"knownProxies,omitempty"`
+
+	// autoDiscovery answers clients looking for servers on the local network.
+	// +optional
+	AutoDiscovery *bool `json:"autoDiscovery,omitempty"`
+
+	// enableUPnP forwards Jellyfin's public ports on the router.
+	// +optional
+	EnableUPnP *bool `json:"enableUPnP,omitempty"`
+
+	// ignoreVirtualInterfaces leaves the interfaces named in
+	// virtualInterfaceNames out of auto-detection.
+	// +optional
+	IgnoreVirtualInterfaces *bool `json:"ignoreVirtualInterfaces,omitempty"`
+
+	// virtualInterfaceNames are interface name prefixes, such as veth, that
+	// ignoreVirtualInterfaces skips.
+	// +optional
+	VirtualInterfaceNames []string `json:"virtualInterfaceNames,omitempty"`
+
+	// enablePublishedServerUriByRequest tells clients the address they reached
+	// Jellyfin on, instead of one Jellyfin works out.
+	// +optional
+	EnablePublishedServerUriByRequest *bool `json:"enablePublishedServerUriByRequest,omitempty"`
+
+	// publishedServerUriBySubnet overrides the address Jellyfin gives clients,
+	// as subnet=URL entries, such as all=https://jellyfin.example.com.
+	// +optional
+	PublishedServerUriBySubnet []string `json:"publishedServerUriBySubnet,omitempty"`
+
+	// remoteIPFilter lists remote addresses or subnets to allow, or to block when
+	// isRemoteIPFilterBlacklist is on.
+	// +optional
+	RemoteIPFilter []string `json:"remoteIPFilter,omitempty"`
+
+	// isRemoteIPFilterBlacklist blocks the addresses in remoteIPFilter instead
+	// of allowing only them.
+	// +optional
+	IsRemoteIPFilterBlacklist *bool `json:"isRemoteIPFilterBlacklist,omitempty"`
 }
 
 // JellyfinEncoding configures hardware-accelerated transcoding settings.
 type JellyfinEncoding struct {
 	// hardwareAccelerationType is the hardware acceleration method to use.
 	// +optional
-	// +kubebuilder:validation:Enum=none;vaapi;qsv;nvenc
+	// +kubebuilder:validation:Enum=none;amf;qsv;nvenc;v4l2m2m;vaapi;videotoolbox;rkmpp
 	HardwareAccelerationType string `json:"hardwareAccelerationType,omitempty"`
 
 	// vaapiDevice is the VAAPI render device path (e.g., "/dev/dri/renderD128").
@@ -165,6 +388,126 @@ type JellyfinEncoding struct {
 	// throttleDelaySeconds is the delay in seconds before throttling begins.
 	// +optional
 	ThrottleDelaySeconds *int `json:"throttleDelaySeconds,omitempty"`
+
+	// qsvDevice is the Intel Quick Sync device, when there's more than one.
+	// +optional
+	QsvDevice string `json:"qsvDevice,omitempty"`
+
+	// encodingThreadCount is how many threads ffmpeg uses. -1 picks one from the CPU count.
+	// +optional
+	// +kubebuilder:validation:Minimum=-1
+	EncodingThreadCount *int `json:"encodingThreadCount,omitempty"`
+
+	// enableDecodingColorDepth10Hevc decodes 10-bit HEVC in hardware.
+	// +optional
+	EnableDecodingColorDepth10Hevc *bool `json:"enableDecodingColorDepth10Hevc,omitempty"`
+
+	// enableDecodingColorDepth10Vp9 decodes 10-bit VP9 in hardware.
+	// +optional
+	EnableDecodingColorDepth10Vp9 *bool `json:"enableDecodingColorDepth10Vp9,omitempty"`
+
+	// enableDecodingColorDepth10HevcRext decodes 10-bit HEVC range extensions in hardware.
+	// +optional
+	EnableDecodingColorDepth10HevcRext *bool `json:"enableDecodingColorDepth10HevcRext,omitempty"`
+
+	// enableDecodingColorDepth12HevcRext decodes 12-bit HEVC range extensions in hardware.
+	// +optional
+	EnableDecodingColorDepth12HevcRext *bool `json:"enableDecodingColorDepth12HevcRext,omitempty"`
+
+	// preferSystemNativeHwDecoder uses the operating system's hardware decoder
+	// where there is one.
+	// +optional
+	PreferSystemNativeHwDecoder *bool `json:"preferSystemNativeHwDecoder,omitempty"`
+
+	// enableEnhancedNvdecDecoder uses NVIDIA's own decoder instead of CUVID.
+	// +optional
+	EnableEnhancedNvdecDecoder *bool `json:"enableEnhancedNvdecDecoder,omitempty"`
+
+	// allowAv1Encoding allows AV1 hardware encoding.
+	// +optional
+	AllowAv1Encoding *bool `json:"allowAv1Encoding,omitempty"`
+
+	// tonemappingAlgorithm is the algorithm for HDR to SDR tone mapping.
+	// +optional
+	// +kubebuilder:validation:Enum=none;clip;linear;gamma;reinhard;hable;mobius;bt2390
+	TonemappingAlgorithm string `json:"tonemappingAlgorithm,omitempty"`
+
+	// tonemappingMode is what tone mapping applies to.
+	// +optional
+	// +kubebuilder:validation:Enum=auto;max;rgb;lum;itp
+	TonemappingMode string `json:"tonemappingMode,omitempty"`
+
+	// tonemappingRange is the output color range of tone mapping.
+	// +optional
+	// +kubebuilder:validation:Enum=auto;tv;pc
+	TonemappingRange string `json:"tonemappingRange,omitempty"`
+
+	// tonemappingDesat desaturates highlights brighter than this level.
+	// +optional
+	TonemappingDesat *commonv1alpha1.Decimal `json:"tonemappingDesat,omitempty"`
+
+	// tonemappingPeak is the signal peak to assume, in nits, when the video doesn't say.
+	// +optional
+	TonemappingPeak *commonv1alpha1.Decimal `json:"tonemappingPeak,omitempty"`
+
+	// tonemappingParam tunes the tone mapping algorithm. 0 uses its default.
+	// +optional
+	TonemappingParam *commonv1alpha1.Decimal `json:"tonemappingParam,omitempty"`
+
+	// vppTonemappingBrightness is the brightness gain of VPP tone mapping.
+	// +optional
+	VppTonemappingBrightness *commonv1alpha1.Decimal `json:"vppTonemappingBrightness,omitempty"`
+
+	// vppTonemappingContrast is the contrast gain of VPP tone mapping.
+	// +optional
+	VppTonemappingContrast *commonv1alpha1.Decimal `json:"vppTonemappingContrast,omitempty"`
+
+	// deinterlaceMethod is the deinterlacing filter.
+	// +optional
+	// +kubebuilder:validation:Enum=yadif;bwdif
+	DeinterlaceMethod string `json:"deinterlaceMethod,omitempty"`
+
+	// deinterlaceDoubleRate doubles the frame rate when deinterlacing.
+	// +optional
+	DeinterlaceDoubleRate *bool `json:"deinterlaceDoubleRate,omitempty"`
+
+	// enableSegmentDeletion deletes transcoded segments once clients have them.
+	// +optional
+	EnableSegmentDeletion *bool `json:"enableSegmentDeletion,omitempty"`
+
+	// segmentKeepSeconds is how many seconds of segments enableSegmentDeletion keeps.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	SegmentKeepSeconds *int `json:"segmentKeepSeconds,omitempty"`
+
+	// enableAudioVbr encodes audio at a variable bitrate.
+	// +optional
+	EnableAudioVbr *bool `json:"enableAudioVbr,omitempty"`
+
+	// downMixAudioBoost is the volume gain when downmixing to stereo.
+	// +optional
+	DownMixAudioBoost *commonv1alpha1.Decimal `json:"downMixAudioBoost,omitempty"`
+
+	// downMixStereoAlgorithm is the algorithm for downmixing to stereo.
+	// +optional
+	// +kubebuilder:validation:Enum=None;Dave750;NightmodeDialogue;Rfc7845;Ac4
+	DownMixStereoAlgorithm string `json:"downMixStereoAlgorithm,omitempty"`
+
+	// maxMuxingQueueSize is the most packets ffmpeg buffers while muxing.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	MaxMuxingQueueSize *int `json:"maxMuxingQueueSize,omitempty"`
+
+	// subtitleExtractionTimeoutMinutes is how long subtitle extraction may take.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	SubtitleExtractionTimeoutMinutes *int `json:"subtitleExtractionTimeoutMinutes,omitempty"`
+
+	// allowOnDemandMetadataBasedKeyframeExtractionForExtensions lists the file
+	// extensions, such as mkv, whose key frames Jellyfin reads from metadata
+	// when it needs them.
+	// +optional
+	AllowOnDemandMetadataBasedKeyframeExtractionForExtensions []string `json:"allowOnDemandMetadataBasedKeyframeExtractionForExtensions,omitempty"`
 }
 
 // JellyfinLibrary defines a media library to create in Jellyfin.
