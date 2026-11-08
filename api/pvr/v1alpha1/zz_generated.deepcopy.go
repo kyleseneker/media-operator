@@ -150,6 +150,20 @@ func (in *LidarrConfigSpec) DeepCopyInto(out *LidarrConfigSpec) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.QualityDefinitions != nil {
+		in, out := &in.QualityDefinitions, &out.QualityDefinitions
+		*out = make([]commonv1alpha1.QualityDefinition, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+	if in.DelayProfiles != nil {
+		in, out := &in.DelayProfiles, &out.DelayProfiles
+		*out = make([]commonv1alpha1.DelayProfile, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
 	if in.Tags != nil {
 		in, out := &in.Tags, &out.Tags
 		*out = make([]commonv1alpha1.Tag, len(*in))
@@ -510,6 +524,20 @@ func (in *RadarrConfigSpec) DeepCopyInto(out *RadarrConfigSpec) {
 	if in.CustomFormats != nil {
 		in, out := &in.CustomFormats, &out.CustomFormats
 		*out = make([]commonv1alpha1.CustomFormat, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+	if in.QualityDefinitions != nil {
+		in, out := &in.QualityDefinitions, &out.QualityDefinitions
+		*out = make([]commonv1alpha1.QualityDefinition, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+	if in.DelayProfiles != nil {
+		in, out := &in.DelayProfiles, &out.DelayProfiles
+		*out = make([]commonv1alpha1.DelayProfile, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
@@ -943,6 +971,20 @@ func (in *ReadarrConfigSpec) DeepCopyInto(out *ReadarrConfigSpec) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.QualityDefinitions != nil {
+		in, out := &in.QualityDefinitions, &out.QualityDefinitions
+		*out = make([]commonv1alpha1.QualityDefinition, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+	if in.DelayProfiles != nil {
+		in, out := &in.DelayProfiles, &out.DelayProfiles
+		*out = make([]commonv1alpha1.DelayProfile, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
 	if in.Tags != nil {
 		in, out := &in.Tags, &out.Tags
 		*out = make([]commonv1alpha1.Tag, len(*in))
@@ -1303,6 +1345,20 @@ func (in *SonarrConfigSpec) DeepCopyInto(out *SonarrConfigSpec) {
 	if in.CustomFormats != nil {
 		in, out := &in.CustomFormats, &out.CustomFormats
 		*out = make([]commonv1alpha1.CustomFormat, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+	if in.QualityDefinitions != nil {
+		in, out := &in.QualityDefinitions, &out.QualityDefinitions
+		*out = make([]commonv1alpha1.QualityDefinition, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+	if in.DelayProfiles != nil {
+		in, out := &in.DelayProfiles, &out.DelayProfiles
+		*out = make([]commonv1alpha1.DelayProfile, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}

@@ -3,6 +3,7 @@ package export
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -50,16 +51,28 @@ var fakeSonarrAPI = map[string]string{
 		"enableAutomaticAdd":true,"shouldMonitor":"all","qualityProfileId":4,"rootFolderPath":"/tv","seasonFolder":true,
 		"seriesType":"standard","tags":[1],"fields":[{"name":"accessToken","value":"********","privacy":"password"}]}]`,
 	"/importlist/schema": `[{"implementation":"TraktListImport","fields":[]}]`,
+	"/qualitydefinition": `[
+		{"id":1,"quality":{"id":1,"name":"SDTV"},"title":"SDTV","minSize":2,"maxSize":100,"preferredSize":95},
+		{"id":2,"quality":{"id":7,"name":"Bluray-1080p"},"title":"Blu-ray 1080p","minSize":17.1,"maxSize":null,"preferredSize":null},
+		{"id":3,"quality":{"id":2,"name":"DVD"},"title":"DVD","minSize":0,"maxSize":0,"preferredSize":0},
+		{"id":4,"quality":{"id":19,"name":"Bluray-2160p"},"title":"Bluray-2160p","minSize":35}]`,
+	"/delayprofile": `[
+		{"id":1,"order":2147483647,"tags":[],"enableUsenet":true,"enableTorrent":true,"preferredProtocol":"usenet",
+			"usenetDelay":0,"torrentDelay":0,"bypassIfHighestQuality":true,"bypassIfAboveCustomFormatScore":false,"minimumCustomFormatScore":0},
+		{"id":2,"order":1,"tags":[1],"enableUsenet":false,"enableTorrent":true,"preferredProtocol":"torrent",
+			"usenetDelay":0,"torrentDelay":60,"bypassIfHighestQuality":false,"bypassIfAboveCustomFormatScore":true,"minimumCustomFormatScore":100}]`,
 }
 
-func fakeSonarr(t *testing.T) string {
+func fakeSonarr(t *testing.T, overrides map[string]string) string {
 	t.Helper()
+	api := maps.Clone(fakeSonarrAPI)
+	maps.Copy(api, overrides)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Api-Key") != fakeSonarrKey {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		body, ok := fakeSonarrAPI[r.URL.Path[len("/api/v3"):]]
+		body, ok := api[r.URL.Path[len("/api/v3"):]]
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -71,9 +84,13 @@ func fakeSonarr(t *testing.T) string {
 	return srv.URL
 }
 
-func exportSonarr(t *testing.T, o Options) (*pvrv1alpha1.SonarrConfig, Result) {
+func exportSonarr(t *testing.T, o Options, overrides ...map[string]string) (*pvrv1alpha1.SonarrConfig, Result) {
 	t.Helper()
-	o.App, o.URL, o.APIKey = "sonarr", fakeSonarr(t), fakeSonarrKey
+	var api map[string]string
+	if len(overrides) > 0 {
+		api = overrides[0]
+	}
+	o.App, o.URL, o.APIKey = "sonarr", fakeSonarr(t, api), fakeSonarrKey
 	res, err := Run(context.Background(), o)
 	require.NoError(t, err)
 	cfg, ok := res.Config.(*pvrv1alpha1.SonarrConfig)
@@ -166,4 +183,61 @@ func TestPVRQualityProfileNamesItsCutoffAndScoredFormats(t *testing.T) {
 	raw, err := json.Marshal(cfg.Spec.CustomFormats[0].Specifications[0].Fields)
 	require.NoError(t, err)
 	assert.JSONEq(t, `[{"name":"value","value":"x265"}]`, string(raw))
+}
+
+func TestPVRQualityDefinitionsWriteUnlimitedAsZero(t *testing.T) {
+	cfg, res := exportSonarr(t, Options{})
+	d := func(s string) *commonv1alpha1.Decimal {
+		v := commonv1alpha1.Decimal(s)
+		return &v
+	}
+	assert.Equal(t, []commonv1alpha1.QualityDefinition{
+		{Quality: "SDTV", MinSize: d("2"), MaxSize: d("100"), PreferredSize: d("95")},
+		{Quality: "Bluray-1080p", Title: "Blu-ray 1080p", MinSize: d("17.1"), MaxSize: d("0"), PreferredSize: d("0")},
+		{Quality: "DVD", MinSize: d("0"), MaxSize: d("0")},
+		{Quality: "Bluray-2160p", MinSize: d("35"), MaxSize: d("0"), PreferredSize: d("0")},
+	}, cfg.Spec.QualityDefinitions)
+	assert.Contains(t, res.Warnings,
+		`quality definition "DVD" prefers the smallest release, which the config can't express because 0 means unlimited there; set it in the app`)
+}
+
+func TestPVRQualityDefinitionsWithoutPreferredSizes(t *testing.T) {
+	cfg, _ := exportSonarr(t, Options{}, map[string]string{"/qualitydefinition": `[
+		{"id":1,"quality":{"id":2,"name":"EPUB"},"title":"EPUB","minSize":0,"maxSize":350},
+		{"id":2,"quality":{"id":6,"name":"FLAC"},"title":"FLAC","minSize":0}]`})
+	d := func(s string) *commonv1alpha1.Decimal {
+		v := commonv1alpha1.Decimal(s)
+		return &v
+	}
+	assert.Equal(t, []commonv1alpha1.QualityDefinition{
+		{Quality: "EPUB", MinSize: d("0"), MaxSize: d("350")},
+		{Quality: "FLAC", MinSize: d("0"), MaxSize: d("0")},
+	}, cfg.Spec.QualityDefinitions)
+}
+
+func TestPVRDelayProfilesFollowTheAppsOrder(t *testing.T) {
+	cfg, _ := exportSonarr(t, Options{})
+	assert.Equal(t, []commonv1alpha1.DelayProfile{
+		{
+			TagLabels: []string{"anime"}, EnableUsenet: new(false), EnableTorrent: new(true), PreferredProtocol: "torrent",
+			UsenetDelay: new(0), TorrentDelay: new(60), BypassIfHighestQuality: new(false),
+			BypassIfAboveCustomFormatScore: new(true), MinimumCustomFormatScore: new(100),
+		},
+		{
+			EnableUsenet: new(true), EnableTorrent: new(true), PreferredProtocol: "usenet",
+			UsenetDelay: new(0), TorrentDelay: new(0), BypassIfHighestQuality: new(true),
+			BypassIfAboveCustomFormatScore: new(false), MinimumCustomFormatScore: new(0),
+		},
+	}, cfg.Spec.DelayProfiles)
+}
+
+func TestPVRDelayProfilesReadProtocolItems(t *testing.T) {
+	cfg, _ := exportSonarr(t, Options{}, map[string]string{"/delayprofile": `[{"id":1,"name":"Default","order":2147483647,"tags":[],
+		"items":[{"name":"Torrent","protocol":"TorrentDownloadProtocol","allowed":true,"delay":15},
+			{"name":"Usenet","protocol":"UsenetDownloadProtocol","allowed":false,"delay":0}],
+		"bypassIfHighestQuality":true,"bypassIfAboveCustomFormatScore":false,"minimumCustomFormatScore":0}]`})
+	assert.Equal(t, []commonv1alpha1.DelayProfile{{
+		EnableUsenet: new(false), EnableTorrent: new(true), PreferredProtocol: "torrent", UsenetDelay: new(0), TorrentDelay: new(15),
+		BypassIfHighestQuality: new(true), BypassIfAboveCustomFormatScore: new(false), MinimumCustomFormatScore: new(0),
+	}}, cfg.Spec.DelayProfiles)
 }

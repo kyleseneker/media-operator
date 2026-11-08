@@ -1,6 +1,11 @@
 package export
 
 import (
+	"cmp"
+	"maps"
+	"slices"
+	"strings"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pvrclient "github.com/kyleseneker/media-operator/internal/client/pvr"
@@ -25,6 +30,7 @@ type pvrExport struct {
 	app              pvrclient.App
 	qualityProfiles  map[float64]string
 	metadataProfiles map[float64]string
+	preferredSizes   bool
 }
 
 func (e *pvrExport) spec() (map[string]any, error) {
@@ -51,6 +57,17 @@ func (e *pvrExport) spec() (map[string]any, error) {
 		}
 	}
 
+	if err := e.delayProfiles(spec); err != nil {
+		return nil, err
+	}
+	definitions, err := e.list("/qualitydefinition")
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range definitions {
+		_, has := d["preferredSize"]
+		e.preferredSizes = e.preferredSizes || has
+	}
 	return spec, e.resources(spec, []resource{
 		{"tags", "/tag", "", tag},
 		{"rootFolders", "/rootfolder", "", e.rootFolder},
@@ -60,6 +77,7 @@ func (e *pvrExport) spec() (map[string]any, error) {
 		{"downloadClients", "/downloadclient", "/downloadclient/schema", e.downloadClient},
 		{"indexers", "/indexer", "/indexer/schema", e.indexer},
 		{"customFormats", "/customformat", "", customFormat},
+		{"qualityDefinitions", "/qualitydefinition", "", e.qualityDefinition},
 		{"qualityProfiles", "/qualityprofile", "", qualityProfile},
 		{"notifications", "/notification", "/notification/schema", e.notification},
 		{"importLists", "/importlist", "/importlist/schema", e.importList},
@@ -143,6 +161,72 @@ func (e *pvrExport) importList(item map[string]any, defaults map[string]map[stri
 	il["fields"] = e.fields(item, defaults, nil, "import-list", true)
 	il["tagLabels"] = e.tagLabels(item)
 	return il
+}
+
+// qualityDefinition writes the app's unlimited, null or left out, as the
+// config's 0. Readarr has no preferred size.
+func (e *pvrExport) qualityDefinition(item map[string]any, _ map[string]map[string]any) map[string]any {
+	quality, _ := item["quality"].(map[string]any)
+	name, _ := quality["name"].(string)
+	qd := map[string]any{"quality": name, "minSize": item["minSize"]}
+	if title, _ := item["title"].(string); title != name {
+		qd["title"] = title
+	}
+	qd["maxSize"] = item["maxSize"]
+	if item["maxSize"] == nil {
+		qd["maxSize"] = 0
+	}
+	preferred := item["preferredSize"]
+	switch {
+	case !e.preferredSizes:
+	case preferred == nil:
+		qd["preferredSize"] = 0
+	case num(preferred) == 0:
+		e.warn("quality definition %q prefers the smallest release, which the config can't express because 0 means unlimited there; set it in the app", name)
+	default:
+		qd["preferredSize"] = preferred
+	}
+	return qd
+}
+
+// delayProfiles exports profiles in the order the app checks them.
+func (e *pvrExport) delayProfiles(spec map[string]any) error {
+	profiles, err := e.list("/delayprofile")
+	if err != nil {
+		return err
+	}
+	slices.SortStableFunc(profiles, func(a, b map[string]any) int { return cmp.Compare(num(a["order"]), num(b["order"])) })
+	out := make([]any, 0, len(profiles))
+	for _, profile := range profiles {
+		dp := pick(profile, "bypassIfHighestQuality", "bypassIfAboveCustomFormatScore", "minimumCustomFormatScore")
+		if items, ok := profile["items"]; ok {
+			for i, item := range list(items) {
+				protocol, _ := item["protocol"].(string)
+				key := strings.TrimSuffix(strings.ToLower(protocol), "downloadprotocol")
+				if key != "usenet" && key != "torrent" {
+					continue
+				}
+				dp["enable"+strings.ToUpper(key[:1])+key[1:]] = item["allowed"]
+				dp[key+"Delay"] = item["delay"]
+				if i == 0 {
+					dp["preferredProtocol"] = key
+				}
+			}
+		} else {
+			maps.Copy(dp, pick(profile, "enableUsenet", "enableTorrent", "usenetDelay", "torrentDelay"))
+			if p, _ := profile["preferredProtocol"].(string); p == "usenet" || p == "torrent" {
+				dp["preferredProtocol"] = p
+			}
+		}
+		if labels := e.tagLabels(profile); len(labels) > 0 {
+			dp["tagLabels"] = labels
+		}
+		out = append(out, dp)
+	}
+	if len(out) > 0 {
+		spec["delayProfiles"] = out
+	}
+	return nil
 }
 
 func customFormat(item map[string]any, _ map[string]map[string]any) map[string]any {

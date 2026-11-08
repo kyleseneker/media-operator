@@ -1,16 +1,21 @@
 package pvr
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"maps"
+	"net/http"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	"github.com/kyleseneker/media-operator/internal/engine"
 	"github.com/kyleseneker/media-operator/internal/metrics"
+	"github.com/kyleseneker/media-operator/internal/reconciler"
 )
 
 // App holds what differs between Sonarr, Radarr, Lidarr and Readarr.
@@ -60,11 +65,14 @@ func Definition(apiVersion string) engine.AppDefinition {
 			{Name: "tags", Path: prefix + "/tag", MatchField: "label", Policy: engine.CreateOrUpdate},
 			// Root folders not prunable (CreateOnly, destructive to remove).
 			{Name: "rootFolders", Path: prefix + "/rootfolder", MatchField: "path", Policy: engine.CreateOnly},
+			// Delay profiles reconcile in their own stage; this entry drives cleanup.
+			{Name: delayProfilesKind, Path: prefix + "/delayprofile", MatchKey: delayProfileID, Policy: engine.CreateOrUpdate, Prunable: true},
 			{Name: "remotePathMappings", Path: prefix + "/remotepathmapping", MatchKey: remotePathMappingKey, Policy: engine.CreateOrUpdate, Prunable: true},
 			{Name: "downloadClients", Path: prefix + "/downloadclient", MatchField: "name", Policy: engine.CreateOrUpdate, Prunable: true},
 			{Name: "indexers", Path: prefix + "/indexer", MatchField: "name", Policy: engine.CreateOrUpdate, Prunable: true},
 			// customFormats before qualityProfiles so IDs can be resolved for formatItems.
 			{Name: "customFormats", Path: prefix + "/customformat", MatchField: "name", Policy: engine.CreateOrUpdate, Prunable: true},
+			{Name: "qualityDefinitions", Path: prefix + "/qualitydefinition", MatchKey: qualityName, Policy: engine.UpdateOnly},
 			{Name: "qualityProfiles", Path: prefix + "/qualityprofile", MatchField: "name", Policy: engine.CreateOrUpdate, Prunable: true},
 			{Name: "notifications", Path: prefix + "/notification", MatchField: "name", Policy: engine.CreateOrUpdate, Prunable: true},
 			// importLists last — may reference quality profiles by name.
@@ -125,6 +133,10 @@ type Options struct {
 	Indexers         []commonv1alpha1.Indexer
 	Notifications    []commonv1alpha1.Notification
 	ImportLists      []commonv1alpha1.ImportList
+	// QualityDefinitions and DelayProfiles change items the app already has as
+	// well as adding to them.
+	QualityDefinitions []commonv1alpha1.QualityDefinition
+	DelayProfiles      []commonv1alpha1.DelayProfile
 
 	// schemas caches each provider kind's /schema listing for one reconcile.
 	schemas map[string][]map[string]any
@@ -169,6 +181,9 @@ func Resources(ctx context.Context, client *engine.HTTPClient, apiVersion string
 		}},
 		{"customFormats", len(opts.CustomFormats), func() ([]map[string]any, error) {
 			return customFormatResources(opts.CustomFormats), nil
+		}},
+		{"qualityDefinitions", len(opts.QualityDefinitions), func() ([]map[string]any, error) {
+			return qualityDefinitionResources(ctx, client, apiVersion, opts.QualityDefinitions)
 		}},
 		{"qualityProfiles", len(opts.QualityProfiles), func() ([]map[string]any, error) {
 			return qualityProfileResources(ctx, client, apiVersion, opts.QualityProfiles)
@@ -795,6 +810,7 @@ func Reconcile(ctx context.Context, client *engine.HTTPClient, apiVersion string
 	base.QualityProfiles = nil
 	base.RootFolders = nil
 	base.ImportLists = nil
+	base.DelayProfiles = nil
 	resources, err := Resources(ctx, client, apiVersion, base)
 	if err != nil {
 		result.Errors = append(result.Errors, fmt.Sprintf("building resources: %v", err))
@@ -802,6 +818,10 @@ func Reconcile(ctx context.Context, client *engine.HTTPClient, apiVersion string
 	}
 	mergeResult(&result, engine.ReconcileApp(ctx, client, def, sections, resources, policy, result.Managed))
 	result.Errors = append(result.Errors, fieldProblems...)
+
+	if len(opts.DelayProfiles) > 0 {
+		mergeResult(&result, reconcileDelayProfiles(ctx, client, apiVersion, opts.DelayProfiles, policy, result.Managed))
+	}
 
 	if len(opts.QualityProfiles) > 0 {
 		stage := Options{QualityProfiles: opts.QualityProfiles}
@@ -916,6 +936,86 @@ func qualityProfileResources(ctx context.Context, client *engine.HTTPClient, api
 		qps = append(qps, payload)
 	}
 	return qps, nil
+}
+
+func qualityName(item map[string]any) string {
+	quality, _ := item["quality"].(map[string]any)
+	name, _ := quality["name"].(string)
+	return name
+}
+
+func qualityDefinitionResources(
+	ctx context.Context, client *engine.HTTPClient, apiVersion string, declared []commonv1alpha1.QualityDefinition,
+) ([]map[string]any, error) {
+	current, err := client.GetJSONList(ctx, fmt.Sprintf("/api/%s/qualitydefinition", apiVersion))
+	if err != nil {
+		return nil, err
+	}
+	byName := make(map[string]map[string]any, len(current))
+	preferred := false
+	for _, definition := range current {
+		byName[qualityName(definition)] = definition
+		_, has := definition["preferredSize"]
+		preferred = preferred || has
+	}
+	out := make([]map[string]any, 0, len(declared))
+	for _, qd := range declared {
+		definition, ok := byName[qd.Quality]
+		if !ok {
+			return nil, fmt.Errorf("qualityDefinitions(%s): the app has no such quality", qd.Quality)
+		}
+		payload, err := qualityDefinitionPayload(qd, definition, preferred)
+		if err != nil {
+			return nil, fmt.Errorf("qualityDefinitions(%s): %w", qd.Quality, err)
+		}
+		out = append(out, payload)
+	}
+	return out, nil
+}
+
+// qualityDefinitionPayload builds an update for one definition. Readarr has no
+// preferred size; the other apps leave it out only where it's unlimited.
+func qualityDefinitionPayload(qd commonv1alpha1.QualityDefinition, current map[string]any, preferred bool) (map[string]any, error) {
+	payload := map[string]any{"quality": map[string]any{"name": qd.Quality}}
+	if qd.Title != "" {
+		payload["title"] = qd.Title
+	}
+	if qd.MinSize != nil {
+		payload["minSize"] = json.Number(*qd.MinSize)
+	}
+	if qd.MaxSize != nil {
+		if err := setSize(payload, current, "maxSize", *qd.MaxSize); err != nil {
+			return nil, err
+		}
+	}
+	if qd.PreferredSize != nil {
+		if !preferred {
+			return nil, fmt.Errorf("this app has no preferred size")
+		}
+		if err := setSize(payload, current, "preferredSize", *qd.PreferredSize); err != nil {
+			return nil, err
+		}
+	}
+	return payload, nil
+}
+
+// setSize writes 0 as the app's unlimited, null. The apps leave a null out of
+// what they return and already treat a maximum of 0 as unlimited, so a size
+// the app has as unlimited is left out.
+func setSize(payload, current map[string]any, key string, size commonv1alpha1.Decimal) error {
+	n, err := strconv.ParseFloat(string(size), 64)
+	if err != nil {
+		return fmt.Errorf("%s: %w", key, err)
+	}
+	if n != 0 {
+		payload[key] = json.Number(size)
+		return nil
+	}
+	have, set := current[key].(float64)
+	if set && (have != 0 || key == "preferredSize") {
+		payload[key] = nil
+	}
+	return nil
 }
 
 // KeepGroupIDs gives each declared quality group the id it already has in the
@@ -1118,4 +1218,495 @@ func remotePathMappingResources(mappings []commonv1alpha1.RemotePathMapping) ([]
 		resources = append(resources, item)
 	}
 	return resources, nil
+}
+
+const delayProfilesKind = "delayProfiles"
+
+// Lidarr lists protocols as items, preferred first, instead of the fields the
+// other apps have.
+var delayProtocols = []struct{ key, protocol, name string }{
+	{"usenet", "UsenetDownloadProtocol", "Usenet"},
+	{"torrent", "TorrentDownloadProtocol", "Torrent"},
+}
+
+// Delay profiles have no name. Ownership is by the app's id, which a change of
+// tags keeps.
+func delayProfileID(item map[string]any) string {
+	id, _ := item["id"].(float64)
+	if id <= 0 {
+		return ""
+	}
+	return strconv.Itoa(int(id))
+}
+
+type delayPlan struct {
+	name    string
+	tags    []int
+	spec    commonv1alpha1.DelayProfile
+	current map[string]any
+}
+
+type delayProfileStage struct {
+	client *engine.HTTPClient
+	path   string
+	labels map[int]string
+	owned  *engine.Ownership
+	writes *engine.Writes
+	prune  bool
+	synced []string
+}
+
+// reconcileDelayProfiles matches each declared profile to the app's profile
+// holding any of its tags, or to the default profile when it has none. The app
+// allows a tag in only one profile, so pruned profiles go first and tags leave
+// a profile before any joins another.
+func reconcileDelayProfiles(
+	ctx context.Context, client *engine.HTTPClient, apiVersion string, declared []commonv1alpha1.DelayProfile,
+	policy engine.SyncPolicy, managed map[string][]string,
+) engine.ReconcileResult {
+	s := &delayProfileStage{
+		client: client,
+		path:   fmt.Sprintf("/api/%s/delayprofile", apiVersion),
+		owned:  engine.NewOwnership(client.AppLabel(), managed),
+		writes: &engine.Writes{App: client.AppLabel(), Observe: policy.Observe},
+		prune:  policy.Prune,
+	}
+	errs := s.run(ctx, fmt.Sprintf("/api/%s/tag", apiVersion), declared)
+	return engine.ReconcileResult{
+		Synced:  s.synced,
+		Errors:  errs,
+		Drift:   s.writes.Drift(),
+		Pruned:  s.owned.Pruned(),
+		Managed: s.owned.Managed(),
+	}
+}
+
+func (s *delayProfileStage) run(ctx context.Context, tagPath string, declared []commonv1alpha1.DelayProfile) []string {
+	tags, err := engine.FetchNamedIDs(ctx, s.client, tagPath, "label")
+	if err != nil {
+		return []string{fmt.Sprintf("%s: %v", delayProfilesKind, err)}
+	}
+	s.labels = map[int]string{}
+	for label, ids := range tags {
+		for _, id := range ids {
+			s.labels[id] = label
+		}
+	}
+	existing, err := s.client.GetJSONList(ctx, s.path)
+	if err != nil {
+		return []string{fmt.Sprintf("%s: listing: %v", delayProfilesKind, err)}
+	}
+	plans, err := planDelayProfiles(declared, tags, existing)
+	if err != nil {
+		return []string{err.Error()}
+	}
+
+	if err := s.pruneUnmatched(ctx, plans, existing); err != nil {
+		return []string{fmt.Sprintf("%s(prune): %v", delayProfilesKind, err)}
+	}
+	var errs []string
+	if !s.writes.Observe {
+		for _, p := range plans {
+			if err := s.releaseTags(ctx, p); err != nil {
+				return []string{fmt.Sprintf("%s(%s): %v", delayProfilesKind, p.name, err)}
+			}
+		}
+	}
+	var template map[string]any
+	for _, p := range plans {
+		if p.current == nil && template == nil && hasProtocolItems(existing) {
+			if template, err = s.client.GetJSON(ctx, s.path+"/schema"); err != nil {
+				errs = append(errs, fmt.Sprintf("%s(%s): reading the schema: %v", delayProfilesKind, p.name, err))
+				continue
+			}
+		}
+		if err := s.apply(ctx, p, template, hasProtocolItems(existing)); err != nil {
+			errs = append(errs, fmt.Sprintf("%s(%s): %v", delayProfilesKind, p.name, err))
+		}
+	}
+	if len(errs) > 0 {
+		return errs
+	}
+	if err := s.order(ctx, plans); err != nil {
+		return []string{fmt.Sprintf("%s(order): %v", delayProfilesKind, err)}
+	}
+	return nil
+}
+
+func planDelayProfiles(declared []commonv1alpha1.DelayProfile, tags engine.NamedIDs, existing []map[string]any) ([]*delayPlan, error) {
+	var fallback map[string]any
+	var tagged []map[string]any
+	for _, e := range existing {
+		if len(profileTags(e)) == 0 {
+			fallback = e
+		} else {
+			tagged = append(tagged, e)
+		}
+	}
+
+	plans := make([]*delayPlan, 0, len(declared))
+	claimed := map[int]string{}
+	matched := map[string]bool{}
+	for _, d := range declared {
+		p := &delayPlan{name: "default", spec: d}
+		if len(d.TagLabels) > 0 {
+			p.name = strings.Join(d.TagLabels, ",")
+		}
+		fail := func(format string, args ...any) error {
+			return fmt.Errorf("%s(%s): %s", delayProfilesKind, p.name, fmt.Sprintf(format, args...))
+		}
+		ids, err := tags.ResolveTags(d.TagLabels, nil)
+		if err != nil {
+			return nil, fail("%v", err)
+		}
+		slices.Sort(ids)
+		p.tags = ids
+		if len(ids) == 0 {
+			switch {
+			case fallback == nil:
+				return nil, fail("the app has no default profile")
+			case matched[delayProfileID(fallback)]:
+				return nil, fail("only one profile can be without tags")
+			}
+			matched[delayProfileID(fallback)] = true
+			p.current = fallback
+			plans = append(plans, p)
+			continue
+		}
+		for _, id := range ids {
+			if other, ok := claimed[id]; ok {
+				return nil, fail("shares a tag with %s, and the app allows a tag in only one profile", other)
+			}
+			claimed[id] = p.name
+		}
+		var best map[string]any
+		bestOverlap := 0
+		for _, e := range tagged {
+			if matched[delayProfileID(e)] {
+				continue
+			}
+			n := overlap(profileTags(e), ids)
+			if n > bestOverlap || (n > 0 && n == bestOverlap && num(e["order"]) < num(best["order"])) {
+				best, bestOverlap = e, n
+			}
+		}
+		if best != nil {
+			matched[delayProfileID(best)] = true
+			p.current = best
+		}
+		plans = append(plans, p)
+	}
+	return plans, nil
+}
+
+// pruneUnmatched deletes owned profiles no declared profile matched, before
+// any write that could need their tags.
+func (s *delayProfileStage) pruneUnmatched(ctx context.Context, plans []*delayPlan, existing []map[string]any) error {
+	if !s.prune {
+		return nil
+	}
+	matched := map[string]bool{}
+	for _, p := range plans {
+		if p.current != nil {
+			matched[delayProfileID(p.current)] = true
+		}
+	}
+	names := map[string]string{}
+	var unmatched []string
+	for _, e := range existing {
+		if id := delayProfileID(e); id != "" && !matched[id] {
+			unmatched = append(unmatched, id)
+			names[id] = s.describe(e)
+		}
+	}
+	if s.writes.Observe {
+		for _, id := range unmatched {
+			if slices.Contains(s.owned.Managed()[delayProfilesKind], id) {
+				s.writes.RecordDrift(delayProfilesKind, names[id])
+			}
+		}
+		return nil
+	}
+	return s.owned.Cleanup(delayProfilesKind, unmatched, func(id string) error {
+		err := s.client.DeleteJSON(ctx, s.path+"/"+id)
+		if reason, refused := engine.Refusal(err); refused {
+			return fmt.Errorf("the app refused: %s", reason)
+		}
+		return err
+	})
+}
+
+// releaseTags drops the tags a matched profile is losing, so another declared
+// profile can take them.
+func (s *delayProfileStage) releaseTags(ctx context.Context, p *delayPlan) error {
+	if p.current == nil || len(p.tags) == 0 {
+		return nil
+	}
+	current := profileTags(p.current)
+	kept := slices.DeleteFunc(slices.Clone(current), func(id int) bool { return !slices.Contains(p.tags, id) })
+	if len(kept) == len(current) {
+		return nil
+	}
+	tags := make([]any, 0, len(kept))
+	for _, id := range kept {
+		tags = append(tags, float64(id))
+	}
+	body := maps.Clone(p.current)
+	body["tags"] = tags
+	return s.writes.Apply(delayProfilesKind, p.name, func() error {
+		if err := s.client.PutJSON(ctx, s.path+"/"+delayProfileID(p.current), body); err != nil {
+			return err
+		}
+		p.current = body
+		return nil
+	})
+}
+
+func (s *delayProfileStage) apply(ctx context.Context, p *delayPlan, template map[string]any, protocolItems bool) error {
+	if p.current == nil {
+		body := map[string]any{"enableUsenet": true, "enableTorrent": true, "preferredProtocol": "usenet"}
+		if protocolItems {
+			body = map[string]any{"items": template["items"]}
+		}
+		desired, err := delayProfileBody(body, p, protocolItems)
+		if err != nil {
+			return err
+		}
+		return s.writes.Apply(delayProfilesKind, p.name, func() error {
+			created, err := s.client.Do(ctx, http.MethodPost, s.path, desired)
+			if err != nil {
+				return err
+			}
+			var stored map[string]any
+			if err := json.Unmarshal(created, &stored); err != nil || delayProfileID(stored) == "" {
+				return fmt.Errorf("the app did not return the created profile")
+			}
+			p.current = stored
+			s.owned.Created(delayProfilesKind, delayProfileID(stored))
+			s.synced = append(s.synced, delayProfilesKind+"("+p.name+")")
+			return nil
+		})
+	}
+
+	desired, err := delayProfileBody(p.current, p, protocolItems)
+	if err != nil {
+		return err
+	}
+	if same(p.current, desired) {
+		s.synced = append(s.synced, delayProfilesKind+"("+p.name+")")
+		return nil
+	}
+	return s.writes.Apply(delayProfilesKind, p.name, func() error {
+		if err := s.client.PutJSON(ctx, s.path+"/"+delayProfileID(p.current), desired); err != nil {
+			return err
+		}
+		s.synced = append(s.synced, delayProfilesKind+"("+p.name+")")
+		return nil
+	})
+}
+
+// delayProfileBody overlays the declared settings on base, the app's profile or
+// a new one.
+func delayProfileBody(base map[string]any, p *delayPlan, protocolItems bool) (map[string]any, error) {
+	d := p.spec
+	set := map[string]any{}
+	for key, value := range map[string]*bool{
+		"bypassIfHighestQuality":         d.BypassIfHighestQuality,
+		"bypassIfAboveCustomFormatScore": d.BypassIfAboveCustomFormatScore,
+	} {
+		if value != nil {
+			set[key] = *value
+		}
+	}
+	if d.MinimumCustomFormatScore != nil {
+		set["minimumCustomFormatScore"] = *d.MinimumCustomFormatScore
+	}
+	if len(p.tags) > 0 {
+		set["tags"] = p.tags
+		if current := profileTags(base); len(current) == len(p.tags) && overlap(current, p.tags) == len(p.tags) {
+			set["tags"] = current
+		}
+	}
+	if !protocolItems {
+		for key, value := range map[string]*bool{"enableUsenet": d.EnableUsenet, "enableTorrent": d.EnableTorrent} {
+			if value != nil {
+				set[key] = *value
+			}
+		}
+		for key, value := range map[string]*int{"usenetDelay": d.UsenetDelay, "torrentDelay": d.TorrentDelay} {
+			if value != nil {
+				set[key] = *value
+			}
+		}
+		if d.PreferredProtocol != "" {
+			set["preferredProtocol"] = d.PreferredProtocol
+		}
+	}
+	out, err := reconciler.MergeDesired(base, set)
+	if err != nil {
+		return nil, err
+	}
+	if protocolItems {
+		out.Merged["items"] = protocolItemsFor(base["items"], d)
+	}
+	return out.Merged, nil
+}
+
+func protocolItemsFor(current any, d commonv1alpha1.DelayProfile) []any {
+	raw, _ := current.([]any)
+	items := make([]any, 0, len(raw)+len(delayProtocols))
+	seen := map[string]bool{}
+	for _, it := range raw {
+		item, ok := it.(map[string]any)
+		if !ok {
+			continue
+		}
+		item = maps.Clone(item)
+		protocol, _ := item["protocol"].(string)
+		seen[protocol] = true
+		items = append(items, item)
+	}
+	for _, p := range delayProtocols {
+		if !seen[p.protocol] {
+			items = append(items, map[string]any{"name": p.name, "protocol": p.protocol, "allowed": false, "delay": 0})
+		}
+	}
+	settings := map[string]struct {
+		allowed *bool
+		delay   *int
+	}{
+		delayProtocols[0].protocol: {d.EnableUsenet, d.UsenetDelay},
+		delayProtocols[1].protocol: {d.EnableTorrent, d.TorrentDelay},
+	}
+	for _, it := range items {
+		item, _ := it.(map[string]any)
+		protocol, _ := item["protocol"].(string)
+		if setting, ok := settings[protocol]; ok {
+			if setting.allowed != nil {
+				item["allowed"] = *setting.allowed
+			}
+			if setting.delay != nil {
+				item["delay"] = *setting.delay
+			}
+		}
+	}
+	preferred := ""
+	for _, p := range delayProtocols {
+		if p.key == d.PreferredProtocol {
+			preferred = p.protocol
+		}
+	}
+	if preferred != "" {
+		slices.SortStableFunc(items, func(a, b any) int {
+			pa, _ := a.(map[string]any)["protocol"].(string)
+			pb, _ := b.(map[string]any)["protocol"].(string)
+			switch {
+			case pa == preferred && pb != preferred:
+				return -1
+			case pb == preferred && pa != preferred:
+				return 1
+			}
+			return 0
+		})
+	}
+	return items
+}
+
+// order moves declared tagged profiles the app checks out of turn, keeping
+// where it has the others. Sonarr and Radarr read the profile to follow from
+// after, Lidarr and Readarr from afterId.
+func (s *delayProfileStage) order(ctx context.Context, plans []*delayPlan) error {
+	var ids []string
+	for _, p := range plans {
+		if len(p.tags) > 0 && p.current != nil {
+			ids = append(ids, delayProfileID(p.current))
+		}
+	}
+	if len(ids) < 2 {
+		return nil
+	}
+	profiles, err := s.client.GetJSONList(ctx, s.path)
+	if err != nil {
+		return err
+	}
+	for i := 1; i < len(ids); i++ {
+		positions := map[string]float64{}
+		for _, profile := range profiles {
+			positions[delayProfileID(profile)] = num(profile["order"])
+		}
+		if positions[ids[i]] > positions[ids[i-1]] {
+			continue
+		}
+		err := s.writes.Apply(delayProfilesKind, "order", func() error {
+			body, err := s.client.Do(ctx, http.MethodPut, fmt.Sprintf("%s/reorder/%s?after=%s&afterId=%s", s.path, ids[i], ids[i-1], ids[i-1]), nil)
+			if err != nil {
+				return err
+			}
+			profiles = nil
+			return json.Unmarshal(body, &profiles)
+		})
+		if err != nil || s.writes.Observe {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *delayProfileStage) describe(profile map[string]any) string {
+	ids := profileTags(profile)
+	if len(ids) == 0 {
+		return "default"
+	}
+	labels := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if label, ok := s.labels[id]; ok {
+			labels = append(labels, label)
+		} else {
+			labels = append(labels, strconv.Itoa(id))
+		}
+	}
+	return strings.Join(labels, ",")
+}
+
+func hasProtocolItems(existing []map[string]any) bool {
+	for _, e := range existing {
+		if _, ok := e["items"]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func profileTags(profile map[string]any) []int {
+	raw, _ := profile["tags"].([]any)
+	ids := make([]int, 0, len(raw))
+	for _, v := range raw {
+		if id, ok := v.(float64); ok {
+			ids = append(ids, int(id))
+		}
+	}
+	return ids
+}
+
+func overlap(a, b []int) int {
+	n := 0
+	for _, id := range a {
+		if slices.Contains(b, id) {
+			n++
+		}
+	}
+	return n
+}
+
+func num(v any) float64 {
+	f, _ := v.(float64)
+	return f
+}
+
+// same compares as the app reads values back, so an int written reads back
+// equal to the float64 decoded from the app.
+func same(a, b map[string]any) bool {
+	x, errX := json.Marshal(a)
+	y, errY := json.Marshal(b)
+	return errX == nil && errY == nil && bytes.Equal(x, y)
 }

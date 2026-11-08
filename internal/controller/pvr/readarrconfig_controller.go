@@ -44,6 +44,8 @@ func (r *ReadarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			Indexers:           s.Indexers,
 			Notifications:      s.Notifications,
 			ImportLists:        s.ImportLists,
+			QualityDefinitions: s.QualityDefinitions,
+			DelayProfiles:      s.DelayProfiles,
 		},
 	})
 }

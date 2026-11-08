@@ -10,6 +10,9 @@ const (
 	CreateOnly
 	// CreateOrUpdate creates if missing, updates if exists (matched by MatchField).
 	CreateOrUpdate
+	// UpdateOnly updates items the app already has and never creates one, for
+	// fixed sets such as quality definitions.
+	UpdateOnly
 )
 
 // AuthType identifies the authentication strategy for an app.

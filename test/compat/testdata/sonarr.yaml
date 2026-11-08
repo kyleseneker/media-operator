@@ -205,3 +205,25 @@ spec:
       fields:
         - name: baseUrl
           value: ${FAKES}/lists/sonarr
+  qualityDefinitions:
+    - quality: HDTV-720p
+      minSize: 10
+      maxSize: 67.5
+      preferredSize: 50
+    - quality: Bluray-1080p
+      title: Blu-ray 1080p
+      minSize: 50.4
+      maxSize: 0
+      preferredSize: 0
+  delayProfiles:
+    - tagLabels:
+        - anime
+      preferredProtocol: torrent
+      usenetDelay: 60
+      bypassIfAboveCustomFormatScore: true
+      minimumCustomFormatScore: 100
+    - tagLabels:
+        - hdr
+      enableUsenet: false
+    - usenetDelay: 30
+      torrentDelay: 10

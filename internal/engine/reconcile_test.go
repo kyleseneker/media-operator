@@ -454,6 +454,30 @@ func TestReconcileResource_CreateOnly(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestReconcileResource_UpdateOnly(t *testing.T) {
+	var puts []string
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			_ = json.NewEncoder(w).Encode([]map[string]any{{"id": float64(3), "name": "DVD", "maxSize": float64(100)}})
+		case http.MethodPut:
+			puts = append(puts, r.URL.Path)
+		case http.MethodPost:
+			assert.Fail(t, "POST should never be called for UpdateOnly policy")
+		}
+	}
+
+	hc := newTestServer(t, handler)
+	endpoint := ResourceEndpoint{Name: "qualityDefinitions", Path: "/api/v3/qualitydefinition", MatchField: "name", Policy: UpdateOnly}
+	require.NoError(t, reconcileResource(context.Background(), hc, endpoint, map[string]any{"name": "DVD", "maxSize": 50}, false))
+	assert.Equal(t, []string{"/api/v3/qualitydefinition/3"}, puts)
+
+	for _, observe := range []bool{false, true} {
+		err := reconcileResource(context.Background(), hc, endpoint, map[string]any{"name": "Laserdisc"}, observe)
+		require.ErrorContains(t, err, "qualityDefinitions can't be created")
+	}
+}
+
 func TestPruneResources(t *testing.T) {
 	var deletedPaths []string
 

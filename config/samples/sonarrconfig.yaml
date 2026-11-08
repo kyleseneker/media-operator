@@ -135,6 +135,19 @@ spec:
   tags:
     - label: anime
     - label: hdr
+  delayProfiles:
+    - tagLabels:
+        - anime
+      preferredProtocol: torrent
+      usenetDelay: 60
+    - usenetDelay: 0
+      torrentDelay: 0
+      bypassIfHighestQuality: true
+  qualityDefinitions:
+    - quality: WEBDL-1080p
+      minSize: 15
+      maxSize: 0
+      preferredSize: 0
   indexers:
     - name: NZBgeek
       protocol: usenet

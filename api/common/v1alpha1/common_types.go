@@ -346,6 +346,100 @@ type QualityProfileFormatItem struct {
 	Score int `json:"score"`
 }
 
+// QualityDefinition sets the size limits of one of the app's qualities. Sizes
+// use the units of the app's quality settings: megabytes per minute of runtime
+// in Sonarr and Radarr, kilobits per second in Lidarr.
+type QualityDefinition struct {
+	// quality is the quality's name in the app, such as WEBDL-1080p.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	Quality string `json:"quality"`
+
+	// title is the name the app shows for the quality.
+	// +optional
+	Title string `json:"title,omitempty"`
+
+	// minSize is the smallest release the app grabs at this quality.
+	// +optional
+	MinSize *Decimal `json:"minSize,omitempty"`
+
+	// maxSize is the largest release the app grabs at this quality. 0 means unlimited.
+	// +optional
+	MaxSize *Decimal `json:"maxSize,omitempty"`
+
+	// preferredSize is the size the app prefers among acceptable releases. 0
+	// means unlimited, so the largest release wins. Readarr has no preferred size.
+	// +optional
+	PreferredSize *Decimal `json:"preferredSize,omitempty"`
+}
+
+// Decimal is a number that may have a fractional part, such as 17.1.
+// +kubebuilder:validation:Type=number
+// +kubebuilder:validation:Minimum=0
+type Decimal string
+
+// MarshalJSON writes the number as a JSON number.
+func (d Decimal) MarshalJSON() ([]byte, error) {
+	return json.Marshal(json.Number(d))
+}
+
+// UnmarshalJSON reads a JSON number.
+func (d *Decimal) UnmarshalJSON(data []byte) error {
+	var n json.Number
+	if err := json.Unmarshal(data, &n); err != nil {
+		return err
+	}
+	*d = Decimal(n)
+	return nil
+}
+
+// DelayProfile holds a release back for a while, so a better one can turn up
+// before the app grabs it. A profile is matched to the app's by its tags, and
+// the app allows a tag in only one profile.
+type DelayProfile struct {
+	// tagLabels limits the profile to items with one of these tags. The profile
+	// without tags is the app's default, which covers everything the others don't.
+	// +optional
+	TagLabels []string `json:"tagLabels,omitempty"`
+
+	// enableUsenet allows Usenet releases.
+	// +optional
+	EnableUsenet *bool `json:"enableUsenet,omitempty"`
+
+	// enableTorrent allows torrent releases.
+	// +optional
+	EnableTorrent *bool `json:"enableTorrent,omitempty"`
+
+	// preferredProtocol is the protocol the app picks when a release is on both.
+	// +optional
+	// +kubebuilder:validation:Enum=usenet;torrent
+	PreferredProtocol string `json:"preferredProtocol,omitempty"`
+
+	// usenetDelay is how many minutes the app waits before grabbing a Usenet release.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	UsenetDelay *int `json:"usenetDelay,omitempty"`
+
+	// torrentDelay is how many minutes the app waits before grabbing a torrent release.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	TorrentDelay *int `json:"torrentDelay,omitempty"`
+
+	// bypassIfHighestQuality skips the delay for a release at the quality
+	// profile's highest allowed quality.
+	// +optional
+	BypassIfHighestQuality *bool `json:"bypassIfHighestQuality,omitempty"`
+
+	// bypassIfAboveCustomFormatScore skips the delay for a release whose custom
+	// format score reaches minimumCustomFormatScore.
+	// +optional
+	BypassIfAboveCustomFormatScore *bool `json:"bypassIfAboveCustomFormatScore,omitempty"`
+
+	// minimumCustomFormatScore is the score bypassIfAboveCustomFormatScore needs.
+	// +optional
+	MinimumCustomFormatScore *int `json:"minimumCustomFormatScore,omitempty"`
+}
+
 // CustomFormat defines a custom format with matching specifications.
 // Custom formats score releases based on matching conditions and are used
 // within quality profiles to guide upgrade decisions.

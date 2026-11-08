@@ -110,3 +110,15 @@ spec:
           value: ${FAKES}/webhook
         - name: method
           value: 1
+  qualityDefinitions:
+    - quality: EPUB
+      title: ePub
+      maxSize: 100
+    - quality: MP3
+      maxSize: 0
+  delayProfiles:
+    - tagLabels:
+        - favorites
+      preferredProtocol: torrent
+      torrentDelay: 30
+    - usenetDelay: 15

@@ -121,3 +121,28 @@ func decode(t *testing.T, path string) []*unstructured.Unstructured {
 	}
 	return out
 }
+
+func TestDelayProfilesAllowOneWithoutTags(t *testing.T) {
+	c := startAPIServerWith(t)
+	ctx := context.Background()
+	sonarr := func(name, profiles string) *unstructured.Unstructured {
+		obj := &unstructured.Unstructured{}
+		require.NoError(t, yaml.Unmarshal([]byte(`
+apiVersion: media-operator.dev/v1alpha1
+kind: SonarrConfig
+metadata:
+  name: `+name+`
+  namespace: default
+spec:
+  connection:
+    url: http://sonarr:8989
+    apiKeySecretRef: {name: sonarr, key: api-key}
+  delayProfiles: `+profiles), &obj.Object))
+		return obj
+	}
+
+	require.NoError(t, c.Create(ctx, sonarr("one-default", `[{tagLabels: [anime]}, {usenetDelay: 30}]`)))
+	err := c.Create(ctx, sonarr("two-defaults", `[{usenetDelay: 30}, {tagLabels: []}]`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "only one delay profile can be without tags")
+}

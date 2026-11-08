@@ -276,7 +276,7 @@ func reconcileResourceTracked(
 			switch endpoint.Policy {
 			case CreateOnly:
 				return false, false, nil // exists, don't update
-			case CreateOrUpdate, UpdateAlways:
+			case CreateOrUpdate, UpdateAlways, UpdateOnly:
 				id, ok := e["id"].(float64)
 				if !ok {
 					return false, false, fmt.Errorf("resource %q has no id", desiredMatch)
@@ -303,6 +303,9 @@ func reconcileResourceTracked(
 		}
 	}
 
+	if endpoint.Policy == UpdateOnly {
+		return false, false, fmt.Errorf("the app has no such item, and %s can't be created", endpoint.Name)
+	}
 	// Not found — create
 	if observe {
 		metrics.DriftObservedTotal.WithLabelValues(client.AppLabel(), endpoint.Name, desiredMatch).Inc()

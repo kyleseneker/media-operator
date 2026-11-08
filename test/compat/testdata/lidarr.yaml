@@ -48,6 +48,7 @@ spec:
       localPath: /data/media/music
   tags:
     - label: favorites
+    - label: live
   downloadClients:
     - name: qBittorrent
       protocol: torrent
@@ -142,3 +143,22 @@ spec:
       fields:
         - name: baseUrl
           value: ${FAKES}/lists/lidarr
+  qualityDefinitions:
+    - quality: FLAC
+      maxSize: 0
+      preferredSize: 900
+    - quality: MP3-320
+      title: MP3 320
+      minSize: 100
+      maxSize: 400
+      preferredSize: 350
+  delayProfiles:
+    - tagLabels:
+        - favorites
+      preferredProtocol: torrent
+      enableUsenet: false
+      torrentDelay: 15
+    - tagLabels:
+        - live
+      usenetDelay: 5
+    - usenetDelay: 30

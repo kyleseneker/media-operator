@@ -59,6 +59,22 @@ type LidarrConfigSpec struct {
 	// +optional
 	CustomFormats []commonv1alpha1.CustomFormat `json:"customFormats,omitempty"`
 
+	// qualityDefinitions sets the size limits of the app's qualities. The app
+	// has a fixed set of qualities, so none is created or pruned, and qualities
+	// left out keep their limits.
+	// +optional
+	// +listType=map
+	// +listMapKey=quality
+	QualityDefinitions []commonv1alpha1.QualityDefinition `json:"qualityDefinitions,omitempty"`
+
+	// delayProfiles defines delay profiles. The app checks tagged profiles in
+	// the order listed, and the default profile, the one without tags, last.
+	// Only operator-created profiles can be pruned, so the default never is.
+	// +optional
+	// +kubebuilder:validation:MaxItems=50
+	// +kubebuilder:validation:XValidation:rule="self.filter(p, !has(p.tagLabels) || size(p.tagLabels) == 0).size() <= 1",message="only one delay profile can be without tags"
+	DelayProfiles []commonv1alpha1.DelayProfile `json:"delayProfiles,omitempty"`
+
 	// tags defines tags for linking resources together.
 	// +optional
 	Tags []commonv1alpha1.Tag `json:"tags,omitempty"`

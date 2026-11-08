@@ -185,3 +185,20 @@ spec:
       fields:
         - name: url
           value: ${FAKES}/lists/radarr
+  qualityDefinitions:
+    - quality: Bluray-1080p
+      minSize: 25.5
+      maxSize: 0
+      preferredSize: 0
+    - quality: WEBDL-1080p
+      title: WEB 1080p
+      minSize: 12.5
+      maxSize: 400
+      preferredSize: 350
+  delayProfiles:
+    - tagLabels:
+        - uhd
+        - kids
+      preferredProtocol: torrent
+      usenetDelay: 120
+    - bypassIfHighestQuality: false

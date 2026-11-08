@@ -87,3 +87,20 @@ func TestFieldValue_RoundTrip(t *testing.T) {
 
 	assert.Equal(t, original.Raw, restored.Raw)
 }
+
+func TestDecimalKeepsTheNumberAsWritten(t *testing.T) {
+	for _, n := range []string{"17.1", "2000", "0", "0.25"} {
+		var def QualityDefinition
+		require.NoError(t, json.Unmarshal([]byte(`{"quality":"DVD","minSize":`+n+`}`), &def))
+		require.NotNil(t, def.MinSize)
+		assert.Equal(t, Decimal(n), *def.MinSize)
+		out, err := json.Marshal(def)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"quality":"DVD","minSize":`+n+`}`, string(out))
+	}
+
+	var def QualityDefinition
+	assert.Error(t, json.Unmarshal([]byte(`{"quality":"DVD","minSize":"large"}`), &def))
+	_, err := json.Marshal(Decimal("large"))
+	assert.Error(t, err)
+}

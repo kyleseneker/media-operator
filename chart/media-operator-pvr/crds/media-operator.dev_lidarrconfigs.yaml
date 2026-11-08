@@ -193,6 +193,68 @@ spec:
                   - name
                   type: object
                 type: array
+              delayProfiles:
+                description: |-
+                  delayProfiles defines delay profiles. The app checks tagged profiles in
+                  the order listed, and the default profile, the one without tags, last.
+                  Only operator-created profiles can be pruned, so the default never is.
+                items:
+                  description: |-
+                    DelayProfile holds a release back for a while, so a better one can turn up
+                    before the app grabs it. A profile is matched to the app's by its tags, and
+                    the app allows a tag in only one profile.
+                  properties:
+                    bypassIfAboveCustomFormatScore:
+                      description: |-
+                        bypassIfAboveCustomFormatScore skips the delay for a release whose custom
+                        format score reaches minimumCustomFormatScore.
+                      type: boolean
+                    bypassIfHighestQuality:
+                      description: |-
+                        bypassIfHighestQuality skips the delay for a release at the quality
+                        profile's highest allowed quality.
+                      type: boolean
+                    enableTorrent:
+                      description: enableTorrent allows torrent releases.
+                      type: boolean
+                    enableUsenet:
+                      description: enableUsenet allows Usenet releases.
+                      type: boolean
+                    minimumCustomFormatScore:
+                      description: minimumCustomFormatScore is the score bypassIfAboveCustomFormatScore
+                        needs.
+                      type: integer
+                    preferredProtocol:
+                      description: preferredProtocol is the protocol the app picks
+                        when a release is on both.
+                      enum:
+                      - usenet
+                      - torrent
+                      type: string
+                    tagLabels:
+                      description: |-
+                        tagLabels limits the profile to items with one of these tags. The profile
+                        without tags is the app's default, which covers everything the others don't.
+                      items:
+                        type: string
+                      type: array
+                    torrentDelay:
+                      description: torrentDelay is how many minutes the app waits
+                        before grabbing a torrent release.
+                      minimum: 0
+                      type: integer
+                    usenetDelay:
+                      description: usenetDelay is how many minutes the app waits before
+                        grabbing a Usenet release.
+                      minimum: 0
+                      type: integer
+                  type: object
+                maxItems: 50
+                type: array
+                x-kubernetes-validations:
+                - message: only one delay profile can be without tags
+                  rule: self.filter(p, !has(p.tagLabels) || size(p.tagLabels) == 0).size()
+                    <= 1
               downloadClientConfig:
                 description: downloadClientConfig configures global download client
                   behavior.
@@ -859,6 +921,48 @@ spec:
                   - name
                   type: object
                 type: array
+              qualityDefinitions:
+                description: |-
+                  qualityDefinitions sets the size limits of the app's qualities. The app
+                  has a fixed set of qualities, so none is created or pruned, and qualities
+                  left out keep their limits.
+                items:
+                  description: |-
+                    QualityDefinition sets the size limits of one of the app's qualities. Sizes
+                    use the units of the app's quality settings: megabytes per minute of runtime
+                    in Sonarr and Radarr, kilobits per second in Lidarr.
+                  properties:
+                    maxSize:
+                      description: maxSize is the largest release the app grabs at
+                        this quality. 0 means unlimited.
+                      minimum: 0
+                      type: number
+                    minSize:
+                      description: minSize is the smallest release the app grabs at
+                        this quality.
+                      minimum: 0
+                      type: number
+                    preferredSize:
+                      description: |-
+                        preferredSize is the size the app prefers among acceptable releases. 0
+                        means unlimited, so the largest release wins. Readarr has no preferred size.
+                      minimum: 0
+                      type: number
+                    quality:
+                      description: quality is the quality's name in the app, such
+                        as WEBDL-1080p.
+                      minLength: 1
+                      type: string
+                    title:
+                      description: title is the name the app shows for the quality.
+                      type: string
+                  required:
+                  - quality
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - quality
+                x-kubernetes-list-type: map
               qualityProfiles:
                 description: qualityProfiles defines quality profiles for controlling
                   download quality preferences.
