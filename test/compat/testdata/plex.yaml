@@ -15,17 +15,51 @@ spec:
     autoEmptyTrash: true
     scanMyLibraryAutomatically: true
     scanMyLibraryPeriodically: true
+    scanMyLibraryPartially: true
+    libraryScanInterval: 21600
+    scannerLowPriority: true
+    allowMediaDeletion: false
+    videoPlayedThreshold: 85
+    generateVideoPreviewThumbnails: scheduled
+    generateChapterThumbnails: never
+    loudnessAnalysis: never
+    butlerStartHour: 3
+    butlerEndHour: 6
+    butlerTaskBackupDatabase: true
+    butlerDatabaseBackupPath: /transcode/backups
+    butlerTaskOptimizeDatabase: true
+    butlerTaskCleanOldBundles: true
+    butlerTaskCleanOldCacheFiles: true
+    butlerTaskRefreshLocalMedia: true
+    butlerTaskRefreshLibraries: true
+    butlerTaskUpgradeMediaAnalysis: false
+    butlerTaskRefreshPeriodicMetadata: true
+    butlerTaskDeepMediaAnalysis: false
+    dlnaEnabled: false
+    sendCrashReports: false
+    logVerbose: false
   transcoder:
     transcodeHwRequested: false
     maxSimultaneousVideoTranscodes: 2
     transcodeHwEncodingEnabled: false
     transcoderTempDirectory: /transcode
+    transcoderQuality: 2
+    transcoderThrottleBuffer: 120
+    transcoderH264BackgroundPreset: fast
+    transcoderHevcEncoding: true
+    downloadsTempDirectory: /transcode/downloads
   network:
     secureConnections: 1
     customServerAccessUrls: https://plex.example.com:443
     # Must keep covering the suite's own address, or the next pass is locked out.
     allowedNetworks: ${ALLOWED_NETWORKS}
     enableIPv6: false
+    manualPortMappingMode: true
+    manualPortMappingPort: 32499
+    relayEnabled: false
+    gdmEnabled: false
+    webhooksEnabled: false
+    preferredNetworkInterface: eth0
   libraries:
     - name: Movies
       type: movie

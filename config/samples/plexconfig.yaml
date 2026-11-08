@@ -11,15 +11,22 @@ spec:
       key: PLEX_TOKEN
   server:
     friendlyName: Plex
-    language: en
     scanMyLibraryAutomatically: true
     scanMyLibraryPeriodically: true
+    scanMyLibraryPartially: true
     autoEmptyTrash: true
+    generateVideoPreviewThumbnails: scheduled
+    butlerStartHour: 2
+    butlerEndHour: 6
+    dlnaEnabled: false
   transcoder:
     transcodeHwRequested: true
-    transcodeHwDecodingEnabled: true
     transcodeHwEncodingEnabled: true
     maxSimultaneousVideoTranscodes: 0
+    transcoderTempDirectory: /transcode
+  network:
+    manualPortMappingMode: true
+    manualPortMappingPort: 32400
   libraries:
     - name: Movies
       type: movie

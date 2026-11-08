@@ -18,6 +18,7 @@ import (
 
 	mediaserversv1alpha1 "github.com/kyleseneker/media-operator/api/mediaservers/v1alpha1"
 	jellyfinclient "github.com/kyleseneker/media-operator/internal/client/jellyfin"
+	plexclient "github.com/kyleseneker/media-operator/internal/client/plex"
 	ctrlcommon "github.com/kyleseneker/media-operator/internal/controller/common"
 	"github.com/kyleseneker/media-operator/internal/controller/mediaservers"
 	"github.com/kyleseneker/media-operator/internal/engine"
@@ -119,7 +120,7 @@ func TestPlex(t *testing.T) {
 		name: "plex", image: plexImage, port: 32400,
 		files: map[string]string{"/config/Library/Application Support/Plex Media Server/Preferences.xml": prefs},
 	})
-	plex.exec(t, "mkdir -p /media/movies /media/tv /media/ready /transcode")
+	plex.exec(t, "mkdir -p /media/movies /media/tv /media/ready /transcode/backups /transcode/downloads")
 	// Plex answers long before it will create a library ("the server is still
 	// starting up"); a throwaway library shows when it is ready.
 	waitFor(t, "plex", 3*time.Minute, func() error {
@@ -170,6 +171,18 @@ func TestPlex(t *testing.T) {
 				titles = append(titles, d.Title)
 			}
 			assert.ElementsMatch(t, []string{"Movies", "TV Shows"}, titles)
+
+			prefsHC, err := engine.NewHTTPClient(plex.url(), engine.AuthPlexToken, engine.WithPlexToken("unclaimed"),
+				engine.WithAppLabel("compat"))
+			require.NoError(t, err)
+			settings, err := plexclient.NewClient(prefsHC).GetSettings(context.Background())
+			require.NoError(t, err)
+			for id, want := range map[string]string{
+				"ScheduledLibraryUpdateInterval": "21600", "GenerateBIFBehavior": "scheduled", "ButlerStartHour": "3",
+				"TranscoderQuality": "2", "TranscoderHEVCEncoding": "1", "ManualPortMappingPort": "32499", "RelayEnabled": "0",
+			} {
+				assert.Equal(t, want, settings[id], id)
+			}
 		},
 	})
 }

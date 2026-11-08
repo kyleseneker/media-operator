@@ -155,6 +155,30 @@ spec:
                   enableIPv6:
                     description: enableIPv6 enables IPv6 support.
                     type: boolean
+                  gdmEnabled:
+                    description: gdmEnabled announces the server to clients on the
+                      local network.
+                    type: boolean
+                  manualPortMappingMode:
+                    description: |-
+                      manualPortMappingMode uses manualPortMappingPort as the public port for
+                      remote access instead of finding one.
+                    type: boolean
+                  manualPortMappingPort:
+                    description: manualPortMappingPort is the public port for remote
+                      access.
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                  preferredNetworkInterface:
+                    description: |-
+                      preferredNetworkInterface is the interface Plex uses, such as eth0. Empty
+                      means any.
+                    type: string
+                  relayEnabled:
+                    description: relayEnabled lets clients that can't connect directly
+                      go through Plex's relay.
+                    type: boolean
                   secureConnections:
                     description: secureConnections controls when secure connections
                       are required.
@@ -163,6 +187,10 @@ spec:
                     - 1
                     - 2
                     type: integer
+                  webhooksEnabled:
+                    description: webhooksEnabled sends events to the webhooks set
+                      up in the Plex account.
+                    type: boolean
                 type: object
               reconcile:
                 description: reconcile configures reconciliation behavior (e.g., sync
@@ -208,8 +236,67 @@ spec:
               server:
                 description: server configures Plex server settings.
                 properties:
+                  allowMediaDeletion:
+                    description: allowMediaDeletion lets the server owner delete media
+                      from Plex apps.
+                    type: boolean
                   autoEmptyTrash:
                     description: autoEmptyTrash automatically empties the trash.
+                    type: boolean
+                  butlerDatabaseBackupPath:
+                    description: butlerDatabaseBackupPath is where database backups
+                      go.
+                    type: string
+                  butlerEndHour:
+                    description: butlerEndHour is the hour scheduled maintenance tasks
+                      must stop.
+                    maximum: 23
+                    minimum: 0
+                    type: integer
+                  butlerStartHour:
+                    description: butlerStartHour is the hour scheduled maintenance
+                      tasks may start.
+                    maximum: 23
+                    minimum: 0
+                    type: integer
+                  butlerTaskBackupDatabase:
+                    description: butlerTaskBackupDatabase backs up the database every
+                      three days.
+                    type: boolean
+                  butlerTaskCleanOldBundles:
+                    description: butlerTaskCleanOldBundles removes old metadata bundles
+                      every week.
+                    type: boolean
+                  butlerTaskCleanOldCacheFiles:
+                    description: butlerTaskCleanOldCacheFiles removes old cache files
+                      every week.
+                    type: boolean
+                  butlerTaskDeepMediaAnalysis:
+                    description: butlerTaskDeepMediaAnalysis analyzes media in depth
+                      during maintenance.
+                    type: boolean
+                  butlerTaskOptimizeDatabase:
+                    description: butlerTaskOptimizeDatabase optimizes the database
+                      every week.
+                    type: boolean
+                  butlerTaskRefreshLibraries:
+                    description: butlerTaskRefreshLibraries scans the libraries during
+                      maintenance.
+                    type: boolean
+                  butlerTaskRefreshLocalMedia:
+                    description: butlerTaskRefreshLocalMedia refreshes local metadata
+                      every three days.
+                    type: boolean
+                  butlerTaskRefreshPeriodicMetadata:
+                    description: butlerTaskRefreshPeriodicMetadata refreshes metadata
+                      periodically.
+                    type: boolean
+                  butlerTaskUpgradeMediaAnalysis:
+                    description: butlerTaskUpgradeMediaAnalysis upgrades media analysis
+                      during maintenance.
+                    type: boolean
+                  dlnaEnabled:
+                    description: dlnaEnabled runs the DLNA server.
                     type: boolean
                   enableRemoteAccess:
                     description: enableRemoteAccess allows access from outside the
@@ -218,26 +305,91 @@ spec:
                   friendlyName:
                     description: friendlyName is the server's display name.
                     type: string
+                  generateChapterThumbnails:
+                    description: generateChapterThumbnails is when Plex makes chapter
+                      thumbnails.
+                    enum:
+                    - never
+                    - scheduled
+                    - asap
+                    type: string
+                  generateVideoPreviewThumbnails:
+                    description: |-
+                      generateVideoPreviewThumbnails is when Plex makes the thumbnails shown
+                      while seeking: never, as a scheduled task, or also as media is added.
+                    enum:
+                    - never
+                    - scheduled
+                    - asap
+                    type: string
                   language:
                     description: |-
                       language is not a setting current Plex has; Plex rejects it and reports why.
                       Set a library's language on the library instead.
                     type: string
+                  libraryScanInterval:
+                    description: libraryScanInterval is how often, in seconds, scanMyLibraryPeriodically
+                      scans.
+                    enum:
+                    - 900
+                    - 1800
+                    - 3600
+                    - 7200
+                    - 21600
+                    - 43200
+                    - 86400
+                    type: integer
                   logDebug:
                     description: logDebug enables debug logging.
                     type: boolean
+                  logVerbose:
+                    description: logVerbose enables verbose logging.
+                    type: boolean
+                  loudnessAnalysis:
+                    description: loudnessAnalysis is when Plex analyzes audio loudness.
+                    enum:
+                    - never
+                    - scheduled
+                    - asap
+                    type: string
                   scanMyLibraryAutomatically:
                     description: scanMyLibraryAutomatically enables automatic library
                       scanning.
+                    type: boolean
+                  scanMyLibraryPartially:
+                    description: |-
+                      scanMyLibraryPartially scans only the folders that changed when changes
+                      are detected.
                     type: boolean
                   scanMyLibraryPeriodically:
                     description: scanMyLibraryPeriodically enables periodic library
                       scanning.
                     type: boolean
+                  scannerLowPriority:
+                    description: scannerLowPriority runs scans at a lower priority.
+                    type: boolean
+                  sendCrashReports:
+                    description: sendCrashReports sends crash reports to Plex.
+                    type: boolean
+                  videoPlayedThreshold:
+                    description: videoPlayedThreshold is how far, in percent, a video
+                      must play to count as watched.
+                    enum:
+                    - 70
+                    - 75
+                    - 80
+                    - 85
+                    - 90
+                    - 95
+                    type: integer
                 type: object
               transcoder:
                 description: transcoder configures transcoding and hardware acceleration.
                 properties:
+                  downloadsTempDirectory:
+                    description: downloadsTempDirectory is where transcodes for downloads
+                      are kept.
+                    type: string
                   hardwareAccelerationType:
                     description: hardwareAccelerationType sets the HW acceleration
                       type.
@@ -258,10 +410,41 @@ spec:
                     description: transcodeHwRequested enables hardware-accelerated
                       transcoding.
                     type: boolean
+                  transcoderH264BackgroundPreset:
+                    description: |-
+                      transcoderH264BackgroundPreset is the encoder preset for background
+                      transcodes such as optimizing and downloads.
+                    enum:
+                    - ultrafast
+                    - superfast
+                    - veryfast
+                    - faster
+                    - fast
+                    - medium
+                    - slow
+                    - slower
+                    - veryslow
+                    type: string
+                  transcoderHevcEncoding:
+                    description: transcoderHevcEncoding allows HEVC encoding.
+                    type: boolean
+                  transcoderQuality:
+                    description: |-
+                      transcoderQuality trades speed for quality: 0 automatic, 1 prefer speed,
+                      2 prefer quality, 3 as slow and good as possible.
+                    maximum: 3
+                    minimum: 0
+                    type: integer
                   transcoderTempDirectory:
                     description: transcoderTempDirectory sets the transcoder temporary
                       directory.
                     type: string
+                  transcoderThrottleBuffer:
+                    description: |-
+                      transcoderThrottleBuffer is how many seconds ahead of playback the
+                      transcoder works before slowing down.
+                    minimum: 0
+                    type: integer
                 type: object
             required:
             - connection

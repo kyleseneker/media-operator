@@ -78,6 +78,109 @@ type PlexServer struct {
 	// scanMyLibraryPeriodically enables periodic library scanning.
 	// +optional
 	ScanMyLibraryPeriodically *bool `json:"scanMyLibraryPeriodically,omitempty"`
+
+	// scanMyLibraryPartially scans only the folders that changed when changes
+	// are detected.
+	// +optional
+	ScanMyLibraryPartially *bool `json:"scanMyLibraryPartially,omitempty"`
+
+	// libraryScanInterval is how often, in seconds, scanMyLibraryPeriodically scans.
+	// +optional
+	// +kubebuilder:validation:Enum=900;1800;3600;7200;21600;43200;86400
+	LibraryScanInterval *int `json:"libraryScanInterval,omitempty"`
+
+	// scannerLowPriority runs scans at a lower priority.
+	// +optional
+	ScannerLowPriority *bool `json:"scannerLowPriority,omitempty"`
+
+	// allowMediaDeletion lets the server owner delete media from Plex apps.
+	// +optional
+	AllowMediaDeletion *bool `json:"allowMediaDeletion,omitempty"`
+
+	// videoPlayedThreshold is how far, in percent, a video must play to count as watched.
+	// +optional
+	// +kubebuilder:validation:Enum=70;75;80;85;90;95
+	VideoPlayedThreshold *int `json:"videoPlayedThreshold,omitempty"`
+
+	// generateVideoPreviewThumbnails is when Plex makes the thumbnails shown
+	// while seeking: never, as a scheduled task, or also as media is added.
+	// +optional
+	// +kubebuilder:validation:Enum=never;scheduled;asap
+	GenerateVideoPreviewThumbnails string `json:"generateVideoPreviewThumbnails,omitempty"`
+
+	// generateChapterThumbnails is when Plex makes chapter thumbnails.
+	// +optional
+	// +kubebuilder:validation:Enum=never;scheduled;asap
+	GenerateChapterThumbnails string `json:"generateChapterThumbnails,omitempty"`
+
+	// loudnessAnalysis is when Plex analyzes audio loudness.
+	// +optional
+	// +kubebuilder:validation:Enum=never;scheduled;asap
+	LoudnessAnalysis string `json:"loudnessAnalysis,omitempty"`
+
+	// butlerStartHour is the hour scheduled maintenance tasks may start.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=23
+	ButlerStartHour *int `json:"butlerStartHour,omitempty"`
+
+	// butlerEndHour is the hour scheduled maintenance tasks must stop.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=23
+	ButlerEndHour *int `json:"butlerEndHour,omitempty"`
+
+	// butlerTaskBackupDatabase backs up the database every three days.
+	// +optional
+	ButlerTaskBackupDatabase *bool `json:"butlerTaskBackupDatabase,omitempty"`
+
+	// butlerDatabaseBackupPath is where database backups go.
+	// +optional
+	ButlerDatabaseBackupPath string `json:"butlerDatabaseBackupPath,omitempty"`
+
+	// butlerTaskOptimizeDatabase optimizes the database every week.
+	// +optional
+	ButlerTaskOptimizeDatabase *bool `json:"butlerTaskOptimizeDatabase,omitempty"`
+
+	// butlerTaskCleanOldBundles removes old metadata bundles every week.
+	// +optional
+	ButlerTaskCleanOldBundles *bool `json:"butlerTaskCleanOldBundles,omitempty"`
+
+	// butlerTaskCleanOldCacheFiles removes old cache files every week.
+	// +optional
+	ButlerTaskCleanOldCacheFiles *bool `json:"butlerTaskCleanOldCacheFiles,omitempty"`
+
+	// butlerTaskRefreshLocalMedia refreshes local metadata every three days.
+	// +optional
+	ButlerTaskRefreshLocalMedia *bool `json:"butlerTaskRefreshLocalMedia,omitempty"`
+
+	// butlerTaskRefreshLibraries scans the libraries during maintenance.
+	// +optional
+	ButlerTaskRefreshLibraries *bool `json:"butlerTaskRefreshLibraries,omitempty"`
+
+	// butlerTaskUpgradeMediaAnalysis upgrades media analysis during maintenance.
+	// +optional
+	ButlerTaskUpgradeMediaAnalysis *bool `json:"butlerTaskUpgradeMediaAnalysis,omitempty"`
+
+	// butlerTaskRefreshPeriodicMetadata refreshes metadata periodically.
+	// +optional
+	ButlerTaskRefreshPeriodicMetadata *bool `json:"butlerTaskRefreshPeriodicMetadata,omitempty"`
+
+	// butlerTaskDeepMediaAnalysis analyzes media in depth during maintenance.
+	// +optional
+	ButlerTaskDeepMediaAnalysis *bool `json:"butlerTaskDeepMediaAnalysis,omitempty"`
+
+	// dlnaEnabled runs the DLNA server.
+	// +optional
+	DlnaEnabled *bool `json:"dlnaEnabled,omitempty"`
+
+	// sendCrashReports sends crash reports to Plex.
+	// +optional
+	SendCrashReports *bool `json:"sendCrashReports,omitempty"`
+
+	// logVerbose enables verbose logging.
+	// +optional
+	LogVerbose *bool `json:"logVerbose,omitempty"`
 }
 
 // PlexTranscoder configures transcoding settings.
@@ -106,6 +209,33 @@ type PlexTranscoder struct {
 	// transcoderTempDirectory sets the transcoder temporary directory.
 	// +optional
 	TranscoderTempDirectory string `json:"transcoderTempDirectory,omitempty"`
+
+	// transcoderQuality trades speed for quality: 0 automatic, 1 prefer speed,
+	// 2 prefer quality, 3 as slow and good as possible.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=3
+	TranscoderQuality *int `json:"transcoderQuality,omitempty"`
+
+	// transcoderThrottleBuffer is how many seconds ahead of playback the
+	// transcoder works before slowing down.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	TranscoderThrottleBuffer *int `json:"transcoderThrottleBuffer,omitempty"`
+
+	// transcoderH264BackgroundPreset is the encoder preset for background
+	// transcodes such as optimizing and downloads.
+	// +optional
+	// +kubebuilder:validation:Enum=ultrafast;superfast;veryfast;faster;fast;medium;slow;slower;veryslow
+	TranscoderH264BackgroundPreset string `json:"transcoderH264BackgroundPreset,omitempty"`
+
+	// transcoderHevcEncoding allows HEVC encoding.
+	// +optional
+	TranscoderHevcEncoding *bool `json:"transcoderHevcEncoding,omitempty"`
+
+	// downloadsTempDirectory is where transcodes for downloads are kept.
+	// +optional
+	DownloadsTempDirectory string `json:"downloadsTempDirectory,omitempty"`
 }
 
 // PlexLibrary defines a Plex media library.
@@ -154,6 +284,34 @@ type PlexNetwork struct {
 	// enableIPv6 enables IPv6 support.
 	// +optional
 	EnableIPv6 *bool `json:"enableIPv6,omitempty"`
+
+	// manualPortMappingMode uses manualPortMappingPort as the public port for
+	// remote access instead of finding one.
+	// +optional
+	ManualPortMappingMode *bool `json:"manualPortMappingMode,omitempty"`
+
+	// manualPortMappingPort is the public port for remote access.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	ManualPortMappingPort *int `json:"manualPortMappingPort,omitempty"`
+
+	// relayEnabled lets clients that can't connect directly go through Plex's relay.
+	// +optional
+	RelayEnabled *bool `json:"relayEnabled,omitempty"`
+
+	// gdmEnabled announces the server to clients on the local network.
+	// +optional
+	GdmEnabled *bool `json:"gdmEnabled,omitempty"`
+
+	// webhooksEnabled sends events to the webhooks set up in the Plex account.
+	// +optional
+	WebhooksEnabled *bool `json:"webhooksEnabled,omitempty"`
+
+	// preferredNetworkInterface is the interface Plex uses, such as eth0. Empty
+	// means any.
+	// +optional
+	PreferredNetworkInterface string `json:"preferredNetworkInterface,omitempty"`
 }
 
 // PlexConfigStatus defines the observed state of PlexConfig.
