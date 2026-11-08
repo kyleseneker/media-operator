@@ -62,6 +62,22 @@ Some things can't be compared by reading:
   operator wrote them and the Secret has changed since.
 - Plex preferences that Plex doesn't list are not compared.
 
+## Delay profiles and quality definitions
+
+Delay profiles have no name. Each one in the resource is matched to the app's
+profile that holds any of its tags, and the one without tags to the app's
+default profile. A matching profile is updated, even one made in the app, and
+changing a profile's tags updates it rather than replacing it. The app allows a
+tag in only one profile, so a tag moving to another profile is taken off the
+first one before it's added. The app checks tagged profiles in the order the
+resource lists them.
+
+Quality definitions are a fixed set. The operator updates the ones listed,
+matched by `quality`, and leaves the rest alone. Sizes are in the app's units:
+megabytes per minute of runtime in Sonarr and Radarr, kilobits per second in
+Lidarr. A `maxSize` or `preferredSize` of 0 means unlimited. Readarr has no
+preferred size.
+
 ## Prune
 
 With `spec.reconcile.prune: true`, the operator deletes items it created once
@@ -71,7 +87,7 @@ prune, removing an item from the resource only stops managing it.
 
 | App | Pruned |
 |---|---|
-| Sonarr, Radarr, Lidarr, Readarr | download clients, indexers, notifications, import lists, custom formats, quality profiles, remote path mappings |
+| Sonarr, Radarr, Lidarr, Readarr | download clients, indexers, notifications, import lists, custom formats, quality profiles, remote path mappings, delay profiles |
 | Prowlarr | applications, indexers, proxies, download clients, notifications |
 | FlareSolverr | sessions |
 | Tdarr | library variables |
@@ -85,13 +101,16 @@ prune, removing an item from the resource only stops managing it.
 Jellyfin and Plex reject `prune: true` with `InvalidConfig`.
 
 - A list with no declared items is not pruned.
-- Settings, root folders, tags, libraries and Prowlarr sync profiles are never
-  pruned.
+- Settings, root folders, tags, quality definitions, libraries and Prowlarr
+  sync profiles are never pruned, and neither is the default delay profile.
 - A pass that would delete more than 25 items of one kind deletes none of them.
 - Observe mode never prunes. It reports each item prune would delete as a
   difference.
 - Deleting a Maintainerr rule group also deletes its collection.
 - Deleting a qBittorrent category leaves its torrents uncategorized.
+- Delay profiles are pruned before other changes, so a new profile can take the
+  tags of the one it replaces. `status.managedResources` records them by the
+  app's profile ID.
 
 ## Deletion
 
@@ -125,7 +144,8 @@ The apps link resources by ID, and IDs change when an app is rebuilt. These
 references can use names instead:
 
 - `tagLabels` on Sonarr, Radarr, Lidarr and Readarr download clients, indexers,
-  notifications and import lists. Tags in `spec.tags` are created first.
+  notifications, import lists and delay profiles. Tags in `spec.tags` are
+  created first.
 - Custom formats in quality profiles, and quality profiles in import lists.
 - `appProfileName` on Prowlarr indexers.
 - `activeProfileName` on Seerr's Sonarr and Radarr connections, looked up from

@@ -60,7 +60,7 @@ paths. Do not run destructive rebuild tests against a production database.
    Key discovery/adoption is not automatic. Jellyfin/Seerr support setup workflows,
    but that does not bootstrap credentials for every application.
 3. Apply configuration with a single owner for each setting. For example, let
-   Recyclarr own quality profiles/custom formats/naming and Prowlarr own downstream
+   Recyclarr own quality profiles/custom formats/quality sizes/naming and Prowlarr own downstream
    indexers; omit those sections from competing CRs.
 4. Verify CR status and read back the actual settings through each application's
    API/UI. Confirm associations use the freshly assigned IDs. A second reconciliation

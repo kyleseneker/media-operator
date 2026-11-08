@@ -60,7 +60,8 @@ represent or the app doesn't report, such as a second Sonarr server in Seerr or
 a Plex preference Plex doesn't list.
 
 Use `--exclude` for parts managed by another tool, for example `indexers` when
-Prowlarr syncs them, or `customFormats,qualityProfiles` when Recyclarr does.
+Prowlarr syncs them, or `customFormats,qualityProfiles,qualityDefinitions` when
+Recyclarr does.
 
 ## Applying the result
 
