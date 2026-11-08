@@ -273,7 +273,72 @@ func TestSabnzbdPlanTreatsWrittenSwitchesAsSet(t *testing.T) {
 }
 
 func TestSabnzbdGeneralValuesCoversEveryField(t *testing.T) {
-	contract.AssertEveryFieldEmitted(t, &downloadsv1alpha1.SabnzbdGeneral{}, buildSabnzbdGeneralValues)
+	contract.AssertEveryFieldEmitted(t, &downloadsv1alpha1.SabnzbdGeneral{}, buildSabnzbdGeneralValues,
+		func(g *downloadsv1alpha1.SabnzbdGeneral) {
+			g.UnwantedExtensions, g.CleanupList, g.HostWhitelist = []string{"exe"}, []string{"nfo"}, []string{"sabnzbd"}
+			g.EncryptedRarAction, g.UnwantedExtensionsAction, g.UnwantedExtensionsMode = "fail", "pause", "allowlist"
+		})
+}
+
+func TestSabnzbdValuesUseSABnzbdsForms(t *testing.T) {
+	got := buildSabnzbdGeneralValues(&downloadsv1alpha1.SabnzbdGeneral{
+		FailHopelessJobs:         new(true),
+		EncryptedRarAction:       "fail",
+		UnwantedExtensions:       []string{"exe", "lnk"},
+		UnwantedExtensionsMode:   "blocklist",
+		UnwantedExtensionsAction: "pause",
+		HistoryRetention:         "days-delete",
+		HistoryRetentionNumber:   new(30),
+		Permissions:              "775",
+	})
+	assert.Equal(t, map[string]string{
+		"fail_hopeless_jobs":            "1",
+		"pause_on_pwrar":                "2",
+		"unwanted_extensions":           "exe,lnk",
+		"unwanted_extensions_mode":      "0",
+		"action_on_unwanted_extensions": "1",
+		"history_retention_option":      "days-delete",
+		"history_retention_number":      "30",
+		"permissions":                   "775",
+	}, got)
+
+	server := sabnzbdServerValues(downloadsv1alpha1.SabnzbdServer{
+		Host: "news.example.com", Port: 563, SSLVerify: "medium", Optional: new(true), Required: new(false), Timeout: new(30),
+	})
+	assert.Equal(t, map[string]string{
+		"host": "news.example.com", "port": "563", "ssl_verify": "2", "optional": "1", "required": "0", "timeout": "30",
+	}, server)
+	assert.Equal(t, map[string]string{"pp": "2"}, sabnzbdCategoryValues(downloadsv1alpha1.SabnzbdCategory{PostProcessing: "unpack"}))
+}
+
+// SABnzbd takes a list comma-separated and returns it as an array.
+func TestSabnzbdPlanComparesListsAsWritten(t *testing.T) {
+	spec := downloadsv1alpha1.SabnzbdConfigSpec{General: &downloadsv1alpha1.SabnzbdGeneral{UnwantedExtensions: []string{"exe", "lnk"}}}
+	assert.Empty(t, planSabnzbd(map[string]any{"misc": map[string]any{"unwanted_extensions": []any{"exe", "lnk"}}}, spec, nil, "list"))
+	assert.Len(t, planSabnzbd(map[string]any{"misc": map[string]any{"unwanted_extensions": []any{"exe"}}}, spec, nil, "list"), 1)
+}
+
+func TestSabnzbdHostWhitelistMustKeepTheOperatorsHost(t *testing.T) {
+	for _, tt := range []struct {
+		url       string
+		whitelist []string
+		ok        bool
+	}{
+		{"http://sabnzbd.media:8080", []string{"sabnzbd.media", "sab.example.com"}, true},
+		{"http://sabnzbd.media:8080", []string{"sab.example.com"}, false},
+		{"http://sabnzbd.media.svc.cluster.local:8080", []string{"sab.example.com"}, true},
+		{"http://sabnzbd.media.svc.cluster.local.:8080", []string{"sab.example.com"}, true},
+		{"http://10.0.0.5:8080", []string{"sab.example.com"}, true},
+		{"http://localhost:8080", []string{"sab.example.com"}, true},
+		{"http://sabnzbd:8080", nil, true},
+	} {
+		err := sabnzbdHostAllowed(tt.url, tt.whitelist)
+		if tt.ok {
+			assert.NoError(t, err, tt.url)
+		} else {
+			assert.ErrorContains(t, err, "must include sabnzbd.media,", tt.url)
+		}
+	}
 }
 
 func TestSabnzbdFolderValuesCoversEveryField(t *testing.T) {

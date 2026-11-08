@@ -69,6 +69,18 @@ func TestSabnzbd(t *testing.T) {
 			assert.Equal(t, "avg_age asc", cfg.Misc["auto_sort"], "autoSort did not set a sort order SABnzbd uses")
 			require.Len(t, cfg.Servers, 1)
 			assert.Equal(t, "news.example.com", cfg.Servers[0]["host"])
+			assert.InDelta(t, 2, cfg.Servers[0]["ssl_verify"], 0)
+			assert.InDelta(t, 30, cfg.Servers[0]["timeout"], 0)
+			assert.Equal(t, []any{"exe", "lnk"}, cfg.Misc["unwanted_extensions"])
+			assert.InDelta(t, 2, cfg.Misc["pause_on_pwrar"], 0)
+			assert.Equal(t, "days-delete", cfg.Misc["history_retention_option"])
+			assert.Equal(t, "775", cfg.Misc["permissions"])
+			assert.Equal(t, []any{"sabnzbd.media"}, cfg.Misc["host_whitelist"])
+			for _, c := range cfg.Categories {
+				if c["name"] == "tv" {
+					assert.Equal(t, "2", c["pp"])
+				}
+			}
 			names := make([]any, 0, len(cfg.Categories))
 			for _, c := range cfg.Categories {
 				names = append(names, c["name"])

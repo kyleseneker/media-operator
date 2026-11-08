@@ -11,6 +11,16 @@ spec:
       key: API_KEY
   general:
     preCheck: true
+    failHopelessJobs: true
+    encryptedRarAction: fail
+    unwantedExtensions:
+      - exe
+      - lnk
+    unwantedExtensionsAction: fail
+    deobfuscateFinalFilenames: true
+    historyRetention: days-delete
+    historyRetentionNumber: 30
+    permissions: "775"
   folders:
     completeDir: /data/usenet/complete
     incompleteDir: /data/usenet/incomplete

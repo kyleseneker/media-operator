@@ -64,6 +64,16 @@ spec:
                     name:
                       description: name is the category name.
                       type: string
+                    postProcessing:
+                      description: |-
+                        postProcessing is how far SABnzbd processes the category's jobs: download
+                        only, repair, unpack, or unpack and delete the archives.
+                      enum:
+                      - download
+                      - repair
+                      - unpack
+                      - delete
+                      type: string
                     priority:
                       description: priority is the download priority. -100=default,
                         -2=paused, -1=low, 0=normal, 1=high, 2=force.
@@ -154,20 +164,149 @@ spec:
                     description: autoSort sorts the queue by age whenever an NZB is
                       added.
                     type: boolean
+                  cacheLimit:
+                    description: cacheLimit is the memory used to cache articles,
+                      such as 1G.
+                    type: string
+                  cleanupList:
+                    description: cleanupList lists file extensions, without the dot,
+                      to delete after a job.
+                    items:
+                      type: string
+                    type: array
+                  completeFree:
+                    description: |-
+                      completeFree is the free space the complete folder needs to keep
+                      downloading, such as 10G.
+                    type: string
+                  deobfuscateFinalFilenames:
+                    description: deobfuscateFinalFilenames renames obfuscated files
+                      after the job.
+                    type: boolean
+                  directUnpack:
+                    description: directUnpack unpacks a job while it's still downloading.
+                    type: boolean
+                  downloadFree:
+                    description: |-
+                      downloadFree is the free space the incomplete folder needs to keep
+                      downloading, such as 500M.
+                    type: string
                   downloadSpeedLimit:
                     description: downloadSpeedLimit is the download speed limit (e.g.,
                       "100M", "0" for unlimited).
                     type: string
+                  enableAllPar:
+                    description: enableAllPar downloads every par2 file, not only
+                      those a repair needs.
+                    type: boolean
+                  enableRecursive:
+                    description: enableRecursive unpacks archives found inside archives.
+                    type: boolean
+                  encryptedRarAction:
+                    description: encryptedRarAction is what SABnzbd does with a job
+                      containing an encrypted RAR.
+                    enum:
+                    - "off"
+                    - pause
+                    - fail
+                    type: string
+                  failHopelessJobs:
+                    description: failHopelessJobs fails a job as soon as it can't
+                      be completed.
+                    type: boolean
+                  flatUnpack:
+                    description: flatUnpack ignores the folders inside archives when
+                      unpacking.
+                    type: boolean
+                  historyRetention:
+                    description: historyRetention decides how long jobs stay in the
+                      history.
+                    enum:
+                    - all
+                    - number-archive
+                    - number-delete
+                    - days-archive
+                    - days-delete
+                    - all-archive
+                    - all-delete
+                    type: string
+                  historyRetentionNumber:
+                    description: historyRetentionNumber is the number of jobs or days
+                      historyRetention keeps.
+                    minimum: 0
+                    type: integer
+                  hostWhitelist:
+                    description: |-
+                      hostWhitelist lists the host names SABnzbd answers on besides IP
+                      addresses, localhost and names ending in .local, which cover
+                      *.svc.cluster.local. It replaces SABnzbd's list, so it must include the
+                      host in connection.url unless that is one of those.
+                    items:
+                      type: string
+                    type: array
+                  ignoreSamples:
+                    description: ignoreSamples skips sample files.
+                    type: boolean
                   pauseOnPostProcessing:
                     description: pauseOnPostProcessing pauses downloading during post-processing.
                     type: boolean
+                  permissions:
+                    description: permissions are the octal permissions set on completed
+                      downloads, such as 775.
+                    pattern: ^[0-7]{3,4}$
+                    type: string
                   preCheck:
                     description: preCheck enables NZB pre-check for completion.
+                    type: boolean
+                  propagationDelay:
+                    description: propagationDelay holds back jobs posted less than
+                      this many minutes ago.
+                    minimum: 0
+                    type: integer
+                  safePostProcessing:
+                    description: safePostProcessing post-processes only jobs that
+                      passed verification.
+                    type: boolean
+                  scriptCanFail:
+                    description: scriptCanFail lets a job's post-processing script
+                      fail without failing the job.
                     type: boolean
                   scriptDir:
                     description: |-
                       scriptDir is the path to the scripts directory.
                       Deprecated: use folders.scriptDir, which takes precedence when both are set.
+                    type: string
+                  sfvCheck:
+                    description: sfvCheck verifies jobs without par2 files against
+                      their SFV files.
+                    type: boolean
+                  topOnly:
+                    description: topOnly fetches articles only for the job at the
+                      top of the queue.
+                    type: boolean
+                  unwantedExtensions:
+                    description: |-
+                      unwantedExtensions lists file extensions, without the dot, that
+                      unwantedExtensionsAction applies to.
+                    items:
+                      type: string
+                    type: array
+                  unwantedExtensionsAction:
+                    description: |-
+                      unwantedExtensionsAction is what SABnzbd does with a job containing an
+                      unwanted extension.
+                    enum:
+                    - "off"
+                    - pause
+                    - fail
+                    type: string
+                  unwantedExtensionsMode:
+                    description: |-
+                      unwantedExtensionsMode decides whether unwantedExtensions lists the
+                      extensions to act on or the only ones allowed.
+                    enum:
+                    - blocklist
+                    - allowlist
                     type: string
                 type: object
               reconcile:
@@ -229,6 +368,10 @@ spec:
                     name:
                       description: name is the display name of the server.
                       type: string
+                    optional:
+                      description: optional lets SABnzbd stop using the server for
+                        a while when it fails.
+                      type: boolean
                     passwordSecretRef:
                       description: passwordSecretRef references a Secret containing
                         the password.
@@ -249,6 +392,11 @@ spec:
                     priority:
                       description: priority is the server priority. 0 = highest.
                       type: integer
+                    required:
+                      description: |-
+                        required makes SABnzbd wait for the server when it fails instead of
+                        skipping it.
+                      type: boolean
                     retention:
                       description: retention is the server retention in days. 0 =
                         unlimited.
@@ -256,6 +404,20 @@ spec:
                     ssl:
                       description: ssl enables SSL/TLS connection.
                       type: boolean
+                    sslVerify:
+                      description: sslVerify is how strictly the server's certificate
+                        is checked when ssl is on.
+                      enum:
+                      - strict
+                      - medium
+                      - minimal
+                      - disabled
+                      type: string
+                    timeout:
+                      description: timeout is how many seconds SABnzbd waits for the
+                        server to answer.
+                      minimum: 1
+                      type: integer
                     usernameSecretRef:
                       description: usernameSecretRef references a Secret containing
                         the username.

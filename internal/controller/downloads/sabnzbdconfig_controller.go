@@ -4,8 +4,12 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"net"
+	"net/url"
+	"reflect"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -70,6 +74,12 @@ func (r *SabnzbdConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		ctrlcommon.UpdateStatus(ctx, r.Client, &config, false, engine.ReasonSyncFailed, fmt.Sprintf("reading config: %v", err))
 		return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 	}
+	if config.Spec.General != nil {
+		if err := sabnzbdHostAllowed(config.Spec.Connection.URL, config.Spec.General.HostWhitelist); err != nil {
+			ctrlcommon.UpdateStatus(ctx, r.Client, &config, false, engine.ReasonInvalidConfig, err.Error())
+			return ctrl.Result{}, nil
+		}
+	}
 	servers, syncErrors := r.resolveSabnzbdServers(ctx, &config)
 	writes := planSabnzbd(current, config.Spec, servers, string(config.UID))
 
@@ -120,23 +130,7 @@ func (r *SabnzbdConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func buildSabnzbdFolderValues(f *downloadsv1alpha1.SabnzbdFolders) map[string]string {
-	vals := make(map[string]string)
-	if f.CompleteDir != "" {
-		vals["complete_dir"] = f.CompleteDir
-	}
-	if f.IncompleteDir != "" {
-		vals["download_dir"] = f.IncompleteDir
-	}
-	if f.TempDownloadDir != "" {
-		vals["tmp_dir"] = f.TempDownloadDir
-	}
-	if f.NzbBackupDir != "" {
-		vals["nzb_backup_dir"] = f.NzbBackupDir
-	}
-	if f.ScriptDir != "" {
-		vals["script_dir"] = f.ScriptDir
-	}
-	return vals
+	return sabnzbdValues(f)
 }
 
 // sabnzbdAgeSort is the queue order SABnzbd 4 and later use for the old
@@ -144,26 +138,66 @@ func buildSabnzbdFolderValues(f *downloadsv1alpha1.SabnzbdFolders) map[string]st
 const sabnzbdAgeSort = "avg_age asc"
 
 func buildSabnzbdGeneralValues(g *downloadsv1alpha1.SabnzbdGeneral) map[string]string {
-	vals := make(map[string]string)
-	if g.DownloadSpeedLimit != "" {
-		vals["bandwidth_max"] = g.DownloadSpeedLimit
-	}
-	if g.PreCheck != nil {
-		vals["pre_check"] = ctrlcommon.BoolTo01(*g.PreCheck)
-	}
-	if g.PauseOnPostProcessing != nil {
-		vals["pause_on_post_processing"] = ctrlcommon.BoolTo01(*g.PauseOnPostProcessing)
-	}
+	vals := sabnzbdValues(g)
 	if g.AutoSort != nil {
 		vals["auto_sort"] = ""
 		if *g.AutoSort {
 			vals["auto_sort"] = sabnzbdAgeSort
 		}
 	}
-	if g.ScriptDir != "" {
-		vals["script_dir"] = g.ScriptDir
+	return vals
+}
+
+// sabnzbdValues reads the settings in sabnzbdclient's tables from a spec
+// section, as the text set_config takes.
+func sabnzbdValues(section any) map[string]string {
+	vals := map[string]string{}
+	v := reflect.ValueOf(section).Elem()
+	for i := range v.NumField() {
+		name, _, _ := strings.Cut(v.Type().Field(i).Tag.Get("json"), ",")
+		field := v.Field(i)
+		if field.IsZero() {
+			continue
+		}
+		if key, ok := sabnzbdclient.Folders[name]; ok {
+			vals[key] = field.String()
+		}
+		if key, ok := sabnzbdclient.Switches[name]; ok {
+			vals[key] = ctrlcommon.BoolTo01(field.Elem().Bool())
+		}
+		if key, ok := sabnzbdclient.Texts[name]; ok {
+			vals[key] = field.String()
+		}
+		if key, ok := sabnzbdclient.Numbers[name]; ok {
+			vals[key] = strconv.FormatInt(field.Elem().Int(), 10)
+		}
+		if key, ok := sabnzbdclient.Lists[name]; ok {
+			vals[key] = strings.Join(field.Interface().([]string), ",")
+		}
+		if choice, ok := sabnzbdclient.Choices[name]; ok {
+			vals[choice.Key] = choice.Values[field.String()]
+		}
 	}
 	return vals
+}
+
+// sabnzbdHostAllowed checks that hostWhitelist keeps the host the operator
+// connects to. SABnzbd refuses any other host name, so leaving it out would
+// lock the operator out.
+func sabnzbdHostAllowed(connection string, whitelist []string) error {
+	if len(whitelist) == 0 {
+		return nil
+	}
+	u, err := url.Parse(connection)
+	if err != nil {
+		return err
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "localhost" || net.ParseIP(host) != nil || strings.HasSuffix(strings.TrimSuffix(host, "."), ".local") ||
+		slices.Contains(whitelist, host) {
+		return nil
+	}
+	return fmt.Errorf("general.hostWhitelist must include %s, the host in connection.url; SABnzbd refuses host names it doesn't list", host)
 }
 
 func sabnzbdServerValues(srv downloadsv1alpha1.SabnzbdServer) map[string]string {
@@ -171,22 +205,21 @@ func sabnzbdServerValues(srv downloadsv1alpha1.SabnzbdServer) map[string]string 
 		"host": srv.Host,
 		"port": strconv.Itoa(srv.Port),
 	}
-	if srv.SSL != nil {
-		vals["ssl"] = ctrlcommon.BoolTo01(*srv.SSL)
+	for key, value := range map[string]*bool{"ssl": srv.SSL, "enable": srv.Enable, "optional": srv.Optional, "required": srv.Required} {
+		if value != nil {
+			vals[key] = ctrlcommon.BoolTo01(*value)
+		}
 	}
-	if srv.Connections != nil {
-		vals["connections"] = strconv.Itoa(*srv.Connections)
+	for key, value := range map[string]*int{
+		"connections": srv.Connections, "priority": srv.Priority, "retention": srv.Retention, "timeout": srv.Timeout,
+	} {
+		if value != nil {
+			vals[key] = strconv.Itoa(*value)
+		}
 	}
-	if srv.Priority != nil {
-		vals["priority"] = strconv.Itoa(*srv.Priority)
+	if srv.SSLVerify != "" {
+		vals["ssl_verify"] = sabnzbdclient.SSLVerify[srv.SSLVerify]
 	}
-	if srv.Retention != nil {
-		vals["retention"] = strconv.Itoa(*srv.Retention)
-	}
-	if srv.Enable != nil {
-		vals["enable"] = ctrlcommon.BoolTo01(*srv.Enable)
-	}
-
 	return vals
 }
 
@@ -350,10 +383,18 @@ func planSabnzbd(
 	}
 	currentMisc, _ := current["misc"].(map[string]any)
 	for _, key := range slices.Sorted(maps.Keys(misc)) {
-		// A switch reads back as 0/1 until written and as true/false after.
+		// A switch reads back as 0/1 until written and as true/false after, and
+		// a list as an array of what was written comma-separated.
 		value := currentMisc[key]
-		if b, ok := value.(bool); ok {
-			value = ctrlcommon.BoolTo01(b)
+		switch v := value.(type) {
+		case bool:
+			value = ctrlcommon.BoolTo01(v)
+		case []any:
+			items := make([]string, 0, len(v))
+			for _, item := range v {
+				items = append(items, fmt.Sprint(item))
+			}
+			value = strings.Join(items, ",")
 		}
 		out, err := reconciler.MergeDesired(map[string]any{key: value}, map[string]any{key: misc[key]})
 		if err == nil && !out.Changed {
@@ -425,6 +466,9 @@ func sabnzbdCategoryValues(cat downloadsv1alpha1.SabnzbdCategory) map[string]str
 	}
 	if cat.Priority != nil {
 		vals["priority"] = strconv.Itoa(*cat.Priority)
+	}
+	if cat.PostProcessing != "" {
+		vals["pp"] = sabnzbdclient.PostProcessing[cat.PostProcessing]
 	}
 	return vals
 }

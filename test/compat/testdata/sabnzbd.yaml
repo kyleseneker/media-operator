@@ -13,6 +13,35 @@ spec:
     pauseOnPostProcessing: true
     autoSort: true
     preCheck: true
+    topOnly: false
+    failHopelessJobs: true
+    encryptedRarAction: fail
+    unwantedExtensions:
+      - exe
+      - lnk
+    unwantedExtensionsMode: blocklist
+    unwantedExtensionsAction: fail
+    directUnpack: false
+    enableAllPar: false
+    sfvCheck: true
+    safePostProcessing: true
+    enableRecursive: true
+    flatUnpack: false
+    ignoreSamples: true
+    deobfuscateFinalFilenames: true
+    scriptCanFail: false
+    cleanupList:
+      - nfo
+      - srr
+    historyRetention: days-delete
+    historyRetentionNumber: 30
+    permissions: "775"
+    downloadFree: 1G
+    completeFree: 5G
+    cacheLimit: 512M
+    propagationDelay: 5
+    hostWhitelist:
+      - sabnzbd.media
   folders:
     completeDir: /downloads/complete
     incompleteDir: /downloads/incomplete
@@ -26,6 +55,10 @@ spec:
       priority: 0
       retention: 3000
       enable: true
+      sslVerify: medium
+      optional: false
+      required: true
+      timeout: 30
       usernameSecretRef:
         name: compat-credentials
         key: usenet-username
@@ -36,6 +69,7 @@ spec:
     - name: tv
       dir: tv
       priority: 0
+      postProcessing: unpack
     - name: movies
       dir: movies
       priority: 1
