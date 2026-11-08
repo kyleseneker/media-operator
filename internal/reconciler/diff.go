@@ -3,6 +3,7 @@ package reconciler
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"reflect"
 	"strconv"
 )
@@ -106,7 +107,29 @@ func differs(current, merged any, secrets *[]string) bool {
 		return false
 	}
 
-	return !reflect.DeepEqual(current, merged) && !sameScalarText(current, merged)
+	return !sameScalar(current, merged)
+}
+
+func sameScalar(a, b any) bool {
+	return reflect.DeepEqual(a, b) || sameFloat(a, b) || sameScalarText(a, b)
+}
+
+// maxULPs is how far apart two doubles may sit and still be the same value.
+// Tdarr stores flow node positions one unit in the last place off what was
+// written, so an exact comparison never settles.
+const maxULPs = 4
+
+func sameFloat(a, b any) bool {
+	x, ok := a.(float64)
+	if !ok {
+		return false
+	}
+	y, ok := b.(float64)
+	if !ok || math.IsNaN(x) || math.IsNaN(y) || math.Signbit(x) != math.Signbit(y) {
+		return false
+	}
+	d := int64(math.Float64bits(x)) - int64(math.Float64bits(y))
+	return d >= -maxULPs && d <= maxULPs
 }
 
 // sameScalarText treats a string as equal to the number or boolean the app
@@ -238,9 +261,10 @@ func deepCopySlice(s []any) []any {
 // Covers reports whether current already holds everything desired declares.
 // Keys desired leaves out are ignored, arrays compare in order element by
 // element, and scalars match across the representations apps read back: a
-// number or bool as text, and a bool as 0/1. It suits documents an app stores
-// whole (Tdarr libraries and flows, Bazarr profiles), where merging arrays by
-// name could pair up elements that merely share a display name.
+// number or bool as text, a bool as 0/1, and a double a few units in the last
+// place off. It suits documents an app stores whole (Tdarr libraries and flows,
+// Bazarr profiles), where merging arrays by name could pair up elements that
+// merely share a display name.
 func Covers(current, desired any) bool {
 	switch d := desired.(type) {
 	case map[string]any:
@@ -275,5 +299,5 @@ func Covers(current, desired any) bool {
 			return true
 		}
 	}
-	return reflect.DeepEqual(current, desired) || sameScalarText(current, desired)
+	return sameScalar(current, desired)
 }

@@ -28,8 +28,8 @@ spec:
             fileAccessChecks: "true"
           id: inputNode1
           position:
-            x: 0
-            "y": 0
+            x: 941.5713266286093
+            "y": -1336.7017814032133
           fpEnabled: true
         - name: Check if mkv
           sourceRepo: Community
@@ -39,8 +39,8 @@ spec:
             extensions: mkv
           id: checkNode1
           position:
-            x: 0
-            "y": 200
+            x: -102.56643926843685
+            "y": 1542.5604858352679
           fpEnabled: true
       flowEdges:
         - source: inputNode1

@@ -245,6 +245,31 @@ func TestTdarrLeavesAMatchingLibraryAlone(t *testing.T) {
 	assert.False(t, app.ranOp("insert"))
 }
 
+// Tdarr stores flow node positions one unit in the last place off what it was
+// sent, so a flow exported from its UI never compared equal and was rewritten
+// on every pass.
+func TestTdarrLeavesAFlowItStoredAlone(t *testing.T) {
+	flow := transcodev1alpha1.TdarrFlow{
+		ID: "flow1", Name: "Prep",
+		FlowPlugins: []runtime.RawExtension{{Raw: []byte(`{"id":"n1","pluginName":"inputFile","position":{"x":941.5713266286093,"y":-1336.7017814032133}}`)}},
+		FlowEdges:   []runtime.RawExtension{},
+	}
+	app := &fakeTdarr{docFound: true, stored: map[string]any{
+		"_id": "flow1", "name": "Prep", "flowEdges": []any{},
+		"flowPlugins": []any{map[string]any{
+			"id": "n1", "pluginName": "inputFile",
+			"position": map[string]any{"x": 941.5713266286092, "y": -1336.701781403213},
+		}},
+	}}
+
+	cfg := tdarrConfig(app.serve(t))
+	cfg.Spec.Flows = []transcodev1alpha1.TdarrFlow{flow}
+	runTdarr(t, cfg, true)
+
+	require.True(t, app.ranOp("getById"))
+	assert.False(t, app.ranOp("update"), "a flow Tdarr already stores was rewritten")
+}
+
 func TestTdarrMissingSecretDoesNotContactApp(t *testing.T) {
 	app := &fakeTdarr{}
 	url := app.serve(t)

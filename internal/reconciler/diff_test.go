@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"encoding/json"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -226,4 +227,23 @@ func TestCoversComparesOnlyWhatIsDeclared(t *testing.T) {
 func TestCoversTreatsAMaskedSecretAsUnverifiable(t *testing.T) {
 	assert.True(t, Covers(map[string]any{"password": "<redacted>"}, map[string]any{"password": "s3cret"}))
 	assert.True(t, Covers(map[string]any{"apiKey": "********"}, map[string]any{"apiKey": "k"}))
+}
+
+// Tdarr stores a flow node at -1336.701781403213 when sent -1336.7017814032133.
+func TestAdjacentDoublesAreTheSameValue(t *testing.T) {
+	stored := map[string]any{"position": map[string]any{"x": 941.5713266286092, "y": -1336.701781403213}}
+	sent := map[string]any{"position": map[string]any{"x": 941.5713266286093, "y": -1336.7017814032133}}
+	assert.True(t, Covers(stored, sent))
+	_, changed, err := MergeDesiredOverCurrent(stored, sent)
+	require.NoError(t, err)
+	assert.False(t, changed)
+
+	moved := map[string]any{"position": map[string]any{"x": 941.58, "y": -1336.7017814032133}}
+	assert.False(t, Covers(stored, moved), "a moved node is still a change")
+	_, changed, _ = MergeDesiredOverCurrent(stored, moved)
+	assert.True(t, changed, "a moved node is still a change")
+
+	assert.False(t, Covers(0.5, -0.5))
+	assert.False(t, Covers(math.NaN(), math.NaN()))
+	assert.True(t, Covers(0.0, math.Copysign(0, -1)))
 }
