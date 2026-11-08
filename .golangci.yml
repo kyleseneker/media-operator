@@ -1,10 +1,9 @@
 version: "2"
 run:
   allow-parallel-runners: true
-  # Lint the opt-in live-application suites too.
+  # Lint the opt-in compat suite too.
   build-tags:
     - compat
-    - integration
 linters:
   default: none
   enable:
