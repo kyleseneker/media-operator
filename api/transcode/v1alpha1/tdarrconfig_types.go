@@ -43,6 +43,136 @@ type TdarrConfigSpec struct {
 	// workers configures the number of worker threads by type.
 	// +optional
 	Workers *TdarrWorkers `json:"workers,omitempty"`
+
+	// settings configures Tdarr's server-wide options. Pausing nodes is left to
+	// whoever runs Tdarr.
+	// +optional
+	Settings *TdarrSettings `json:"settings,omitempty"`
+}
+
+// TdarrSettings configures Tdarr's server-wide options.
+type TdarrSettings struct {
+	// autoAcceptTranscodes moves a successful transcode into the library or
+	// output folder without waiting in staging for review.
+	// +optional
+	AutoAcceptTranscodes *bool `json:"autoAcceptTranscodes,omitempty"`
+
+	// stagedFileLimit is how many files can wait in staging for review.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	StagedFileLimit *int `json:"stagedFileLimit,omitempty"`
+
+	// autoPauseIfCacheFull pauses every node when a library cache has less
+	// free space than autoPauseIfCacheFullThreshold.
+	// +optional
+	AutoPauseIfCacheFull *bool `json:"autoPauseIfCacheFull,omitempty"`
+
+	// autoPauseIfCacheFullThreshold is the free cache space, in GB, below which
+	// autoPauseIfCacheFull pauses the nodes.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	AutoPauseIfCacheFullThreshold *int `json:"autoPauseIfCacheFullThreshold,omitempty"`
+
+	// workerStallDetector cancels workers that stall.
+	// +optional
+	WorkerStallDetector *bool `json:"workerStallDetector,omitempty"`
+
+	// workerStallDetectorInterval is how often, in seconds, workers are checked
+	// for stalls.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	WorkerStallDetectorInterval *int `json:"workerStallDetectorInterval,omitempty"`
+
+	// ignoreSchedules runs workers outside their libraries' schedules.
+	// +optional
+	IgnoreSchedules *bool `json:"ignoreSchedules,omitempty"`
+
+	// alternateLibraries takes queued files from each library in turn.
+	// +optional
+	AlternateLibraries *bool `json:"alternateLibraries,omitempty"`
+
+	// prioritiseLibraries takes queued files by library priority.
+	// +optional
+	PrioritiseLibraries *bool `json:"prioritiseLibraries,omitempty"`
+
+	// prioritiseTranscodes takes transcodes before health checks.
+	// +optional
+	PrioritiseTranscodes *bool `json:"prioritiseTranscodes,omitempty"`
+
+	// prioritiseHealthChecks takes health checks before transcodes.
+	// +optional
+	PrioritiseHealthChecks *bool `json:"prioritiseHealthChecks,omitempty"`
+
+	// runMkvpropedit runs mkvpropedit on files before the plugins.
+	// +optional
+	RunMkvpropedit *bool `json:"runMkvpropedit,omitempty"`
+
+	// pluginAutoUpdate keeps the community plugins up to date.
+	// +optional
+	PluginAutoUpdate *bool `json:"pluginAutoUpdate,omitempty"`
+
+	// jobHistorySizeLimitGB caps the job history, in GB.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	JobHistorySizeLimitGB *int `json:"jobHistorySizeLimitGB,omitempty"`
+
+	// backupLimit is how many server backups are kept.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	BackupLimit *int `json:"backupLimit,omitempty"`
+
+	// logFullCliOutput logs the whole FFmpeg and HandBrake output of each job.
+	// +optional
+	LogFullCliOutput *bool `json:"logFullCliOutput,omitempty"`
+
+	// verboseLogs enables verbose logging.
+	// +optional
+	VerboseLogs *bool `json:"verboseLogs,omitempty"`
+
+	// notificationsDiscordWebhookSecretRef references the Discord webhook URL
+	// notifications go to.
+	// +optional
+	NotificationsDiscordWebhookSecretRef *commonv1alpha1.SecretKeyRef `json:"notificationsDiscordWebhookSecretRef,omitempty"`
+
+	// notificationsTranscodeSuccess notifies when a transcode succeeds.
+	// +optional
+	NotificationsTranscodeSuccess *bool `json:"notificationsTranscodeSuccess,omitempty"`
+
+	// notificationsTranscodeError notifies when a transcode fails.
+	// +optional
+	NotificationsTranscodeError *bool `json:"notificationsTranscodeError,omitempty"`
+
+	// notificationsTranscodeCancelled notifies when a transcode is cancelled.
+	// +optional
+	NotificationsTranscodeCancelled *bool `json:"notificationsTranscodeCancelled,omitempty"`
+
+	// notificationsHealthcheckSuccess notifies when a health check succeeds.
+	// +optional
+	NotificationsHealthcheckSuccess *bool `json:"notificationsHealthcheckSuccess,omitempty"`
+
+	// notificationsHealthcheckError notifies when a health check fails.
+	// +optional
+	NotificationsHealthcheckError *bool `json:"notificationsHealthcheckError,omitempty"`
+
+	// notificationsHealthcheckCancelled notifies when a health check is cancelled.
+	// +optional
+	NotificationsHealthcheckCancelled *bool `json:"notificationsHealthcheckCancelled,omitempty"`
+
+	// notificationsRequireReview notifies when a file waits in staging for review.
+	// +optional
+	NotificationsRequireReview *bool `json:"notificationsRequireReview,omitempty"`
+
+	// notificationsServerStarted notifies when the server starts.
+	// +optional
+	NotificationsServerStarted *bool `json:"notificationsServerStarted,omitempty"`
+
+	// notificationsServerUpdateReady notifies when a server update is ready.
+	// +optional
+	NotificationsServerUpdateReady *bool `json:"notificationsServerUpdateReady,omitempty"`
+
+	// notificationsCustomText is added to every notification.
+	// +optional
+	NotificationsCustomText string `json:"notificationsCustomText,omitempty"`
 }
 
 // TdarrLibrary defines a media library in Tdarr.
@@ -74,6 +204,39 @@ type TdarrLibrary struct {
 	// foldersToIgnore is a comma-separated list of folder names to skip while scanning.
 	// +optional
 	FoldersToIgnore string `json:"foldersToIgnore,omitempty"`
+
+	// foldersToIgnoreCaseInsensitive matches foldersToIgnore regardless of case.
+	// +optional
+	FoldersToIgnoreCaseInsensitive *bool `json:"foldersToIgnoreCaseInsensitive,omitempty"`
+
+	// filterResolutionsSkip is a comma-separated list of resolutions, such as
+	// 720p,1080p, whose files the server skips without sending them to a worker.
+	// +optional
+	FilterResolutionsSkip string `json:"filterResolutionsSkip,omitempty"`
+
+	// filterCodecsSkip is a comma-separated list of video codecs, such as
+	// hevc,vp9, whose files the server skips.
+	// +optional
+	FilterCodecsSkip string `json:"filterCodecsSkip,omitempty"`
+
+	// filterContainersSkip is a comma-separated list of containers, such as
+	// mkv,mp4, whose files the server skips.
+	// +optional
+	FilterContainersSkip string `json:"filterContainersSkip,omitempty"`
+
+	// filterHardlinked skips files linked in more than one place until they no
+	// longer are.
+	// +optional
+	FilterHardlinked *bool `json:"filterHardlinked,omitempty"`
+
+	// useFsEvents watches the folder with file system events instead of polling.
+	// +optional
+	UseFsEvents *bool `json:"useFsEvents,omitempty"`
+
+	// folderWatchScanInterval is how often, in seconds, folder watching polls.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	FolderWatchScanInterval *int `json:"folderWatchScanInterval,omitempty"`
 
 	// folderWatching enables watching the folder for new files.
 	// +optional

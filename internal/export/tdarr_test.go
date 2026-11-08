@@ -15,6 +15,7 @@ import (
 
 var fakeTdarrCollections = map[string]string{
 	"LibrarySettingsJSONDB": `[{"_id":"movies","name":"Movies","folder":"/media/movies","handbrakescan":false,"ffmpegscan":true,
+		"filterCodecsSkip":"hevc","filterHardlinked":true,"folderWatchScanInterval":30,
 		"decisionMaker":{"settingsFlows":true,"settingsPlugin":false},"priority":1,"flowId":"flow1",
 		"schedule":[{"checked":true},{"checked":false}],
 		"pluginIDs":[{"_id":"plugin2","id":"Second","checked":true,"source":"Community","priority":1,"InputsDB":{}},
@@ -24,6 +25,8 @@ var fakeTdarrCollections = map[string]string{
 	"VariablesJSONDB": `[{"key":"shared","value":"db","type":"library:movies"},{"key":"other","value":"x","type":"library:tv"},
 		{"key":"global","value":"g","type":"global"}]`,
 	"FlowsJSONDB": `[{"_id":"flow1","name":"Remux","description":"","flowPlugins":[{"id":"n1"}],"flowEdges":[]}]`,
+	"SettingsGlobalJSONDB": `{"_id":"globalsettings","autoAcceptTranscodes":true,"stagedFileLimit":50,"pauseAllNodes":true,
+		"notificationsDiscordWebhook":"https://discord.example/hook","notificationsCustomText":""}`,
 }
 
 func TestTdarrExportsLibrariesFlowsAndWorkers(t *testing.T) {
@@ -57,6 +60,17 @@ func TestTdarrExportsLibrariesFlowsAndWorkers(t *testing.T) {
 	assert.Equal(t, "thorough", movies.HealthCheckMode)
 	assert.Equal(t, "flows", movies.DecisionMode)
 	assert.Equal(t, map[string]string{"fromDoc": "a", "shared": "db"}, movies.Variables, "variable documents win over the library copy")
+	assert.Equal(t, "hevc", movies.FilterCodecsSkip)
+	assert.True(t, *movies.FilterHardlinked)
+	assert.Equal(t, 30, *movies.FolderWatchScanInterval)
+
+	settings := cfg.Spec.Settings
+	require.NotNil(t, settings)
+	assert.True(t, *settings.AutoAcceptTranscodes)
+	assert.Equal(t, 50, *settings.StagedFileLimit)
+	assert.Empty(t, settings.NotificationsCustomText)
+	require.NotNil(t, settings.NotificationsDiscordWebhookSecretRef)
+	assert.Equal(t, "https://discord.example/hook", res.Secret.StringData[settings.NotificationsDiscordWebhookSecretRef.Key])
 	assert.Contains(t, res.Warnings,
 		`library "Movies": plugin Off is disabled, local or has options, which pluginStack can't express`)
 	assert.Empty(t, cfg.Spec.Libraries[1].DecisionMode)

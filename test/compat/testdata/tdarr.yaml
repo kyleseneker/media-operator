@@ -14,6 +14,37 @@ spec:
     transcodeGPU: 0
     healthcheckCPU: 2
     healthcheckGPU: 0
+  settings:
+    autoAcceptTranscodes: true
+    stagedFileLimit: 50
+    autoPauseIfCacheFull: true
+    autoPauseIfCacheFullThreshold: 30
+    workerStallDetector: true
+    workerStallDetectorInterval: 600
+    ignoreSchedules: false
+    alternateLibraries: true
+    prioritiseLibraries: true
+    prioritiseTranscodes: false
+    prioritiseHealthChecks: false
+    runMkvpropedit: true
+    pluginAutoUpdate: false
+    jobHistorySizeLimitGB: 5
+    backupLimit: 10
+    logFullCliOutput: false
+    verboseLogs: false
+    notificationsDiscordWebhookSecretRef:
+      name: compat-credentials
+      key: discord-webhook
+    notificationsTranscodeSuccess: false
+    notificationsTranscodeError: true
+    notificationsTranscodeCancelled: false
+    notificationsHealthcheckSuccess: false
+    notificationsHealthcheckError: true
+    notificationsHealthcheckCancelled: false
+    notificationsRequireReview: true
+    notificationsServerStarted: false
+    notificationsServerUpdateReady: false
+    notificationsCustomText: compat
   flows:
     - id: compatFlow1
       name: Compat - remux check
@@ -56,6 +87,13 @@ spec:
       container: ".mkv"
       containerFilter: "mkv,mp4"
       foldersToIgnore: extras
+      foldersToIgnoreCaseInsensitive: true
+      filterResolutionsSkip: 480p,576p
+      filterCodecsSkip: hevc,av1
+      filterContainersSkip: iso
+      filterHardlinked: true
+      useFsEvents: false
+      folderWatchScanInterval: 60
       folderWatching: false
       processLibrary: true
       processTranscodes: true

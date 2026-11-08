@@ -55,7 +55,7 @@ func TestTdarr(t *testing.T) {
 		vars:    map[string]string{"URL": proxy.url()},
 		// Tdarr 3 enables authentication on a fresh config; this runs it without, as
 		// homelab does. The key is still required by the CRD.
-		secrets: map[string]string{"api-key": "unused"},
+		secrets: map[string]string{"api-key": "unused", "discord-webhook": "http://discord.invalid/hook"},
 		newObj:  func() ctrlcommon.ConfigResource { return &transcodev1alpha1.TdarrConfig{} },
 		reconciler: func(c client.Client) reconcile.Reconciler {
 			return &transcode.TdarrConfigReconciler{Client: c, Scheme: c.Scheme(), Recorder: events.NewFakeRecorder(100)}
@@ -85,6 +85,14 @@ func TestTdarr(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, "Compat - remux check", flow["name"])
 			assert.Len(t, compatMoviesVariables(t, tc), 1)
+			assert.Equal(t, "hevc,av1", lib["filterCodecsSkip"])
+			assert.Equal(t, true, lib["filterHardlinked"])
+			globals, err := tc.GetByID(context.Background(), "SettingsGlobalJSONDB", "globalsettings")
+			require.NoError(t, err)
+			assert.Equal(t, true, globals["autoAcceptTranscodes"])
+			assert.InDelta(t, 30, globals["autoPauseIfCacheFullThreshold"], 0)
+			assert.Equal(t, "http://discord.invalid/hook", globals["notificationsDiscordWebhook"])
+			assert.Equal(t, "compat", globals["notificationsCustomText"])
 		},
 		cleanup: func(t *testing.T, _ map[string][]string) {
 			assert.Empty(t, compatMoviesVariables(t, tc), "the library variable the operator created is still there")

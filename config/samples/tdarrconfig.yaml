@@ -15,6 +15,15 @@ spec:
     transcodeCPU: 0
     healthcheckGPU: 1
     healthcheckCPU: 1
+  settings:
+    autoAcceptTranscodes: true
+    autoPauseIfCacheFull: true
+    autoPauseIfCacheFullThreshold: 20
+    workerStallDetector: true
+    notificationsDiscordWebhookSecretRef:
+      name: arr-config-secrets
+      key: TDARR_DISCORD_WEBHOOK
+    notificationsTranscodeError: true
   libraries:
     - id: library-tv
       name: TV Shows
@@ -42,6 +51,8 @@ spec:
       ffmpeg: true
       decisionMode: flows
       flowId: mkv-check
+      filterCodecsSkip: hevc
+      filterHardlinked: true
   flows:
     - id: mkv-check
       name: MKV check

@@ -53,6 +53,8 @@ type fakeTdarr struct {
 	writes []varWrite
 	// libWrites records every insert and update of a library document.
 	libWrites []varWrite
+	// settingsWrites records every write to the global settings document.
+	settingsWrites []varWrite
 }
 
 type varWrite struct {
@@ -103,6 +105,9 @@ func (f *fakeTdarr) serve(t *testing.T) string {
 			if body.Data.Collection == "LibrarySettingsJSONDB" && (body.Data.Mode == "insert" || body.Data.Mode == "update") {
 				f.libWrites = append(f.libWrites, varWrite{mode: body.Data.Mode, docID: body.Data.DocID, obj: body.Data.Obj})
 			}
+			if body.Data.Collection == "SettingsGlobalJSONDB" && (body.Data.Mode == "insert" || body.Data.Mode == "update") {
+				f.settingsWrites = append(f.settingsWrites, varWrite{mode: body.Data.Mode, docID: body.Data.DocID, obj: body.Data.Obj})
+			}
 			if body.Data.Collection == variablesCollection {
 				if body.Data.Mode != modeGetAll {
 					f.writes = append(f.writes, varWrite{mode: body.Data.Mode, docID: body.Data.DocID, obj: body.Data.Obj})
@@ -151,7 +156,7 @@ func (f *fakeTdarr) serve(t *testing.T) string {
 func tdarrSecret() *corev1.Secret {
 	return &corev1.Secret{
 		Name: "tdarr-credentials", Namespace: "media",
-		Data: map[string][]byte{"api-key": []byte("test-key")},
+		Data: map[string][]byte{"api-key": []byte("test-key"), "discord": []byte("https://discord.example/hook")},
 	}
 }
 
@@ -611,6 +616,14 @@ var specFieldToDocKeys = map[string][]string{
 	"FlowID":               {"flowId"},
 	"PluginStack":          {"pluginIDs"},
 	"Variables":            {"variables"},
+
+	"FoldersToIgnoreCaseInsensitive": {"foldersToIgnoreCaseInsensitive"},
+	"FilterResolutionsSkip":          {"filterResolutionsSkip"},
+	"FilterCodecsSkip":               {"filterCodecsSkip"},
+	"FilterContainersSkip":           {"filterContainersSkip"},
+	"FilterHardlinked":               {"filterHardlinked"},
+	"UseFsEvents":                    {"useFsEvents"},
+	"FolderWatchScanInterval":        {"folderWatchScanInterval"},
 }
 
 func fullyPopulatedLibrary() transcodev1alpha1.TdarrLibrary {
@@ -624,6 +637,9 @@ func fullyPopulatedLibrary() transcodev1alpha1.TdarrLibrary {
 		FFmpeg: new(true), Priority: new(1), FlowID: "hevc-qsv",
 		PluginStack: []string{"Tdarr_Plugin_x"},
 		Variables:   map[string]string{"k": "v"},
+
+		FoldersToIgnoreCaseInsensitive: new(true), FilterResolutionsSkip: "480p", FilterCodecsSkip: "hevc",
+		FilterContainersSkip: "mkv", FilterHardlinked: new(true), UseFsEvents: new(false), FolderWatchScanInterval: new(30),
 	}
 }
 
@@ -714,4 +730,24 @@ func TestLibraryVariablesObserveReportsWhatPruneWouldDelete(t *testing.T) {
 
 	assert.Empty(t, app.varWrites(), "observe mode wrote to Tdarr")
 	assert.Equal(t, before+1, testutil.ToFloat64(observed))
+}
+
+func TestTdarrWritesGlobalSettingsWithTheWebhookFromItsSecret(t *testing.T) {
+	app := &fakeTdarr{docFound: true}
+	cfg := tdarrConfig(app.serve(t))
+	cfg.Spec.Settings = &transcodev1alpha1.TdarrSettings{
+		AutoPauseIfCacheFull: new(true), AutoPauseIfCacheFullThreshold: new(50), NotificationsTranscodeError: new(true),
+		NotificationsDiscordWebhookSecretRef: &commonv1alpha1.SecretKeyRef{Name: "tdarr-credentials", Key: "discord"},
+	}
+
+	c := runTdarr(t, cfg, true)
+
+	app.mu.Lock()
+	defer app.mu.Unlock()
+	require.Len(t, app.settingsWrites, 1)
+	assert.Equal(t, varWrite{mode: "update", docID: "globalsettings", obj: map[string]any{
+		"autoPauseIfCacheFull": true, "autoPauseIfCacheFullThreshold": float64(50), "notificationsTranscodeError": true,
+		"notificationsDiscordWebhook": "https://discord.example/hook",
+	}}, app.settingsWrites[0], "the Secret reference itself must never reach Tdarr")
+	assert.Equal(t, conditionTrue, tdarrCondition(t, c, "Synced"))
 }

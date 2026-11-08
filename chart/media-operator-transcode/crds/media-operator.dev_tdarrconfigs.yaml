@@ -174,6 +174,26 @@ spec:
                       description: ffmpeg enables using FFmpeg (true) vs HandBrake
                         (false) for transcoding.
                       type: boolean
+                    filterCodecsSkip:
+                      description: |-
+                        filterCodecsSkip is a comma-separated list of video codecs, such as
+                        hevc,vp9, whose files the server skips.
+                      type: string
+                    filterContainersSkip:
+                      description: |-
+                        filterContainersSkip is a comma-separated list of containers, such as
+                        mkv,mp4, whose files the server skips.
+                      type: string
+                    filterHardlinked:
+                      description: |-
+                        filterHardlinked skips files linked in more than one place until they no
+                        longer are.
+                      type: boolean
+                    filterResolutionsSkip:
+                      description: |-
+                        filterResolutionsSkip is a comma-separated list of resolutions, such as
+                        720p,1080p, whose files the server skips without sending them to a worker.
+                      type: string
                     flowId:
                       description: |-
                         flowId is the Tdarr flow this library processes files with. Flows are the
@@ -182,6 +202,11 @@ spec:
                     folder:
                       description: folder is the source media folder path.
                       type: string
+                    folderWatchScanInterval:
+                      description: folderWatchScanInterval is how often, in seconds,
+                        folder watching polls.
+                      minimum: 1
+                      type: integer
                     folderWatching:
                       description: folderWatching enables watching the folder for
                         new files.
@@ -190,6 +215,10 @@ spec:
                       description: foldersToIgnore is a comma-separated list of folder
                         names to skip while scanning.
                       type: string
+                    foldersToIgnoreCaseInsensitive:
+                      description: foldersToIgnoreCaseInsensitive matches foldersToIgnore
+                        regardless of case.
+                      type: boolean
                     healthCheckMode:
                       description: |-
                         healthCheckMode selects the health check to run. quick uses HandBrake to
@@ -238,6 +267,10 @@ spec:
                     scheduledScanFindNew:
                       description: scheduledScanFindNew enables scheduled scans for
                         new files.
+                      type: boolean
+                    useFsEvents:
+                      description: useFsEvents watches the folder with file system
+                        events instead of polling.
                       type: boolean
                     variables:
                       additionalProperties:
@@ -295,6 +328,139 @@ spec:
                       InvalidConfig rather than ignoring it.
                       Default: false (only create/update, never delete).
                     type: boolean
+                type: object
+              settings:
+                description: |-
+                  settings configures Tdarr's server-wide options. Pausing nodes is left to
+                  whoever runs Tdarr.
+                properties:
+                  alternateLibraries:
+                    description: alternateLibraries takes queued files from each library
+                      in turn.
+                    type: boolean
+                  autoAcceptTranscodes:
+                    description: |-
+                      autoAcceptTranscodes moves a successful transcode into the library or
+                      output folder without waiting in staging for review.
+                    type: boolean
+                  autoPauseIfCacheFull:
+                    description: |-
+                      autoPauseIfCacheFull pauses every node when a library cache has less
+                      free space than autoPauseIfCacheFullThreshold.
+                    type: boolean
+                  autoPauseIfCacheFullThreshold:
+                    description: |-
+                      autoPauseIfCacheFullThreshold is the free cache space, in GB, below which
+                      autoPauseIfCacheFull pauses the nodes.
+                    minimum: 0
+                    type: integer
+                  backupLimit:
+                    description: backupLimit is how many server backups are kept.
+                    minimum: 0
+                    type: integer
+                  ignoreSchedules:
+                    description: ignoreSchedules runs workers outside their libraries'
+                      schedules.
+                    type: boolean
+                  jobHistorySizeLimitGB:
+                    description: jobHistorySizeLimitGB caps the job history, in GB.
+                    minimum: 0
+                    type: integer
+                  logFullCliOutput:
+                    description: logFullCliOutput logs the whole FFmpeg and HandBrake
+                      output of each job.
+                    type: boolean
+                  notificationsCustomText:
+                    description: notificationsCustomText is added to every notification.
+                    type: string
+                  notificationsDiscordWebhookSecretRef:
+                    description: |-
+                      notificationsDiscordWebhookSecretRef references the Discord webhook URL
+                      notifications go to.
+                    properties:
+                      key:
+                        description: key is the key within the Secret.
+                        type: string
+                      name:
+                        description: name is the name of the Secret.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  notificationsHealthcheckCancelled:
+                    description: notificationsHealthcheckCancelled notifies when a
+                      health check is cancelled.
+                    type: boolean
+                  notificationsHealthcheckError:
+                    description: notificationsHealthcheckError notifies when a health
+                      check fails.
+                    type: boolean
+                  notificationsHealthcheckSuccess:
+                    description: notificationsHealthcheckSuccess notifies when a health
+                      check succeeds.
+                    type: boolean
+                  notificationsRequireReview:
+                    description: notificationsRequireReview notifies when a file waits
+                      in staging for review.
+                    type: boolean
+                  notificationsServerStarted:
+                    description: notificationsServerStarted notifies when the server
+                      starts.
+                    type: boolean
+                  notificationsServerUpdateReady:
+                    description: notificationsServerUpdateReady notifies when a server
+                      update is ready.
+                    type: boolean
+                  notificationsTranscodeCancelled:
+                    description: notificationsTranscodeCancelled notifies when a transcode
+                      is cancelled.
+                    type: boolean
+                  notificationsTranscodeError:
+                    description: notificationsTranscodeError notifies when a transcode
+                      fails.
+                    type: boolean
+                  notificationsTranscodeSuccess:
+                    description: notificationsTranscodeSuccess notifies when a transcode
+                      succeeds.
+                    type: boolean
+                  pluginAutoUpdate:
+                    description: pluginAutoUpdate keeps the community plugins up to
+                      date.
+                    type: boolean
+                  prioritiseHealthChecks:
+                    description: prioritiseHealthChecks takes health checks before
+                      transcodes.
+                    type: boolean
+                  prioritiseLibraries:
+                    description: prioritiseLibraries takes queued files by library
+                      priority.
+                    type: boolean
+                  prioritiseTranscodes:
+                    description: prioritiseTranscodes takes transcodes before health
+                      checks.
+                    type: boolean
+                  runMkvpropedit:
+                    description: runMkvpropedit runs mkvpropedit on files before the
+                      plugins.
+                    type: boolean
+                  stagedFileLimit:
+                    description: stagedFileLimit is how many files can wait in staging
+                      for review.
+                    minimum: 0
+                    type: integer
+                  verboseLogs:
+                    description: verboseLogs enables verbose logging.
+                    type: boolean
+                  workerStallDetector:
+                    description: workerStallDetector cancels workers that stall.
+                    type: boolean
+                  workerStallDetectorInterval:
+                    description: |-
+                      workerStallDetectorInterval is how often, in seconds, workers are checked
+                      for stalls.
+                    minimum: 1
+                    type: integer
                 type: object
               workers:
                 description: workers configures the number of worker threads by type.

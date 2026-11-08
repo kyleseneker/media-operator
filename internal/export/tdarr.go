@@ -3,9 +3,11 @@ package export
 import (
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 	"strings"
 
+	transcodev1alpha1 "github.com/kyleseneker/media-operator/api/transcode/v1alpha1"
 	tdarrclient "github.com/kyleseneker/media-operator/internal/client/tdarr"
 )
 
@@ -32,8 +34,15 @@ func exportTdarr(r *reader) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	globals, err := tc.GetByID(r.ctx, "SettingsGlobalJSONDB", "globalsettings")
+	if err != nil {
+		return nil, err
+	}
 
 	spec := map[string]any{}
+	if settings := r.tdarrSettings(globals); len(settings) > 0 {
+		spec["settings"] = settings
+	}
 	var libs []any
 	for _, doc := range libraries {
 		libs = append(libs, r.tdarrLibrary(doc, variables))
@@ -61,6 +70,22 @@ func exportTdarr(r *reader) (map[string]any, error) {
 	return spec, nil
 }
 
+// tdarrSettings exports the global options TdarrSettings holds, under the
+// same names, with the Discord webhook moved to the Secret.
+func (r *reader) tdarrSettings(doc map[string]any) map[string]any {
+	out := map[string]any{}
+	for field := range reflect.TypeFor[transcodev1alpha1.TdarrSettings]().Fields() {
+		name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+		if v, ok := doc[name]; ok && v != nil && v != "" {
+			out[name] = v
+		}
+	}
+	if webhook, _ := doc["notificationsDiscordWebhook"].(string); webhook != "" {
+		out["notificationsDiscordWebhookSecretRef"] = r.creds.ref(webhook, "discord-webhook")
+	}
+	return out
+}
+
 // tdarrPlugins exports a library's classic plugin stack in priority order.
 func (r *reader) tdarrPlugins(library string, entries []map[string]any) []string {
 	slices.SortStableFunc(entries, func(a, b map[string]any) int { return int(num(a["priority"]) - num(b["priority"])) })
@@ -81,7 +106,8 @@ func (r *reader) tdarrPlugins(library string, entries []map[string]any) []string
 func (r *reader) tdarrLibrary(doc map[string]any, variables []map[string]any) map[string]any {
 	lib := pick(doc, "name", "folder", "cache", "container", "containerFilter", "foldersToIgnore", "folderWatching",
 		"processLibrary", "processTranscodes", "processHealthChecks", "scanOnStart", "scheduledScanFindNew",
-		"scannerThreadCount", "ffmpeg", "priority", "flowId")
+		"scannerThreadCount", "ffmpeg", "priority", "flowId", "foldersToIgnoreCaseInsensitive", "filterResolutionsSkip",
+		"filterCodecsSkip", "filterContainersSkip", "filterHardlinked", "useFsEvents", "folderWatchScanInterval")
 	id, _ := doc["_id"].(string)
 	name, _ := doc["name"].(string)
 	lib["id"] = id

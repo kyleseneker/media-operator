@@ -77,6 +77,14 @@ func (r *TdarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		App: "tdarr", Observe: ctrlcommon.ObserveOnly(config.Spec.Reconcile), tc: tc,
 		prune: ctrlcommon.PruneEnabled(config.Spec.Reconcile), owned: engine.NewOwnership("tdarr", config.Status.ManagedResources),
 	}
+	if settings := config.Spec.Settings; settings != nil && settings.NotificationsDiscordWebhookSecretRef != nil {
+		webhook, err := reconciler.ResolveSecretKeyRef(ctx, r.Client, config.Namespace, *settings.NotificationsDiscordWebhookSecretRef)
+		if err != nil {
+			ctrlcommon.UpdateStatusUnreachable(ctx, r.Client, &config, engine.ReasonSecretNotFound, err.Error())
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		sync.discordWebhook = &webhook
+	}
 	syncErrors := sync.run(ctx, &config.Spec)
 	ctrlcommon.UpdateStatusManaged(&config, sync.owned.Managed())
 	ctrlcommon.EmitPruneEvents(r.Recorder, &config, sync.owned.Pruned())
@@ -107,9 +115,10 @@ func (r *TdarrConfigReconciler) tdarrClient(ctx context.Context, config *transco
 // records what it would have written.
 type tdarrSync struct {
 	engine.Writes
-	tc    *tdarrclient.Client
-	prune bool
-	owned *engine.Ownership
+	tc             *tdarrclient.Client
+	prune          bool
+	owned          *engine.Ownership
+	discordWebhook *string
 }
 
 // variablesResource is the status.managedResources key for library variables,
@@ -137,7 +146,37 @@ func (s *tdarrSync) run(ctx context.Context, spec *transcodev1alpha1.TdarrConfig
 			syncErrors = append(syncErrors, fmt.Sprintf("workers: %v", err))
 		}
 	}
+	if spec.Settings != nil {
+		if err := s.settings(ctx, spec.Settings); err != nil {
+			logger.Error(err, "failed to reconcile settings")
+			syncErrors = append(syncErrors, fmt.Sprintf("settings: %v", err))
+		}
+	}
 	return syncErrors
+}
+
+// tdarrGlobalSettings is the document holding Tdarr's server-wide options.
+const tdarrGlobalSettings = "globalsettings"
+
+// settings writes the declared options to Tdarr's global settings document,
+// whose keys the spec's field names match.
+func (s *tdarrSync) settings(ctx context.Context, settings *transcodev1alpha1.TdarrSettings) error {
+	raw, err := json.Marshal(settings)
+	if err != nil {
+		return err
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return err
+	}
+	delete(obj, "notificationsDiscordWebhookSecretRef")
+	if s.discordWebhook != nil {
+		obj["notificationsDiscordWebhook"] = *s.discordWebhook
+	}
+	if len(obj) == 0 {
+		return nil
+	}
+	return s.upsertDoc(ctx, "SettingsGlobalJSONDB", tdarrGlobalSettings, obj, nil)
 }
 
 func (s *tdarrSync) library(ctx context.Context, lib transcodev1alpha1.TdarrLibrary) error {
@@ -324,6 +363,25 @@ func buildTdarrLibraryDoc(lib transcodev1alpha1.TdarrLibrary) map[string]any {
 	}
 	if lib.FolderWatching != nil {
 		obj["folderWatching"] = *lib.FolderWatching
+	}
+	for key, value := range map[string]string{
+		"filterResolutionsSkip": lib.FilterResolutionsSkip, "filterCodecsSkip": lib.FilterCodecsSkip,
+		"filterContainersSkip": lib.FilterContainersSkip,
+	} {
+		if value != "" {
+			obj[key] = value
+		}
+	}
+	for key, value := range map[string]*bool{
+		"foldersToIgnoreCaseInsensitive": lib.FoldersToIgnoreCaseInsensitive, "filterHardlinked": lib.FilterHardlinked,
+		"useFsEvents": lib.UseFsEvents,
+	} {
+		if value != nil {
+			obj[key] = *value
+		}
+	}
+	if lib.FolderWatchScanInterval != nil {
+		obj["folderWatchScanInterval"] = *lib.FolderWatchScanInterval
 	}
 	if lib.ProcessLibrary != nil {
 		obj["processLibrary"] = *lib.ProcessLibrary
