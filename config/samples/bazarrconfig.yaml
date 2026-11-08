@@ -21,6 +21,14 @@ spec:
     hiExtension: hi
     upgradeFrequency: 12
     wantedSearchFrequency: 12
+    seriesDefaultProfile: English
+    movieDefaultProfile: English
+    pathMappings:
+      - remotePath: /data/media/tv
+        localPath: /tv
+    pathMappingsMovie:
+      - remotePath: /data/media/movies
+        localPath: /movies
   sonarrConnection:
     host: arr-sonarr.arr.svc.cluster.local
     port: 8989

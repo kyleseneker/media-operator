@@ -26,6 +26,26 @@ spec:
     ignoreAssSubs: false
     embeddedSubtitlesParser: ffprobe
     hiExtension: hi
+    pathMappings:
+      - remotePath: /data/media/tv
+        localPath: /media/tv
+      - remotePath: /anime
+        localPath: /media/anime
+    pathMappingsMovie:
+      - remotePath: /data/media/movies
+        localPath: /media/movies
+    seriesDefaultProfile: English
+    movieDefaultProfile: Hand-made
+    useEmbeddedSubs: true
+    subfolder: relative
+    subfolderCustom: Subs
+    chmodEnabled: true
+    chmod: "0644"
+    postprocessingCmd: echo done
+    usePostprocessingThreshold: true
+    postprocessingThreshold: 80
+    usePostprocessingThresholdMovie: false
+    postprocessingThresholdMovie: 60
   sonarrConnection:
     host: ${HOST}
     port: ${SONARR_PORT}
@@ -36,6 +56,11 @@ spec:
     fullUpdate: Daily
     onlyMonitored: false
     syncInterval: 60
+    excludedTags:
+      - nosubs
+    excludedSeriesTypes:
+      - daily
+    excludeSeasonZero: true
   radarrConnection:
     host: ${HOST}
     port: ${RADARR_PORT}
@@ -46,6 +71,8 @@ spec:
     fullUpdate: Daily
     onlyMonitored: false
     syncInterval: 60
+    excludedTags:
+      - nosubs
   subSync:
     useSubsync: true
     useSubsyncThreshold: true

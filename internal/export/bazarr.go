@@ -72,6 +72,7 @@ func exportBazarr(r *reader) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	bazarrDefaultProfileNames(general, profiles, spec["general"].(map[string]any))
 	if len(profiles) > 0 {
 		languages["profiles"] = r.bazarrProfiles(profiles)
 	}
@@ -81,18 +82,53 @@ func exportBazarr(r *reader) (map[string]any, error) {
 	return spec, nil
 }
 
+// bazarrDefaultProfiles are settings Bazarr stores as a profile id and the
+// config names; the export resolves them once it has the profiles.
+var bazarrDefaultProfiles = map[string]string{"seriesDefaultProfile": "serie_default_enabled", "movieDefaultProfile": "movie_default_enabled"}
+
 func bazarrSettings(section string, values map[string]any, t reflect.Type) map[string]any {
 	out := map[string]any{}
 	for field := range t.Fields() {
 		name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
-		if k := field.Type.Kind(); k == reflect.Struct || k == reflect.Slice || k == reflect.Map {
-			continue
-		}
-		if v, ok := values[bazarrclient.SettingName(section, name)]; ok && v != nil {
+		v, ok := values[bazarrclient.SettingName(section, name)]
+		switch {
+		case !ok || v == nil, bazarrDefaultProfiles[name] != "":
+		case field.Type == reflect.TypeFor[[]string]():
+			if items := texts(v); len(items) > 0 {
+				out[name] = items
+			}
+		case field.Type == reflect.TypeFor[[]subtitlesv1alpha1.BazarrPathMapping]():
+			var mappings []any
+			pairs, _ := v.([]any)
+			for _, pair := range pairs {
+				if parts := texts(pair); len(parts) == 2 {
+					mappings = append(mappings, map[string]any{"remotePath": parts[0], "localPath": parts[1]})
+				}
+			}
+			if len(mappings) > 0 {
+				out[name] = mappings
+			}
+		case field.Type.Kind() == reflect.Struct || field.Type.Kind() == reflect.Slice || field.Type.Kind() == reflect.Map:
+		default:
 			out[name] = v
 		}
 	}
 	return out
+}
+
+// bazarrDefaultProfileNames names the default profiles Bazarr has turned on.
+func bazarrDefaultProfileNames(general map[string]any, profiles []map[string]any, out map[string]any) {
+	for field, enabled := range bazarrDefaultProfiles {
+		if on, _ := general[enabled].(bool); !on {
+			continue
+		}
+		id := general[bazarrclient.SettingName("general", field)]
+		for _, p := range profiles {
+			if p["profileId"] == id {
+				out[field] = p["name"]
+			}
+		}
+	}
 }
 
 func (r *reader) bazarrProviderSettings(provider string, values map[string]any) map[string]any {

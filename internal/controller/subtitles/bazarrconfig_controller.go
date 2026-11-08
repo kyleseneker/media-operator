@@ -3,6 +3,7 @@ package subtitles
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"net/url"
@@ -99,6 +100,9 @@ func (r *BazarrConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			return ctrl.Result{RequeueAfter: ctrlcommon.ReconcileInterval(config.Spec.Reconcile)}, nil
 		}
 	}
+	if err := resolveBazarrDefaultProfiles(ctx, bc, config.Spec, desired); err != nil {
+		problems = append(problems, fmt.Sprintf("general: %v", err))
+	}
 	changes := bazarrChanges(desired, settings, profiles.stored(), enabled)
 
 	if ctrlcommon.ObserveOnly(config.Spec.Reconcile) {
@@ -159,6 +163,7 @@ func (r *BazarrConfigReconciler) bazarrDesired(ctx context.Context, config *subt
 
 	if spec.General != nil {
 		merge(bazarrclient.StructToFormData("general", spec.General))
+		merge(bazarrPathMappings(spec.General))
 	}
 	if spec.SubSync != nil {
 		merge(bazarrclient.StructToFormData("subsync", spec.SubSync))
@@ -195,6 +200,77 @@ func (r *BazarrConfigReconciler) bazarrDesired(ctx context.Context, config *subt
 		}
 	}
 	return form, problems
+}
+
+// bazarrPathMappings sends each mapping as Bazarr's form does, "from,to".
+func bazarrPathMappings(g *subtitlesv1alpha1.BazarrGeneral) url.Values {
+	form := url.Values{}
+	for name, mappings := range map[string][]subtitlesv1alpha1.BazarrPathMapping{
+		"pathMappings": g.PathMappings, "pathMappingsMovie": g.PathMappingsMovie,
+	} {
+		if mappings == nil {
+			continue
+		}
+		values := []string{""}
+		if len(mappings) > 0 {
+			values = values[:0]
+		}
+		for _, m := range mappings {
+			values = append(values, m.RemotePath+","+m.LocalPath)
+		}
+		form["settings-general-"+bazarrclient.SettingName("general", name)] = values
+	}
+	return form
+}
+
+// resolveBazarrDefaultProfiles turns the declared default profile names into
+// the ids Bazarr stores, looking in the declared profiles before Bazarr's, and
+// turns each default on. An unknown name drops the setting.
+func resolveBazarrDefaultProfiles(ctx context.Context, bc *bazarrclient.Client, spec subtitlesv1alpha1.BazarrConfigSpec, form url.Values) error {
+	if spec.General == nil || (spec.General.SeriesDefaultProfile == "" && spec.General.MovieDefaultProfile == "") {
+		return nil
+	}
+	ids := map[string]int{}
+	if spec.Languages != nil {
+		for _, p := range spec.Languages.Profiles {
+			if p.ProfileId != nil {
+				ids[p.Name] = *p.ProfileId
+			}
+		}
+	}
+	var existing []map[string]any
+	var errs []error
+	for _, d := range []struct{ field, name, enabled string }{
+		{"seriesDefaultProfile", spec.General.SeriesDefaultProfile, "serie_default_enabled"},
+		{"movieDefaultProfile", spec.General.MovieDefaultProfile, "movie_default_enabled"},
+	} {
+		if d.name == "" {
+			continue
+		}
+		key := "settings-general-" + bazarrclient.SettingName("general", d.field)
+		id, ok := ids[d.name]
+		if !ok && existing == nil {
+			var err error
+			if existing, err = bc.GetLanguageProfiles(ctx); err != nil {
+				form.Del(key)
+				errs = append(errs, fmt.Errorf("%s: reading language profiles: %w", d.field, err))
+				continue
+			}
+		}
+		for _, p := range existing {
+			if found, isID := p["profileId"].(float64); !ok && isID && p["name"] == d.name {
+				id, ok = int(found), true
+			}
+		}
+		if !ok {
+			form.Del(key)
+			errs = append(errs, fmt.Errorf("%s: Bazarr has no language profile named %q", d.field, d.name))
+			continue
+		}
+		form.Set(key, strconv.Itoa(id))
+		form.Set("settings-general-"+d.enabled, "true")
+	}
+	return errors.Join(errs...)
 }
 
 func (r *BazarrConfigReconciler) bazarrProviderForm(ctx context.Context, namespace string, providers []subtitlesv1alpha1.BazarrProvider) (url.Values, error) {
@@ -280,8 +356,17 @@ func bazarrSettingMatches(current any, values []string) bool {
 				return false
 			}
 		}
+		want = slices.DeleteFunc(slices.Clone(want), func(v string) bool { return v == "" })
 		have := make([]string, 0, len(list))
 		for _, v := range list {
+			if pair, ok := v.([]any); ok {
+				parts := make([]string, 0, len(pair))
+				for _, part := range pair {
+					parts = append(parts, fmt.Sprint(part))
+				}
+				have = append(have, strings.Join(parts, ","))
+				continue
+			}
 			have = append(have, fmt.Sprint(v))
 		}
 		return slices.Equal(slices.Sorted(slices.Values(have)), slices.Sorted(slices.Values(want)))

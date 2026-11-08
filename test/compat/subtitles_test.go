@@ -74,6 +74,14 @@ func TestBazarr(t *testing.T) {
 			sonarrSettings, _ := settings["sonarr"].(map[string]any)
 			assert.Equal(t, hostIP, sonarrSettings["ip"])
 			assert.Contains(t, general["enabled_providers"], "podnapisi")
+			assert.Equal(t, []any{[]any{"/data/media/tv", "/media/tv"}, []any{"/anime", "/media/anime"}},
+				general["path_mappings"])
+			assert.Equal(t, true, general["serie_default_enabled"])
+			assert.Equal(t, float64(1), general["serie_default_profile"], "the declared profile's id")
+			assert.Equal(t, float64(99), general["movie_default_profile"], "a profile made in Bazarr resolves by name too")
+			assert.Equal(t, "0644", general["chmod"])
+			assert.Equal(t, []any{"nosubs"}, sonarrSettings["excluded_tags"])
+			assert.Equal(t, []any{"daily"}, sonarrSettings["excluded_series_types"])
 			assert.Equal(t, []string{"English", "Hand-made"}, bazarrProfileNames(t, hc),
 				"saving the declared profile lost the hand-made one")
 			languages, err := hc.GetJSONList(context.Background(), "/api/system/languages")

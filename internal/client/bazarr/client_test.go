@@ -218,3 +218,14 @@ func TestBuildLanguageProfilesMatchesBazarrSchema(t *testing.T) {
 	assert.Equal(t, "False", items[0]["forced"])
 	assert.Equal(t, "False", items[0]["audio_exclude"])
 }
+
+func TestStructToFormDataSendsListsAsRepeatedValues(t *testing.T) {
+	form := StructToFormData("sonarr", &subtitlesv1alpha1.BazarrAppConnection{
+		Host: "sonarr", ExcludedTags: []string{"no-subs", "4k"}, ExcludedSeriesTypes: []string{},
+	})
+	assert.Equal(t, []string{"no-subs", "4k"}, form["settings-sonarr-excluded_tags"])
+	assert.Equal(t, []string{""}, form["settings-sonarr-excluded_series_types"], "an empty list clears the setting")
+
+	general := StructToFormData("general", &subtitlesv1alpha1.BazarrGeneral{SeriesDefaultProfile: "English"})
+	assert.Equal(t, "English", general.Get("settings-general-serie_default_profile"), "the controller swaps the name for the id")
+}

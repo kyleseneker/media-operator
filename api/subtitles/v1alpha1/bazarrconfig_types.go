@@ -129,6 +129,88 @@ type BazarrGeneral struct {
 	// hiExtension is the file extension used for hearing-impaired subtitle files.
 	// +optional
 	HiExtension string `json:"hiExtension,omitempty"`
+
+	// pathMappings translate Sonarr's paths into the paths Bazarr sees the same
+	// files at. Bazarr separates the two with a comma, so neither may have one.
+	// +optional
+	PathMappings []BazarrPathMapping `json:"pathMappings,omitempty"`
+
+	// pathMappingsMovie translate Radarr's paths into the paths Bazarr sees the
+	// same files at.
+	// +optional
+	PathMappingsMovie []BazarrPathMapping `json:"pathMappingsMovie,omitempty"`
+
+	// seriesDefaultProfile is the language profile, by name, that new series
+	// get. Setting it turns the default on.
+	// +optional
+	SeriesDefaultProfile string `json:"seriesDefaultProfile,omitempty"`
+
+	// movieDefaultProfile is the language profile, by name, that new movies
+	// get. Setting it turns the default on.
+	// +optional
+	MovieDefaultProfile string `json:"movieDefaultProfile,omitempty"`
+
+	// useEmbeddedSubs counts subtitles embedded in the media file as present.
+	// +optional
+	UseEmbeddedSubs *bool `json:"useEmbeddedSubs,omitempty"`
+
+	// subfolder is where subtitles are saved: next to the media file, in a
+	// folder relative to it, or in an absolute folder.
+	// +optional
+	// +kubebuilder:validation:Enum=current;relative;absolute
+	Subfolder string `json:"subfolder,omitempty"`
+
+	// subfolderCustom is the folder subfolder relative or absolute saves to.
+	// +optional
+	SubfolderCustom string `json:"subfolderCustom,omitempty"`
+
+	// chmod is the octal permissions chmodEnabled sets on subtitle files, such as 0640.
+	// +optional
+	// +kubebuilder:validation:Pattern=`^0?[0-7]{3}$`
+	Chmod string `json:"chmod,omitempty"`
+
+	// postprocessingCmd is the command usePostprocessing runs after a subtitle
+	// is downloaded.
+	// +optional
+	PostprocessingCmd string `json:"postprocessingCmd,omitempty"`
+
+	// usePostprocessingThreshold runs postprocessingCmd for an episode subtitle
+	// only when its score is below postprocessingThreshold.
+	// +optional
+	UsePostprocessingThreshold *bool `json:"usePostprocessingThreshold,omitempty"`
+
+	// postprocessingThreshold is the episode subtitle score, in percent, below
+	// which postprocessingCmd runs.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	PostprocessingThreshold *int `json:"postprocessingThreshold,omitempty"`
+
+	// usePostprocessingThresholdMovie runs postprocessingCmd for a movie
+	// subtitle only when its score is below postprocessingThresholdMovie.
+	// +optional
+	UsePostprocessingThresholdMovie *bool `json:"usePostprocessingThresholdMovie,omitempty"`
+
+	// postprocessingThresholdMovie is the movie subtitle score, in percent,
+	// below which postprocessingCmd runs.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	PostprocessingThresholdMovie *int `json:"postprocessingThresholdMovie,omitempty"`
+}
+
+// BazarrPathMapping translates a path Sonarr or Radarr reports into the path
+// Bazarr reads the same file at.
+type BazarrPathMapping struct {
+	// remotePath is the path as Sonarr or Radarr reports it.
+	// +required
+	// +kubebuilder:validation:Pattern=`^[^,]+$`
+	RemotePath string `json:"remotePath"`
+
+	// localPath is the path inside the Bazarr container.
+	// +required
+	// +kubebuilder:validation:Pattern=`^[^,]+$`
+	LocalPath string `json:"localPath"`
 }
 
 // BazarrAppConnection defines a connection to a Sonarr or Radarr instance from Bazarr.
@@ -166,9 +248,24 @@ type BazarrAppConnection struct {
 	// +optional
 	OnlyMonitored *bool `json:"onlyMonitored,omitempty"`
 
-	// syncInterval is the sync interval in hours.
+	// syncInterval is how often, in minutes, Bazarr syncs the library.
 	// +optional
+	// +kubebuilder:validation:Enum=15;60;180;360;720;1440;10080
 	SyncInterval *int `json:"syncInterval,omitempty"`
+
+	// excludedTags leaves out items with any of these tags.
+	// +optional
+	ExcludedTags []string `json:"excludedTags,omitempty"`
+
+	// excludedSeriesTypes leaves out series of these types. Only applicable
+	// when used with Sonarr.
+	// +optional
+	// +kubebuilder:validation:items:Enum=standard;anime;daily
+	ExcludedSeriesTypes []string `json:"excludedSeriesTypes,omitempty"`
+
+	// excludeSeasonZero leaves out specials. Only applicable when used with Sonarr.
+	// +optional
+	ExcludeSeasonZero *bool `json:"excludeSeasonZero,omitempty"`
 }
 
 // BazarrSubSync configures subtitle synchronization settings.

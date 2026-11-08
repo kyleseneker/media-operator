@@ -26,6 +26,8 @@ import (
 
 	commonv1alpha1 "github.com/kyleseneker/media-operator/api/common/v1alpha1"
 	subtitlesv1alpha1 "github.com/kyleseneker/media-operator/api/subtitles/v1alpha1"
+	bazarrclient "github.com/kyleseneker/media-operator/internal/client/bazarr"
+	"github.com/kyleseneker/media-operator/internal/engine"
 )
 
 const conditionTrue = "True"
@@ -285,4 +287,53 @@ func TestBazarrChangesOnlyWhatDiffers(t *testing.T) {
 
 	changes = bazarrChanges(url.Values{"languages-enabled": {"en", "es"}}, settings, nil, []string{"en"})
 	assert.Equal(t, url.Values{"languages-enabled": {"en", "es"}}, changes, "a language Bazarr hasn't enabled is a change")
+}
+
+func TestBazarrPathMappingsUseBazarrsFromToForm(t *testing.T) {
+	form := bazarrPathMappings(&subtitlesv1alpha1.BazarrGeneral{
+		PathMappings:      []subtitlesv1alpha1.BazarrPathMapping{{RemotePath: "/tv", LocalPath: "/media/tv"}, {RemotePath: "/anime", LocalPath: "/media/anime"}},
+		PathMappingsMovie: []subtitlesv1alpha1.BazarrPathMapping{},
+	})
+	assert.Equal(t, url.Values{
+		"settings-general-path_mappings":       {"/tv,/media/tv", "/anime,/media/anime"},
+		"settings-general-path_mappings_movie": {""},
+	}, form)
+
+	settings := map[string]any{"general": map[string]any{
+		"path_mappings":       []any{[]any{"/anime", "/media/anime"}, []any{"/tv", "/media/tv"}},
+		"path_mappings_movie": []any{},
+	}}
+	assert.Empty(t, bazarrChanges(form, settings, nil, nil), "Bazarr stores mappings as pairs, and an empty list as empty")
+}
+
+func TestBazarrDefaultProfilesResolveByName(t *testing.T) {
+	spec := subtitlesv1alpha1.BazarrConfigSpec{
+		General: &subtitlesv1alpha1.BazarrGeneral{SeriesDefaultProfile: "English", MovieDefaultProfile: "Spanish"},
+		Languages: &subtitlesv1alpha1.BazarrLanguages{Profiles: []subtitlesv1alpha1.BazarrLanguageProfile{
+			{ProfileId: new(3), Name: "English"},
+		}},
+	}
+	form := bazarrclient.StructToFormData("general", spec.General)
+	app := &fakeBazarr{profiles: []map[string]any{{"profileId": float64(7), "name": "Spanish"}}}
+	bc := newTestBazarrClient(t, app.serve(t))
+
+	require.NoError(t, resolveBazarrDefaultProfiles(context.Background(), bc, spec, form))
+	assert.Equal(t, "3", form.Get("settings-general-serie_default_profile"), "a declared profile resolves without asking Bazarr")
+	assert.Equal(t, "7", form.Get("settings-general-movie_default_profile"))
+	assert.Equal(t, "true", form.Get("settings-general-serie_default_enabled"))
+	assert.Equal(t, "true", form.Get("settings-general-movie_default_enabled"))
+
+	spec.General.MovieDefaultProfile = "French"
+	form = bazarrclient.StructToFormData("general", spec.General)
+	err := resolveBazarrDefaultProfiles(context.Background(), bc, spec, form)
+	require.ErrorContains(t, err, `movieDefaultProfile: Bazarr has no language profile named "French"`)
+	assert.False(t, form.Has("settings-general-movie_default_profile"), "an unknown name is never sent")
+	assert.Equal(t, "3", form.Get("settings-general-serie_default_profile"))
+}
+
+func newTestBazarrClient(t *testing.T, addr string) *bazarrclient.Client {
+	t.Helper()
+	hc, err := engine.NewHTTPClient(addr, engine.AuthFormEncoded, engine.WithAPIKey("key"), engine.WithAPIKeyHeader("X-API-KEY"))
+	require.NoError(t, err)
+	return bazarrclient.NewClient(hc)
 }

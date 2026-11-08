@@ -126,8 +126,9 @@ func LanguagesForm(langs *subtitlesv1alpha1.BazarrLanguages) (url.Values, error)
 // settingNameOverrides maps a spec field to the Bazarr setting it drives where
 // snake_case alone does not get there.
 var settingNameOverrides = map[string]map[string]string{
-	"sonarr": {"host": "ip", "basePath": "base_url", "syncInterval": "series_sync"},
-	"radarr": {"host": "ip", "basePath": "base_url", "syncInterval": "movies_sync"},
+	"general": {"seriesDefaultProfile": "serie_default_profile", "movieDefaultProfile": "movie_default_profile"},
+	"sonarr":  {"host": "ip", "basePath": "base_url", "syncInterval": "series_sync"},
+	"radarr":  {"host": "ip", "basePath": "base_url", "syncInterval": "movies_sync"},
 }
 
 // SettingName converts a spec field name to the key Bazarr stores it under.
@@ -152,7 +153,8 @@ func SettingName(section, jsonName string) string {
 }
 
 // StructToFormData converts a struct to form data with "settings-{section}-{field}=value" keys.
-// Skips nil pointers and empty strings.
+// Skips nil pointers and empty strings. A list of strings is one value per
+// item, and an empty one a single empty value, which Bazarr stores as empty.
 func StructToFormData(section string, obj any) url.Values {
 	form := url.Values{}
 	v := reflect.ValueOf(obj)
@@ -181,13 +183,22 @@ func StructToFormData(section string, obj any) url.Values {
 		if fv.Kind() == reflect.String && fv.String() == "" {
 			continue
 		}
+		key := fmt.Sprintf("settings-%s-%s", section, SettingName(section, jsonName))
+		if items, ok := reflect.TypeAssert[[]string](fv); ok {
+			if items != nil {
+				form[key] = append([]string{}, items...)
+				if len(items) == 0 {
+					form[key] = []string{""}
+				}
+			}
+			continue
+		}
 		// Only scalars are settings. A struct such as a Secret reference would
 		// otherwise be stored in Bazarr's config as its printed form.
 		if k := reflect.Indirect(fv).Kind(); k == reflect.Struct || k == reflect.Slice || k == reflect.Map {
 			continue
 		}
 
-		key := fmt.Sprintf("settings-%s-%s", section, SettingName(section, jsonName))
 		var val string
 		switch fv.Kind() {
 		case reflect.Pointer:

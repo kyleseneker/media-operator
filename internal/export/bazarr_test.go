@@ -14,8 +14,11 @@ import (
 
 const fakeBazarrSettings = `{
 	"general": {"use_sonarr": true, "use_radarr": false, "minimum_score": 90, "hi_extension": "hi",
-		"enabled_providers": ["opensubtitlescom", "podnapisi"], "enabled_languages": ["fr"]},
-	"sonarr": {"ip": "sonarr", "port": 8989, "base_url": "/", "apikey": "sonarr-key", "series_sync": 60, "ssl": false},
+		"enabled_providers": ["opensubtitlescom", "podnapisi"], "enabled_languages": ["fr"],
+		"path_mappings": [["/tv", "/media/tv"]], "path_mappings_movie": [], "chmod": "0640",
+		"serie_default_enabled": true, "serie_default_profile": 2, "movie_default_enabled": false, "movie_default_profile": 1},
+	"sonarr": {"ip": "sonarr", "port": 8989, "base_url": "/", "apikey": "sonarr-key", "series_sync": 60, "ssl": false,
+		"excluded_tags": ["no-subs"], "excluded_series_types": []},
 	"radarr": {"ip": "radarr", "apikey": "radarr-key"},
 	"subsync": {"use_subsync": true, "subsync_threshold": 90},
 	"opensubtitlescom": {"username": "me", "password": "hunter2", "use_hash": true, "vip": false, "extra": {"nested": 1}}
@@ -67,6 +70,14 @@ func TestBazarrSettingsMapBackToSpecFields(t *testing.T) {
 	assert.Equal(t, "sonarr-key", res.Secret.StringData["sonarr-api-key"])
 	assert.Nil(t, cfg.Spec.RadarrConnection, "Bazarr does not use Radarr")
 	assert.Equal(t, []string{"en", "es"}, cfg.Spec.Languages.Enabled)
+
+	assert.Equal(t, []subtitlesv1alpha1.BazarrPathMapping{{RemotePath: "/tv", LocalPath: "/media/tv"}}, cfg.Spec.General.PathMappings)
+	assert.Empty(t, cfg.Spec.General.PathMappingsMovie)
+	assert.Equal(t, "0640", cfg.Spec.General.Chmod)
+	assert.Equal(t, "Picky", cfg.Spec.General.SeriesDefaultProfile, "the profile id is exported by name")
+	assert.Empty(t, cfg.Spec.General.MovieDefaultProfile, "a default that is off isn't exported")
+	assert.Equal(t, []string{"no-subs"}, cfg.Spec.SonarrConnection.ExcludedTags)
+	assert.Empty(t, cfg.Spec.SonarrConnection.ExcludedSeriesTypes)
 }
 
 func TestBazarrProviderSecretsMoveToTheSecret(t *testing.T) {

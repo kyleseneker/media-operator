@@ -112,6 +112,11 @@ spec:
                     description: adaptiveSearching enables adaptive searching for
                       subtitles.
                     type: boolean
+                  chmod:
+                    description: chmod is the octal permissions chmodEnabled sets
+                      on subtitle files, such as 0640.
+                    pattern: ^0?[0-7]{3}$
+                    type: string
                   chmodEnabled:
                     description: chmodEnabled enables setting file permissions on
                       subtitle files.
@@ -141,9 +146,97 @@ spec:
                     description: minimumScoreMovie is the minimum subtitle match score
                       for movies.
                     type: integer
+                  movieDefaultProfile:
+                    description: |-
+                      movieDefaultProfile is the language profile, by name, that new movies
+                      get. Setting it turns the default on.
+                    type: string
                   multithreading:
                     description: multithreading enables multithreaded subtitle downloading.
                     type: boolean
+                  pathMappings:
+                    description: |-
+                      pathMappings translate Sonarr's paths into the paths Bazarr sees the same
+                      files at. Bazarr separates the two with a comma, so neither may have one.
+                    items:
+                      description: |-
+                        BazarrPathMapping translates a path Sonarr or Radarr reports into the path
+                        Bazarr reads the same file at.
+                      properties:
+                        localPath:
+                          description: localPath is the path inside the Bazarr container.
+                          pattern: ^[^,]+$
+                          type: string
+                        remotePath:
+                          description: remotePath is the path as Sonarr or Radarr
+                            reports it.
+                          pattern: ^[^,]+$
+                          type: string
+                      required:
+                      - localPath
+                      - remotePath
+                      type: object
+                    type: array
+                  pathMappingsMovie:
+                    description: |-
+                      pathMappingsMovie translate Radarr's paths into the paths Bazarr sees the
+                      same files at.
+                    items:
+                      description: |-
+                        BazarrPathMapping translates a path Sonarr or Radarr reports into the path
+                        Bazarr reads the same file at.
+                      properties:
+                        localPath:
+                          description: localPath is the path inside the Bazarr container.
+                          pattern: ^[^,]+$
+                          type: string
+                        remotePath:
+                          description: remotePath is the path as Sonarr or Radarr
+                            reports it.
+                          pattern: ^[^,]+$
+                          type: string
+                      required:
+                      - localPath
+                      - remotePath
+                      type: object
+                    type: array
+                  postprocessingCmd:
+                    description: |-
+                      postprocessingCmd is the command usePostprocessing runs after a subtitle
+                      is downloaded.
+                    type: string
+                  postprocessingThreshold:
+                    description: |-
+                      postprocessingThreshold is the episode subtitle score, in percent, below
+                      which postprocessingCmd runs.
+                    maximum: 100
+                    minimum: 0
+                    type: integer
+                  postprocessingThresholdMovie:
+                    description: |-
+                      postprocessingThresholdMovie is the movie subtitle score, in percent,
+                      below which postprocessingCmd runs.
+                    maximum: 100
+                    minimum: 0
+                    type: integer
+                  seriesDefaultProfile:
+                    description: |-
+                      seriesDefaultProfile is the language profile, by name, that new series
+                      get. Setting it turns the default on.
+                    type: string
+                  subfolder:
+                    description: |-
+                      subfolder is where subtitles are saved: next to the media file, in a
+                      folder relative to it, or in an absolute folder.
+                    enum:
+                    - current
+                    - relative
+                    - absolute
+                    type: string
+                  subfolderCustom:
+                    description: subfolderCustom is the folder subfolder relative
+                      or absolute saves to.
+                    type: string
                   upgradeFrequency:
                     description: upgradeFrequency is the frequency in hours to check
                       for subtitle upgrades.
@@ -152,9 +245,23 @@ spec:
                     description: upgradeSubs enables automatic subtitle upgrades when
                       better ones are found.
                     type: boolean
+                  useEmbeddedSubs:
+                    description: useEmbeddedSubs counts subtitles embedded in the
+                      media file as present.
+                    type: boolean
                   usePostprocessing:
                     description: usePostprocessing enables post-processing of downloaded
                       subtitles.
+                    type: boolean
+                  usePostprocessingThreshold:
+                    description: |-
+                      usePostprocessingThreshold runs postprocessingCmd for an episode subtitle
+                      only when its score is below postprocessingThreshold.
+                    type: boolean
+                  usePostprocessingThresholdMovie:
+                    description: |-
+                      usePostprocessingThresholdMovie runs postprocessingCmd for a movie
+                      subtitle only when its score is below postprocessingThresholdMovie.
                     type: boolean
                   useRadarr:
                     description: useRadarr enables the Radarr integration.
@@ -269,6 +376,26 @@ spec:
                   basePath:
                     description: basePath is the URL base path of the application.
                     type: string
+                  excludeSeasonZero:
+                    description: excludeSeasonZero leaves out specials. Only applicable
+                      when used with Sonarr.
+                    type: boolean
+                  excludedSeriesTypes:
+                    description: |-
+                      excludedSeriesTypes leaves out series of these types. Only applicable
+                      when used with Sonarr.
+                    items:
+                      enum:
+                      - standard
+                      - anime
+                      - daily
+                      type: string
+                    type: array
+                  excludedTags:
+                    description: excludedTags leaves out items with any of these tags.
+                    items:
+                      type: string
+                    type: array
                   fullUpdate:
                     description: fullUpdate controls how often a full library sync
                       is performed.
@@ -294,7 +421,16 @@ spec:
                     description: ssl enables HTTPS connections to the application.
                     type: boolean
                   syncInterval:
-                    description: syncInterval is the sync interval in hours.
+                    description: syncInterval is how often, in minutes, Bazarr syncs
+                      the library.
+                    enum:
+                    - 15
+                    - 60
+                    - 180
+                    - 360
+                    - 720
+                    - 1440
+                    - 10080
                     type: integer
                 required:
                 - apiKeySecretRef
@@ -363,6 +499,26 @@ spec:
                   basePath:
                     description: basePath is the URL base path of the application.
                     type: string
+                  excludeSeasonZero:
+                    description: excludeSeasonZero leaves out specials. Only applicable
+                      when used with Sonarr.
+                    type: boolean
+                  excludedSeriesTypes:
+                    description: |-
+                      excludedSeriesTypes leaves out series of these types. Only applicable
+                      when used with Sonarr.
+                    items:
+                      enum:
+                      - standard
+                      - anime
+                      - daily
+                      type: string
+                    type: array
+                  excludedTags:
+                    description: excludedTags leaves out items with any of these tags.
+                    items:
+                      type: string
+                    type: array
                   fullUpdate:
                     description: fullUpdate controls how often a full library sync
                       is performed.
@@ -388,7 +544,16 @@ spec:
                     description: ssl enables HTTPS connections to the application.
                     type: boolean
                   syncInterval:
-                    description: syncInterval is the sync interval in hours.
+                    description: syncInterval is how often, in minutes, Bazarr syncs
+                      the library.
+                    enum:
+                    - 15
+                    - 60
+                    - 180
+                    - 360
+                    - 720
+                    - 1440
+                    - 10080
                     type: integer
                 required:
                 - apiKeySecretRef
