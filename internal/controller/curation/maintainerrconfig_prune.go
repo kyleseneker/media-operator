@@ -19,10 +19,12 @@ type maintainerrList struct {
 }
 
 // lists returns the kinds in the order they are deleted: Maintainerr refuses to
-// delete a server while a rule group's collection uses it.
+// delete a server while a rule group's collection uses it, and rule groups
+// refer to notifications.
 func (s *maintainerrSync) lists() []maintainerrList {
 	return []maintainerrList{
 		{ruleGroupsKind, "name", s.mc.ListRuleGroups, s.mc.DeleteRuleGroup},
+		{notificationsKind, "name", s.mc.ListNotifications, s.mc.DeleteNotification},
 		s.servers(maintainerrclient.Sonarr),
 		s.servers(maintainerrclient.Radarr),
 	}
@@ -41,6 +43,9 @@ func maintainerrDeclared(spec *curationv1alpha1.MaintainerrConfigSpec) map[strin
 	declared := map[string][]string{}
 	for _, g := range spec.RuleGroups {
 		declared[ruleGroupsKind] = append(declared[ruleGroupsKind], g.Name)
+	}
+	for _, n := range spec.Notifications {
+		declared[notificationsKind] = append(declared[notificationsKind], n.Name)
 	}
 	for _, srv := range spec.Sonarr {
 		declared[string(maintainerrclient.Sonarr)] = append(declared[string(maintainerrclient.Sonarr)], srv.Name)

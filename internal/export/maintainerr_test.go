@@ -23,10 +23,12 @@ var fakeMaintainerrAPI = map[string]string{
 	"/api/settings/tautulli":         `{"url":"","api_key":""}`,
 	"/api/servarr/radarr/1/profiles": `[{"id":4,"name":"HD-1080p"}]`,
 	"/api/media-server/libraries":    `[{"id":"lib1","title":"Movies","type":"movie"}]`,
+	"/api/notifications/configurations": `[{"id":7,"name":"Discord","agent":"discord","enabled":true,"types":[16,8,2048],
+		"aboutScale":3,"options":{"webhookUrl":"https://discord.example/hook","botUsername":"Maintainerr","botAvatarUrl":""}}]`,
 	"/api/rules/constants": `{"applications":[{"id":0,"name":"Jellyfin","props":[{"id":1,"name":"addDate"},{"id":2,"name":"viewCount"}]},
 		{"id":1,"name":"Radarr","props":[{"id":5,"name":"monitored"}]}]}`,
 	"/api/rules": `[{"id":3,"name":"Stale","description":"","libraryId":"lib1","dataType":"movie","isActive":true,
-		"ruleHandlerCronSchedule":"","collection":{"arrAction":7,"deleteAfterDays":30,"radarrSettingsId":1,
+		"ruleHandlerCronSchedule":"","notifications":[{"id":7,"name":"Discord"}],"collection":{"arrAction":7,"deleteAfterDays":30,"radarrSettingsId":1,
 		"radarrQualityProfileId":4,"listExclusions":true,"visibleOnHome":false},
 		"rules":[
 			{"id":11,"ruleJson":"{\"operator\":null,\"action\":5,\"firstVal\":[0,1],\"customVal\":{\"ruleTypeId\":0,\"value\":\"15552000\"},\"section\":0}"},
@@ -80,4 +82,16 @@ func TestMaintainerrExportsConnectionsAndRuleGroups(t *testing.T) {
 	assert.Empty(t, last.Operator, "the section carries the operator joining it")
 	assert.Equal(t, "Radarr.monitored", last.FirstValue)
 	assert.Equal(t, &curationv1alpha1.MaintainerrCustomValue{Type: "boolean", Value: intstr.FromString("false")}, last.CustomValue)
+	assert.Equal(t, []string{"Discord"}, g.Notifications)
+
+	require.Len(t, cfg.Spec.Notifications, 1)
+	n := cfg.Spec.Notifications[0]
+	assert.Equal(t, "discord", n.Agent)
+	assert.Equal(t, []string{"mediaAboutToBeHandled", "mediaHandled"}, n.Types)
+	assert.Contains(t, res.Warnings, `notification "Discord": MaintainerrConfig can't express notification type 2048, so it isn't exported`)
+	assert.Equal(t, int32(3), *n.AboutScale)
+	assert.Equal(t, "Maintainerr", n.Options["botUsername"].ToInterface())
+	assert.NotContains(t, n.Options, "botAvatarUrl", "an empty option isn't exported")
+	require.Contains(t, n.SecretOptions, "webhookUrl")
+	assert.Equal(t, "https://discord.example/hook", res.Secret.StringData[n.SecretOptions["webhookUrl"].Key])
 }

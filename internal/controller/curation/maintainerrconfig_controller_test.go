@@ -46,7 +46,9 @@ type fakeMaintainerr struct {
 	servers   map[string][]map[string]any
 	groups    []map[string]any
 	libraries []map[string]any
-	nextID    int
+	// notifications holds the notification configurations as Maintainerr lists them.
+	notifications []map[string]any
+	nextID        int
 }
 
 func newFakeMaintainerr() *fakeMaintainerr {
@@ -101,6 +103,10 @@ func (f *fakeMaintainerr) handle(w http.ResponseWriter, r *http.Request) {
 		f.handleSettings(w, r.Method, path, body)
 		return
 	}
+	if strings.HasPrefix(path, "/notifications") {
+		f.handleNotifications(w, r.Method, path, body)
+		return
+	}
 	if id, ok := strings.CutPrefix(path, "/rules/"); ok && r.Method == http.MethodDelete {
 		f.groups = slices.DeleteFunc(f.groups, func(g map[string]any) bool { return fmt.Sprint(g["id"]) == id })
 		f.ok(w)
@@ -131,6 +137,36 @@ func (f *fakeMaintainerr) handle(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"code": 1, "result": "Success"})
+	default:
+		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func (f *fakeMaintainerr) handleNotifications(w http.ResponseWriter, method, path string, body map[string]any) {
+	switch {
+	case method == http.MethodGet && path == "/notifications/configurations":
+		list := f.notifications
+		if list == nil {
+			list = []map[string]any{}
+		}
+		_ = json.NewEncoder(w).Encode(list)
+	case method == http.MethodPost && path == "/notifications/configuration/add":
+		if id, ok := body["id"]; ok {
+			for i, n := range f.notifications {
+				if fmt.Sprint(n["id"]) == fmt.Sprint(id) {
+					f.notifications[i] = body
+				}
+			}
+		} else {
+			body["id"] = f.nextID
+			f.nextID++
+			f.notifications = append(f.notifications, body)
+		}
+		f.ok(w)
+	case method == http.MethodDelete && strings.HasPrefix(path, "/notifications/configuration/"):
+		id := strings.TrimPrefix(path, "/notifications/configuration/")
+		f.notifications = slices.DeleteFunc(f.notifications, func(n map[string]any) bool { return fmt.Sprint(n["id"]) == id })
+		f.ok(w)
 	default:
 		w.WriteHeader(http.StatusNotFound)
 	}
@@ -269,6 +305,7 @@ func maintainerrSecrets() *corev1.Secret {
 			"plex-token":       []byte("plex-token-abcdef"),
 			"radarr-api-key":   []byte("radarr-key"),
 			"seerr-api-key":    []byte("seerr-key"),
+			"discord-webhook":  []byte("https://discord.example/hook"),
 		},
 	}
 }

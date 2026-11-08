@@ -72,6 +72,51 @@ type MaintainerrConfigSpec struct {
 	// +listType=map
 	// +listMapKey=name
 	RuleGroups []MaintainerrRuleGroup `json:"ruleGroups,omitempty"`
+
+	// notifications defines where Maintainerr sends notifications, matched by
+	// name. A notification reports only on the rule groups that name it.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	Notifications []MaintainerrNotification `json:"notifications,omitempty"`
+}
+
+// MaintainerrNotification is one place Maintainerr sends notifications to.
+type MaintainerrNotification struct {
+	// name identifies the notification.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// agent is the service notifications go to.
+	// +required
+	// +kubebuilder:validation:Enum=discord;email;gotify;ntfy;pushbullet;pushover;slack;telegram;webhook;lunasea
+	Agent string `json:"agent"`
+
+	// enabled turns the notification on. A new one is on unless this says otherwise.
+	// +optional
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// types are the events that send a notification.
+	// +optional
+	// +kubebuilder:validation:items:Enum=mediaAddedToCollection;mediaRemovedFromCollection;mediaAboutToBeHandled;mediaHandled;ruleHandlingFailed;collectionHandlingFailed;overlayApplied;overlayReverted;updateAvailable
+	Types []string `json:"types,omitempty"`
+
+	// aboutScale is how many days before media is handled mediaAboutToBeHandled
+	// is sent.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	AboutScale *int32 `json:"aboutScale,omitempty"`
+
+	// options sets the agent's settings, such as botUsername, chatId or
+	// jsonPayload. Values keep their type.
+	// +optional
+	Options map[string]commonv1alpha1.FieldValue `json:"options,omitempty"`
+
+	// secretOptions sets agent settings from Secrets, by setting name, such as
+	// webhookUrl, botAuthToken or authPass. They take precedence over options.
+	// +optional
+	SecretOptions map[string]commonv1alpha1.SecretKeyRef `json:"secretOptions,omitempty"`
 }
 
 // MaintainerrConnection defines how the operator reaches Maintainerr. Maintainerr
@@ -301,6 +346,12 @@ type MaintainerrRuleGroup struct {
 	// runs on spec.jobs.rules.
 	// +optional
 	Schedule string `json:"schedule,omitempty"`
+
+	// notifications names the spec.notifications, or notifications made in
+	// Maintainerr, that report on this group. Unset, the group keeps the ones
+	// it has.
+	// +optional
+	Notifications []string `json:"notifications,omitempty"`
 
 	// sections are evaluated in order. Rules within a section combine with each
 	// other first; each section then combines with the result of the ones before

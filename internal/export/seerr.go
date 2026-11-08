@@ -17,7 +17,14 @@ var seerrNotificationAgents = []string{
 	"discord", "email", "gotify", "lunasea", "ntfy", "pushbullet", "pushover", "slack", "telegram", "webhook", "webpush",
 }
 
-var seerrCredentialOptions = []string{"token", "password", "key", "secret", "auth", "webhookurl"}
+var credentialOptions = []string{"token", "password", "pass", "key", "secret", "auth", "webhookurl"}
+
+// isCredentialOption reports whether a notification option's name looks like
+// it holds a credential.
+func isCredentialOption(name string) bool {
+	lower := strings.ToLower(name)
+	return slices.ContainsFunc(credentialOptions, func(s string) bool { return strings.Contains(lower, s) })
+}
 
 const (
 	seerrPlex     = 1
@@ -120,10 +127,9 @@ func (r *reader) seerrOptions(agent string, v any) (map[string]any, map[string]a
 		switch x := raw[key].(type) {
 		case nil:
 		case string:
-			lower := strings.ToLower(key)
 			switch {
 			case x == "":
-			case slices.ContainsFunc(seerrCredentialOptions, func(s string) bool { return strings.Contains(lower, s) }):
+			case isCredentialOption(key):
 				secrets[key] = r.creds.ref(x, "notification", agent, key)
 			default:
 				options[key] = x

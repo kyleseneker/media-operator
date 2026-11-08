@@ -1,6 +1,7 @@
 package curation
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -46,10 +47,11 @@ var maintainerrCollectionFields = []string{
 
 // ruleEnv is what rule groups are resolved against.
 type ruleEnv struct {
-	mediaServer string
-	apps        map[string]ruleApp
-	libraries   []map[string]any
-	servers     map[maintainerrclient.Arr]map[string]int
+	mediaServer   string
+	apps          map[string]ruleApp
+	libraries     []map[string]any
+	servers       map[maintainerrclient.Arr]map[string]int
+	notifications map[string]int
 }
 
 type ruleApp struct {
@@ -64,6 +66,7 @@ type ruleProp struct {
 
 func (s *maintainerrSync) ruleGroups(
 	ctx context.Context, groups []curationv1alpha1.MaintainerrRuleGroup, servers map[maintainerrclient.Arr]map[string]int,
+	notifications map[string]int,
 ) []string {
 	// Rule groups resolve against the media server and the apps configured
 	// before them. When observe mode has found those differing, a group that
@@ -100,6 +103,7 @@ func (s *maintainerrSync) ruleGroups(
 	mediaServer, _ := settings["media_server_type"].(string)
 	env := ruleEnv{
 		mediaServer: mediaServer, apps: ruleApps(constants), libraries: libraries, servers: servers,
+		notifications: notifications,
 	}
 
 	var errs []string
@@ -260,6 +264,11 @@ func buildRuleGroup(
 		"radarrSettingsId": radarr, "sonarrSettingsId": sonarr,
 		"radarrQualityProfileId": radarrProfile, "sonarrQualityProfileId": sonarrProfile,
 		"collection": collection, "rules": sendRules,
+	}
+	if g.Notifications != nil {
+		if send["notifications"], err = notificationIDs(g.Notifications, env.notifications); err != nil {
+			return nil, nil, err
+		}
 	}
 	compare = maps.Clone(send)
 	compare["rules"] = compareRules
@@ -548,6 +557,11 @@ func storedRuleGroup(g map[string]any) map[string]any {
 			notifications = append(notifications, map[string]any{"id": agent["id"]})
 		}
 	}
+	slices.SortFunc(notifications, func(a, b any) int {
+		ai, _ := a.(map[string]any)["id"].(float64)
+		bi, _ := b.(map[string]any)["id"].(float64)
+		return cmp.Compare(ai, bi)
+	})
 	body["notifications"] = notifications
 	body["rules"] = storedRules(g["rules"])
 	return body
@@ -606,7 +620,9 @@ func newRuleGroupBody(send map[string]any) map[string]any {
 	collection := map[string]any{"manualCollection": false, "manualCollectionName": "", "keepLogsForMonths": 6}
 	maps.Copy(collection, send["collection"].(map[string]any))
 	body["collection"] = collection
-	body["notifications"] = []any{}
+	if _, ok := body["notifications"]; !ok {
+		body["notifications"] = []any{}
+	}
 	return body
 }
 

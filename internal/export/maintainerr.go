@@ -1,7 +1,9 @@
 package export
 
 import (
+	"cmp"
 	"encoding/json"
+	"maps"
 	"math"
 	"slices"
 	"sort"
@@ -17,10 +19,11 @@ const secondsPerDay = 86400
 
 type maintainerrExport struct {
 	*reader
-	mc        *maintainerrclient.Client
-	props     map[[2]float64]string
-	libraries map[any]string
-	servers   map[maintainerrclient.Arr]map[float64]string
+	mc            *maintainerrclient.Client
+	props         map[[2]float64]string
+	libraries     map[any]string
+	servers       map[maintainerrclient.Arr]map[float64]string
+	notifications map[float64]string
 }
 
 func exportMaintainerr(r *reader) (map[string]any, error) {
@@ -89,6 +92,10 @@ func exportMaintainerr(r *reader) (map[string]any, error) {
 	setText(jobs, "collections", settings["collection_handler_job_cron"])
 	if len(jobs) > 0 {
 		spec["jobs"] = jobs
+	}
+
+	if err := e.exportNotifications(spec); err != nil {
+		return nil, err
 	}
 
 	groups, err := e.mc.ListRuleGroups(r.ctx)
@@ -171,8 +178,80 @@ func (e *maintainerrExport) ruleGroup(g map[string]any) map[string]any {
 			group["qualityProfile"] = e.qualityProfileName(s.kind, int(id), profile, name)
 		}
 	}
+	var notifications []any
+	for _, n := range list(g["notifications"]) {
+		if notification, ok := e.notifications[num(n["id"])]; ok {
+			notifications = append(notifications, notification)
+		}
+	}
+	if len(notifications) > 0 {
+		group["notifications"] = notifications
+	}
 	group["sections"] = e.ruleSections(g["rules"], name)
 	return group
+}
+
+// exportNotifications exports every notification, moving options that look
+// like credentials to the Secret.
+func (e *maintainerrExport) exportNotifications(spec map[string]any) error {
+	stored, err := e.mc.ListNotifications(e.ctx)
+	if err != nil {
+		return err
+	}
+	e.notifications = map[float64]string{}
+	var out []any
+	for _, n := range stored {
+		name, _ := n["name"].(string)
+		e.notifications[num(n["id"])] = name
+		notification := pick(n, "name", "agent", "enabled", "aboutScale")
+		var types []any
+		for _, t := range anyList(n["types"]) {
+			found := false
+			for typeName, value := range maintainerrclient.NotificationTypes {
+				if float64(value) == num(t) {
+					types, found = append(types, typeName), true
+				}
+			}
+			if !found {
+				e.warn("notification %q: MaintainerrConfig can't express notification type %v, so it isn't exported", name, t)
+			}
+		}
+		if len(types) > 0 {
+			slices.SortFunc(types, func(a, b any) int {
+				return cmp.Compare(maintainerrclient.NotificationTypes[a.(string)], maintainerrclient.NotificationTypes[b.(string)])
+			})
+			notification["types"] = types
+		}
+		options, secrets := map[string]any{}, map[string]any{}
+		raw, _ := n["options"].(map[string]any)
+		for _, key := range slices.Sorted(maps.Keys(raw)) {
+			value := raw[key]
+			text, isText := value.(string)
+			switch {
+			case value == nil || text == "" && isText:
+			case isText && isCredentialOption(key):
+				secrets[key] = e.creds.ref(text, "notification", name, key)
+			default:
+				options[key] = value
+			}
+		}
+		if len(options) > 0 {
+			notification["options"] = options
+		}
+		if len(secrets) > 0 {
+			notification["secretOptions"] = secrets
+		}
+		out = append(out, notification)
+	}
+	if len(out) > 0 {
+		spec["notifications"] = out
+	}
+	return nil
+}
+
+func anyList(v any) []any {
+	raw, _ := v.([]any)
+	return raw
 }
 
 func (e *maintainerrExport) qualityProfileName(kind maintainerrclient.Arr, server int, id float64, group string) any {

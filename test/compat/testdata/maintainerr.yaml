@@ -27,6 +27,21 @@ spec:
   jobs:
     rules: "0 0-23/8 * * *"
     collections: "0 0-23/12 * * *"
+  notifications:
+    - name: Compat webhook
+      agent: webhook
+      enabled: true
+      types:
+        - mediaAboutToBeHandled
+        - mediaHandled
+        - ruleHandlingFailed
+      aboutScale: 5
+      options:
+        jsonPayload: '{"subject":"{{notification_type}}"}'
+      secretOptions:
+        webhookUrl:
+          name: compat-credentials
+          key: webhook-url
   ruleGroups:
     - name: Stale unwatched movies
       description: Added over 180 days ago and never watched
@@ -37,6 +52,8 @@ spec:
       listExclusions: true
       cleanupLeftoverFolders: true
       schedule: "0 3 * * *"
+      notifications:
+        - Compat webhook
       sections:
         - rules:
             - firstValue: Jellyfin.addDate

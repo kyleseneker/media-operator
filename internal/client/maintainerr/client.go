@@ -35,6 +35,13 @@ var Comparisons = []string{
 // Operators are the rule operators, in id order.
 var Operators = []string{"AND", "OR"}
 
+// NotificationTypes are Maintainerr's NotificationType values, by the spec's names.
+var NotificationTypes = map[string]int{
+	"mediaAddedToCollection": 2, "mediaRemovedFromCollection": 4, "mediaAboutToBeHandled": 8, "mediaHandled": 16,
+	"ruleHandlingFailed": 32, "collectionHandlingFailed": 64, "overlayApplied": 256, "overlayReverted": 512,
+	"updateAvailable": 1024,
+}
+
 // NewClient creates a new Maintainerr API client.
 func NewClient(hc *engine.HTTPClient) *Client {
 	return &Client{hc: hc}
@@ -180,6 +187,22 @@ func ruleGroupRejection(data []byte, err error) ([]byte, error) {
 		return data, err
 	}
 	return data, fmt.Errorf("maintainerr rejected the rule group (%d): %v", apiErr.StatusCode, body.Message)
+}
+
+// ListNotifications returns the notification configurations.
+func (c *Client) ListNotifications(ctx context.Context) ([]map[string]any, error) {
+	return c.hc.GetJSONList(ctx, "/api/notifications/configurations")
+}
+
+// SaveNotification creates a notification configuration, or replaces the one
+// whose id the body carries.
+func (c *Client) SaveNotification(ctx context.Context, notification map[string]any) error {
+	return c.post(ctx, "/api/notifications/configuration/add", notification)
+}
+
+// DeleteNotification deletes a notification configuration.
+func (c *Client) DeleteNotification(ctx context.Context, id int) error {
+	return c.checked(c.hc.Do(ctx, http.MethodDelete, fmt.Sprintf("/api/notifications/configuration/%d", id), nil))
 }
 
 func (c *Client) post(ctx context.Context, path string, body map[string]any) error {

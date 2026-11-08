@@ -48,6 +48,20 @@ spec:
   jobs:
     rules: "0 0-23/8 * * *"
     collections: "0 0-23/12 * * *"
+  notifications:
+    - name: Discord
+      agent: discord
+      types:
+        - mediaAboutToBeHandled
+        - mediaHandled
+        - ruleHandlingFailed
+      aboutScale: 3
+      options:
+        botUsername: Maintainerr
+      secretOptions:
+        webhookUrl:
+          name: maintainerr-secrets
+          key: discord-webhook-url
   ruleGroups:
     # Properties and comparisons use the names in Maintainerr's rule YAML export.
     - name: Stale unwatched movies
@@ -65,6 +79,8 @@ spec:
       visibleOnHome: true
       visibleOnRecommended: false
       schedule: "0 3 * * *"
+      notifications:
+        - Discord
       sections:
         - rules:
             - firstValue: Plex.addDate

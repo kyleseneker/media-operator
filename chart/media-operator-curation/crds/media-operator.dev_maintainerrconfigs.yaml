@@ -189,6 +189,94 @@ spec:
                 x-kubernetes-validations:
                 - message: set exactly one of plex or jellyfin
                   rule: has(self.plex) != has(self.jellyfin)
+              notifications:
+                description: |-
+                  notifications defines where Maintainerr sends notifications, matched by
+                  name. A notification reports only on the rule groups that name it.
+                items:
+                  description: MaintainerrNotification is one place Maintainerr sends
+                    notifications to.
+                  properties:
+                    aboutScale:
+                      description: |-
+                        aboutScale is how many days before media is handled mediaAboutToBeHandled
+                        is sent.
+                      format: int32
+                      minimum: 1
+                      type: integer
+                    agent:
+                      description: agent is the service notifications go to.
+                      enum:
+                      - discord
+                      - email
+                      - gotify
+                      - ntfy
+                      - pushbullet
+                      - pushover
+                      - slack
+                      - telegram
+                      - webhook
+                      - lunasea
+                      type: string
+                    enabled:
+                      description: enabled turns the notification on. A new one is
+                        on unless this says otherwise.
+                      type: boolean
+                    name:
+                      description: name identifies the notification.
+                      minLength: 1
+                      type: string
+                    options:
+                      additionalProperties:
+                        description: FieldValue wraps a value that can be a string,
+                          int, or bool.
+                        x-kubernetes-preserve-unknown-fields: true
+                      description: |-
+                        options sets the agent's settings, such as botUsername, chatId or
+                        jsonPayload. Values keep their type.
+                      type: object
+                    secretOptions:
+                      additionalProperties:
+                        description: SecretKeyRef references a key within a Kubernetes
+                          Secret.
+                        properties:
+                          key:
+                            description: key is the key within the Secret.
+                            type: string
+                          name:
+                            description: name is the name of the Secret.
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      description: |-
+                        secretOptions sets agent settings from Secrets, by setting name, such as
+                        webhookUrl, botAuthToken or authPass. They take precedence over options.
+                      type: object
+                    types:
+                      description: types are the events that send a notification.
+                      items:
+                        enum:
+                        - mediaAddedToCollection
+                        - mediaRemovedFromCollection
+                        - mediaAboutToBeHandled
+                        - mediaHandled
+                        - ruleHandlingFailed
+                        - collectionHandlingFailed
+                        - overlayApplied
+                        - overlayReverted
+                        - updateAvailable
+                        type: string
+                      type: array
+                  required:
+                  - agent
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               radarr:
                 description: radarr lists the Radarr servers rule groups can act through.
                 items:
@@ -370,6 +458,14 @@ spec:
                       description: name identifies the rule group and names its collection.
                       minLength: 1
                       type: string
+                    notifications:
+                      description: |-
+                        notifications names the spec.notifications, or notifications made in
+                        Maintainerr, that report on this group. Unset, the group keeps the ones
+                        it has.
+                      items:
+                        type: string
+                      type: array
                     qualityProfile:
                       description: |-
                         qualityProfile is the name of the Sonarr or Radarr quality profile that

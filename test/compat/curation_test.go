@@ -57,6 +57,7 @@ func TestMaintainerr(t *testing.T) {
 		},
 		secrets: map[string]string{
 			"jellyfin-api-key": jellyfinKey, "radarr-api-key": radarrKey, "seerr-api-key": randomKey(),
+			"webhook-url": "http://webhook.invalid/maintainerr",
 		},
 		newObj: func() ctrlcommon.ConfigResource { return &curationv1alpha1.MaintainerrConfig{} },
 		reconciler: func(c client.Client) reconcile.Reconciler {
@@ -86,10 +87,22 @@ func TestMaintainerr(t *testing.T) {
 			require.NoError(t, json.Unmarshal([]byte(rules[2].(map[string]any)["ruleJson"].(string)), &last))
 			assert.EqualValues(t, 1, last["operator"], "the second section joins with OR")
 			assert.EqualValues(t, 1, last["section"])
+
+			notifications, err := hc.GetJSONList(ctx, "/api/notifications/configurations")
+			require.NoError(t, err)
+			require.Len(t, notifications, 1)
+			n := notifications[0]
+			assert.Equal(t, "webhook", n["agent"])
+			assert.Equal(t, []any{float64(8), float64(16), float64(32)}, n["types"])
+			options, _ := n["options"].(map[string]any)
+			assert.Equal(t, "http://webhook.invalid/maintainerr", options["webhookUrl"])
+			linked, _ := group["notifications"].([]any)
+			require.Len(t, linked, 1, "the rule group is not linked to its notification")
+			assert.Equal(t, n["id"], linked[0].(map[string]any)["id"])
 		},
 		cleanup: func(t *testing.T, _ map[string][]string) {
 			hc := directClient(t, maintainerr.url(), "")
-			for _, path := range []string{"/api/rules", "/api/settings/radarr"} {
+			for _, path := range []string{"/api/rules", "/api/notifications/configurations", "/api/settings/radarr"} {
 				items, err := hc.GetJSONList(ctx, path)
 				require.NoError(t, err)
 				assert.Empty(t, items, "%s still has what the operator created", path)

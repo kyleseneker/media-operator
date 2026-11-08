@@ -3,6 +3,7 @@ package curation
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -178,8 +179,18 @@ func (s *maintainerrSync) run(ctx context.Context, spec *curationv1alpha1.Mainta
 		}
 	}
 
+	var notifications map[string]int
+	if len(spec.Notifications) > 0 || slices.ContainsFunc(spec.RuleGroups, func(g curationv1alpha1.MaintainerrRuleGroup) bool {
+		return g.Notifications != nil
+	}) {
+		ids, errs := s.notifications(ctx, spec.Notifications)
+		syncErrors = append(syncErrors, errs...)
+		failed[notificationsKind] = len(errs) > 0
+		notifications = ids
+	}
+
 	if len(spec.RuleGroups) > 0 {
-		errs := s.ruleGroups(ctx, spec.RuleGroups, servers)
+		errs := s.ruleGroups(ctx, spec.RuleGroups, servers, notifications)
 		syncErrors = append(syncErrors, errs...)
 		failed[ruleGroupsKind] = len(errs) > 0
 	}
