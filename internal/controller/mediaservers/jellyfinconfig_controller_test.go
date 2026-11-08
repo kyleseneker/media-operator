@@ -161,12 +161,12 @@ func runJellyfin(t *testing.T, objs ...client.Object) client.Client {
 	return c
 }
 
-func jellyfinCondition(t *testing.T, c client.Client, condType string) string {
+func jellyfinSynced(t *testing.T, c client.Client) string {
 	t.Helper()
 	var cfg mediaserversv1alpha1.JellyfinConfig
 	require.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "jellyfin", Namespace: "media"}, &cfg), "fetching config")
 	for _, cond := range cfg.Status.Conditions {
-		if cond.Type == condType {
+		if cond.Type == "Synced" {
 			return string(cond.Status)
 		}
 	}
@@ -184,7 +184,7 @@ func TestReconcileRunsSetupWizardOnFreshInstall(t *testing.T) {
 	for _, step := range []string{"/Startup/User", "/Startup/Configuration", "/Startup/RemoteAccess", "/Startup/Complete"} {
 		assert.True(t, app.saw("POST", step), "wizard step %s was never run", step)
 	}
-	assert.Equal(t, conditionTrue, jellyfinCondition(t, c, "Synced"), "Synced")
+	assert.Equal(t, conditionTrue, jellyfinSynced(t, c), "Synced")
 }
 
 // An already-configured server must not be put back through the wizard, which
@@ -209,19 +209,53 @@ func TestReconcileCreatesMissingLibrary(t *testing.T) {
 	assert.True(t, app.saw("POST", "/Library/VirtualFolders"), "declared library was never created")
 }
 
-// Libraries are create-only: an existing one by the same name is left alone
-// rather than recreated, which would duplicate or clobber it.
-func TestReconcileLeavesExistingLibraryAlone(t *testing.T) {
+// An existing library by the same name is never recreated, which would
+// duplicate or clobber it, and is left alone while it matches.
+func TestReconcileLeavesAMatchingLibraryAlone(t *testing.T) {
 	app := &fakeJellyfin{
 		setupComplete: true,
-		existingLibs:  []map[string]any{{"Name": "Movies"}},
+		existingLibs:  []map[string]any{{"Name": "Movies", "CollectionType": "movies", "ItemId": "lib1", "Locations": []string{"/media/movies"}}},
 	}
 	url := app.serve(t)
 
 	runJellyfin(t, adminSecret(), jellyfinConfig(url,
-		mediaserversv1alpha1.JellyfinLibrary{Name: "Movies", CollectionType: "movies", Paths: []string{"/media/movies"}}))
+		mediaserversv1alpha1.JellyfinLibrary{Name: "Movies", CollectionType: "movies", Paths: []string{"/media/movies/"}}))
 
 	assert.False(t, app.saw("POST", "/Library/VirtualFolders"), "recreated a library that already existed")
+	assert.False(t, app.saw("POST", "/Library/VirtualFolders/Paths"))
+	assert.False(t, app.saw("DELETE", "/Library/VirtualFolders/Paths"))
+	assert.False(t, app.saw("POST", "/Library/VirtualFolders/LibraryOptions"))
+}
+
+func TestReconcileSyncsAnExistingLibrarysFoldersAndOptions(t *testing.T) {
+	app := &fakeJellyfin{
+		setupComplete: true,
+		existingLibs: []map[string]any{{
+			"Name": "Movies", "CollectionType": "movies", "ItemId": "lib1", "Locations": []string{"/media/old", "/media/movies"},
+			"LibraryOptions": map[string]any{"EnableRealtimeMonitor": false},
+		}},
+	}
+	url := app.serve(t)
+
+	runJellyfin(t, adminSecret(), jellyfinConfig(url, mediaserversv1alpha1.JellyfinLibrary{
+		Name: "Movies", CollectionType: "movies", Paths: []string{"/media/movies", "/media/new"}, EnableRealtimeMonitor: new(true),
+	}))
+
+	assert.True(t, app.saw("POST", "/Library/VirtualFolders/Paths"), "the new folder was not added")
+	assert.True(t, app.saw("DELETE", "/Library/VirtualFolders/Paths"), "the undeclared folder was not removed")
+	assert.True(t, app.saw("POST", "/Library/VirtualFolders/LibraryOptions"), "the options were not saved")
+	assert.False(t, app.saw("POST", "/Library/VirtualFolders"), "recreated a library that already existed")
+}
+
+func TestReconcileRefusesToChangeALibrarysType(t *testing.T) {
+	app := &fakeJellyfin{setupComplete: true, existingLibs: []map[string]any{{"Name": "Movies", "Locations": []string{"/media/movies"}}}}
+	url := app.serve(t)
+
+	c := runJellyfin(t, adminSecret(), jellyfinConfig(url,
+		mediaserversv1alpha1.JellyfinLibrary{Name: "Movies", CollectionType: "movies", Paths: []string{"/media/movies"}}))
+
+	assert.NotEqual(t, conditionTrue, jellyfinSynced(t, c), "a mixed library can't become a movies library in place")
+	assert.False(t, app.saw("DELETE", "/Library/VirtualFolders/Paths"))
 }
 
 func TestReconcileMissingSecretDoesNotContactApp(t *testing.T) {
@@ -231,7 +265,7 @@ func TestReconcileMissingSecretDoesNotContactApp(t *testing.T) {
 	c := runJellyfin(t, jellyfinConfig(url)) // no Secret
 
 	assert.False(t, app.saw("GET", "/System/Info/Public"), "contacted the app despite failing to resolve admin credentials")
-	assert.NotEqual(t, conditionTrue, jellyfinCondition(t, c, "Synced"), "Synced = True despite missing credentials")
+	assert.NotEqual(t, conditionTrue, jellyfinSynced(t, c), "Synced = True despite missing credentials")
 }
 
 func TestJellyfinObserveNeverRunsSetupOrWritesConfiguration(t *testing.T) {
@@ -251,10 +285,11 @@ func TestJellyfinObserveNeverRunsSetupOrWritesConfiguration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			app := &fakeJellyfin{setupComplete: tt.initialized, failure: tt.failure}
 			if tt.matching {
-				app.existingLibs = []map[string]any{{"Name": "Movies", "Paths": []string{"/old"}}}
+				app.existingLibs = []map[string]any{{"Name": "Movies", "CollectionType": "movies", "Locations": []string{"/media/movies"}}}
 				app.config = map[string]any{"ServerName": "Media", "Unmanaged": true}
 			}
-			cfg := jellyfinConfig(app.serve(t), mediaserversv1alpha1.JellyfinLibrary{Name: "Movies", Paths: []string{"/new"}})
+			cfg := jellyfinConfig(app.serve(t),
+				mediaserversv1alpha1.JellyfinLibrary{Name: "Movies", CollectionType: "movies", Paths: []string{"/media/movies/"}})
 			cfg.Spec.Server = &mediaserversv1alpha1.JellyfinServer{ServerName: "Media"}
 			if tt.name == "empty spec" {
 				cfg.Spec.Server = nil
@@ -317,5 +352,5 @@ func TestReconcileWritesJellyfinNetworkSettings(t *testing.T) {
 	c := runJellyfin(t, adminSecret(), cfg)
 
 	assert.True(t, app.saw("POST", "/System/Configuration/network"), "network settings were never written")
-	assert.Equal(t, conditionTrue, jellyfinCondition(t, c, "Synced"))
+	assert.Equal(t, conditionTrue, jellyfinSynced(t, c))
 }

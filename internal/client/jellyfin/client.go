@@ -123,3 +123,20 @@ func (c *Client) CreateLibrary(ctx context.Context, name, collectionType string,
 	path := "/Library/VirtualFolders?" + params.Encode()
 	return c.hc.PostJSON(ctx, path, map[string]any{"LibraryOptions": libraryOptions})
 }
+
+// AddLibraryPath adds a folder to a library without rescanning it.
+func (c *Client) AddLibraryPath(ctx context.Context, library, path string) error {
+	return c.hc.PostJSON(ctx, "/Library/VirtualFolders/Paths?refreshLibrary=false",
+		map[string]any{"Name": library, "PathInfo": map[string]any{"Path": path}})
+}
+
+// RemoveLibraryPath removes a folder from a library without rescanning it.
+func (c *Client) RemoveLibraryPath(ctx context.Context, library, path string) error {
+	params := url.Values{"name": {library}, "path": {path}, "refreshLibrary": {"false"}}
+	return c.hc.DeleteJSON(ctx, "/Library/VirtualFolders/Paths?"+params.Encode())
+}
+
+// UpdateLibraryOptions replaces a library's options, which include its folders.
+func (c *Client) UpdateLibraryOptions(ctx context.Context, id string, options map[string]any) error {
+	return c.hc.PostJSON(ctx, "/Library/VirtualFolders/LibraryOptions", map[string]any{"Id": id, "LibraryOptions": options})
+}

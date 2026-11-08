@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -32,6 +33,7 @@ import (
 type fakePlex struct {
 	mu           sync.Mutex
 	requests     []string
+	queries      map[string]url.Values
 	existingLibs []any
 }
 
@@ -51,6 +53,10 @@ func (f *fakePlex) serve(t *testing.T) string {
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.requests = append(f.requests, r.Method+" "+r.URL.Path)
+		if f.queries == nil {
+			f.queries = map[string]url.Values{}
+		}
+		f.queries[r.Method+" "+r.URL.Path] = r.URL.Query()
 		libs := f.existingLibs
 		f.mu.Unlock()
 
@@ -118,18 +124,56 @@ func TestPlexCreatesMissingLibrary(t *testing.T) {
 	assert.True(t, app.sawSections("POST"), "declared library was never created")
 }
 
-// Plex libraries are create-only: an existing section by the same name must be
-// left alone rather than added a second time.
-func TestPlexLeavesExistingLibraryAlone(t *testing.T) {
-	app := &fakePlex{existingLibs: []any{map[string]any{"title": "Movies", "key": "1"}}}
+func plexMovies(paths ...string) map[string]any {
+	locations := make([]any, 0, len(paths))
+	for _, p := range paths {
+		locations = append(locations, map[string]any{"path": p})
+	}
+	return map[string]any{
+		"title": "Movies", "key": "1", "type": "movie", "agent": "tv.plex.agents.movie",
+		"scanner": "Plex Movie", "language": "en-US", "Location": locations,
+	}
+}
+
+// An existing section by the same name is never added a second time, and is
+// left alone while it matches.
+func TestPlexLeavesAMatchingLibraryAlone(t *testing.T) {
+	app := &fakePlex{existingLibs: []any{plexMovies("/media/movies")}}
 	addr := app.serve(t)
 
 	runPlex(t, plexConfig(addr, mediaserversv1alpha1.PlexLibrary{
-		Name: "Movies", Type: "movie", Paths: []string{"/media/movies"},
+		Name: "Movies", Type: "movie", Paths: []string{"/media/movies/"},
 	}), true)
 
 	require.True(t, app.sawSections("GET"), "reconcile never listed sections, so the create check is meaningless")
 	assert.False(t, app.sawSections("POST"), "recreated a library that already existed")
+	assert.False(t, slices.Contains(app.requests, "PUT /library/sections/1"), "edited a library that matched")
+}
+
+// An edit sends every setting: the folders replace Plex's, and what the spec
+// leaves out keeps Plex's value.
+func TestPlexEditsALibraryThatDiffers(t *testing.T) {
+	app := &fakePlex{existingLibs: []any{plexMovies("/media/old", "/media/movies")}}
+	addr := app.serve(t)
+
+	runPlex(t, plexConfig(addr, mediaserversv1alpha1.PlexLibrary{
+		Name: "Movies", Type: "movie", Language: "de-DE", Paths: []string{"/media/movies", "/media/new"},
+	}), true)
+
+	app.mu.Lock()
+	defer app.mu.Unlock()
+	assert.Equal(t, url.Values{
+		"agent": {"tv.plex.agents.movie"}, "scanner": {"Plex Movie"}, "language": {"de-DE"},
+		"location": {"/media/movies", "/media/new"},
+	}, app.queries["PUT /library/sections/1"])
+}
+
+func TestPlexRefusesToChangeALibrarysType(t *testing.T) {
+	app := &fakePlex{existingLibs: []any{plexMovies("/media/movies")}}
+	cfg := plexConfig(app.serve(t), mediaserversv1alpha1.PlexLibrary{Name: "Movies", Type: "show", Paths: []string{"/media/movies"}})
+	synced := observePlex(t, cfg)
+	assert.Contains(t, synced.Message, "the library is a movie library in Plex; changing its type means recreating it")
+	assert.Empty(t, app.writes())
 }
 
 func TestPlexMissingTokenDoesNotContactApp(t *testing.T) {
@@ -184,7 +228,7 @@ func TestPlexObserveReportsAMissingLibraryWithoutCreatingIt(t *testing.T) {
 // Plex accepts some preferences without ever listing them. Observe mode cannot
 // read those back, so they are not reported as drift.
 func TestPlexObserveDoesNotCountPreferencesPlexDoesNotList(t *testing.T) {
-	app := &fakePlex{existingLibs: []any{map[string]any{"title": "Movies", "key": "1"}}}
+	app := &fakePlex{existingLibs: []any{plexMovies()}}
 	cfg := plexConfig(app.serve(t), mediaserversv1alpha1.PlexLibrary{Name: "Movies", Type: "movie"})
 	cfg.Spec.Network = &mediaserversv1alpha1.PlexNetwork{SecureConnections: new(1)}
 	synced := observePlex(t, cfg)

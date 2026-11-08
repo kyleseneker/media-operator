@@ -48,7 +48,10 @@ type JellyfinConfigSpec struct {
 	// +optional
 	Network *JellyfinNetwork `json:"network,omitempty"`
 
-	// libraries defines media libraries to create and configure.
+	// libraries defines media libraries, matched by name. An existing library
+	// keeps the declared folders and options: folders it doesn't list are
+	// removed. Libraries are never deleted, and a library's type can't change
+	// in place.
 	// +optional
 	Libraries []JellyfinLibrary `json:"libraries,omitempty"`
 }
@@ -510,7 +513,7 @@ type JellyfinEncoding struct {
 	AllowOnDemandMetadataBasedKeyframeExtractionForExtensions []string `json:"allowOnDemandMetadataBasedKeyframeExtractionForExtensions,omitempty"`
 }
 
-// JellyfinLibrary defines a media library to create in Jellyfin.
+// JellyfinLibrary defines a media library in Jellyfin.
 type JellyfinLibrary struct {
 	// name is the display name of the library.
 	// +required

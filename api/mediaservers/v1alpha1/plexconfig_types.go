@@ -23,7 +23,10 @@ type PlexConfigSpec struct {
 	// +optional
 	Transcoder *PlexTranscoder `json:"transcoder,omitempty"`
 
-	// libraries defines media libraries to create.
+	// libraries defines media libraries, matched by name. An existing library
+	// keeps the declared agent, scanner, language and folders: folders it
+	// doesn't list are removed. Libraries are never deleted, and a library's
+	// type can't change in place.
 	// +optional
 	Libraries []PlexLibrary `json:"libraries,omitempty"`
 

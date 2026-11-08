@@ -20,8 +20,10 @@ Secret the resource refers to changes. `spec.reconcile.interval` changes the
 period.
 
 Download clients, indexers, notifications and other lists are matched by name.
-Root folders and Jellyfin and Plex libraries are created if missing and
-otherwise left alone.
+Root folders are created if missing and otherwise left alone. Jellyfin and
+Plex libraries are created if missing and otherwise kept as declared, folders
+included: a folder the resource doesn't list is removed from the library.
+Libraries are never deleted, and changing a library's type means recreating it.
 
 On a fresh install, the operator runs the Jellyfin and Seerr setup wizards.
 Seerr's needs Seerr 3.5.0 or later, and when set up through Jellyfin it waits
@@ -57,7 +59,7 @@ Some things can't be compared by reading:
   doesn't run.
 - A new Maintainerr reports rule groups as different until the media server and
   the Sonarr and Radarr servers they use exist.
-- Root folders and Jellyfin and Plex libraries are compared by existence.
+- Root folders are compared by existence.
 - Passwords and API keys that an app masks count as different only if the
   operator wrote them and the Secret has changed since.
 - Plex preferences that Plex doesn't list are not compared.

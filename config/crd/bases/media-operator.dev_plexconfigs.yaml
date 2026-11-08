@@ -106,7 +106,11 @@ spec:
                 - url
                 type: object
               libraries:
-                description: libraries defines media libraries to create.
+                description: |-
+                  libraries defines media libraries, matched by name. An existing library
+                  keeps the declared agent, scanner, language and folders: folders it
+                  doesn't list are removed. Libraries are never deleted, and a library's
+                  type can't change in place.
                 items:
                   description: PlexLibrary defines a Plex media library.
                   properties:

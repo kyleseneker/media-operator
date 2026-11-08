@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -223,38 +224,128 @@ func reconcileJellyfinSection(ctx context.Context, jf *jellyfinclient.Client, pa
 	return jf.PostConfig(ctx, path, merged)
 }
 
+// reconcileJellyfinLibrary creates a library, or keeps an existing one's
+// folders and options as declared. Folders are added before any is removed.
 func reconcileJellyfinLibrary(ctx context.Context, jf *jellyfinclient.Client, lib mediaserversv1alpha1.JellyfinLibrary) error {
-	existing, err := jf.ListLibraries(ctx)
+	current, err := findJellyfinLibrary(ctx, jf, lib.Name)
 	if err != nil {
-		return fmt.Errorf("listing libraries: %w", err)
+		return err
+	}
+	if current == nil {
+		options := jellyfinLibraryOptions(lib)
+		options["PathInfos"] = buildPathInfos(lib.Paths)
+		return jf.CreateLibrary(ctx, lib.Name, lib.CollectionType, options)
+	}
+	if have := jellyfinCollectionType(current); have != lib.CollectionType {
+		return fmt.Errorf("the library holds %s in Jellyfin; changing its type means recreating it", have)
 	}
 
-	for _, e := range existing {
-		if name, ok := e["Name"].(string); ok && name == lib.Name {
-			return nil // already exists, create-only
+	have := jellyfinLocations(current)
+	want := cleanPaths(lib.Paths)
+	changed := false
+	for _, path := range want {
+		if !slices.Contains(have, path) {
+			if err := jf.AddLibraryPath(ctx, lib.Name, path); err != nil {
+				return fmt.Errorf("adding %s: %w", path, err)
+			}
+			changed = true
 		}
 	}
-
-	libraryOptions := map[string]any{
-		"PathInfos": buildPathInfos(lib.Paths),
+	for _, path := range have {
+		if !slices.Contains(want, path) {
+			if err := jf.RemoveLibraryPath(ctx, lib.Name, path); err != nil {
+				return fmt.Errorf("removing %s: %w", path, err)
+			}
+			changed = true
+		}
 	}
+	// The options include the folders, so they are saved from a fresh read.
+	if changed {
+		if current, err = findJellyfinLibrary(ctx, jf, lib.Name); err != nil {
+			return err
+		}
+		if current == nil {
+			return fmt.Errorf("the library disappeared while its folders were changed")
+		}
+	}
+	declared := jellyfinLibraryOptions(lib)
+	if len(declared) == 0 {
+		return nil
+	}
+	options, _ := current["LibraryOptions"].(map[string]any)
+	merged, differs, err := reconciler.MergeDesiredOverCurrent(options, declared)
+	if err != nil || !differs {
+		return err
+	}
+	id, _ := current["ItemId"].(string)
+	return jf.UpdateLibraryOptions(ctx, id, merged)
+}
+
+func findJellyfinLibrary(ctx context.Context, jf *jellyfinclient.Client, name string) (map[string]any, error) {
+	libraries, err := jf.ListLibraries(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing libraries: %w", err)
+	}
+	for _, l := range libraries {
+		if l["Name"] == name {
+			return l, nil
+		}
+	}
+	return nil, nil
+}
+
+// jellyfinLibraryOptions renders the declared library options under
+// Jellyfin's names.
+func jellyfinLibraryOptions(lib mediaserversv1alpha1.JellyfinLibrary) map[string]any {
+	options := map[string]any{}
 	if lib.EnableRealtimeMonitor != nil {
-		libraryOptions["EnableRealtimeMonitor"] = *lib.EnableRealtimeMonitor
+		options["EnableRealtimeMonitor"] = *lib.EnableRealtimeMonitor
 	}
 	if lib.EnableTrickplayImageExtraction != nil {
-		libraryOptions["EnableTrickplayImageExtraction"] = *lib.EnableTrickplayImageExtraction
+		options["EnableTrickplayImageExtraction"] = *lib.EnableTrickplayImageExtraction
 	}
 	if lib.AutomaticRefreshIntervalDays != nil {
-		libraryOptions["AutomaticRefreshIntervalDays"] = *lib.AutomaticRefreshIntervalDays
+		options["AutomaticRefreshIntervalDays"] = *lib.AutomaticRefreshIntervalDays
 	}
 	if lib.PreferredMetadataLanguage != "" {
-		libraryOptions["PreferredMetadataLanguage"] = lib.PreferredMetadataLanguage
+		options["PreferredMetadataLanguage"] = lib.PreferredMetadataLanguage
 	}
 	if lib.MetadataCountryCode != "" {
-		libraryOptions["MetadataCountryCode"] = lib.MetadataCountryCode
+		options["MetadataCountryCode"] = lib.MetadataCountryCode
 	}
+	return options
+}
 
-	return jf.CreateLibrary(ctx, lib.Name, lib.CollectionType, libraryOptions)
+// jellyfinCollectionType is a library's type; Jellyfin leaves a mixed
+// library's out.
+func jellyfinCollectionType(library map[string]any) string {
+	if t, _ := library["CollectionType"].(string); t != "" {
+		return t
+	}
+	return "mixed"
+}
+
+func jellyfinLocations(library map[string]any) []string {
+	raw, _ := library["Locations"].([]any)
+	paths := make([]string, 0, len(raw))
+	for _, p := range raw {
+		if s, ok := p.(string); ok {
+			paths = append(paths, s)
+		}
+	}
+	return cleanPaths(paths)
+}
+
+// cleanPaths drops trailing separators, which a media server doesn't keep.
+func cleanPaths(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if trimmed := strings.TrimRight(p, "/"); trimmed != "" {
+			p = trimmed
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 func buildPathInfos(paths []string) []map[string]any {
@@ -299,12 +390,29 @@ func observeJellyfinConfig(ctx context.Context, jf *jellyfinclient.Client, spec 
 		var current map[string]any
 		for _, existing := range libraries {
 			if existing["Name"] == library.Name {
-				current = existing
+				// Compared as decoded JSON, the form the desired side takes.
+				raw, err := json.Marshal(map[string]any{
+					"CollectionType": jellyfinCollectionType(existing),
+					"Locations":      slices.Sorted(slices.Values(jellyfinLocations(existing))),
+					"LibraryOptions": existing["LibraryOptions"],
+				})
+				if err == nil {
+					err = json.Unmarshal(raw, &current)
+				}
+				if err != nil {
+					return err
+				}
 				break
 			}
 		}
-		// Libraries are create-only, so only existence matters.
-		if err := w.Compare("libraries", library.Name, current, map[string]any{"Name": library.Name}); err != nil {
+		desired := map[string]any{
+			"CollectionType": library.CollectionType,
+			"Locations":      slices.Sorted(slices.Values(cleanPaths(library.Paths))),
+		}
+		if options := jellyfinLibraryOptions(library); len(options) > 0 {
+			desired["LibraryOptions"] = options
+		}
+		if err := w.Compare("libraries", library.Name, current, desired); err != nil {
 			return err
 		}
 	}

@@ -120,12 +120,14 @@ func TestPlex(t *testing.T) {
 		name: "plex", image: plexImage, port: 32400,
 		files: map[string]string{"/config/Library/Application Support/Plex Media Server/Preferences.xml": prefs},
 	})
-	plex.exec(t, "mkdir -p /media/movies /media/tv /media/ready /transcode/backups /transcode/downloads")
+	plex.exec(t, "mkdir -p /media/movies /media/tv /media/extra /transcode/backups /transcode/downloads")
 	// Plex answers long before it will create a library ("the server is still
-	// starting up"); a throwaway library shows when it is ready.
+	// starting up"), so creating one shows when it is ready. It is the declared
+	// Movies library with a folder the fixture leaves out, for the operator to
+	// edit.
 	waitFor(t, "plex", 3*time.Minute, func() error {
-		resp, err := http.Post(plex.url()+"/library/sections?name=ready&type=movie&agent=tv.plex.agents.movie"+
-			"&scanner=Plex%20Movie&language=en-US&location=%2Fmedia%2Fready", "", nil)
+		resp, err := http.Post(plex.url()+"/library/sections?name=Movies&type=movie&agent=tv.plex.agents.movie"+
+			"&scanner=Plex%20Movie&language=en-US&location=%2Fmedia%2Fmovies&location=%2Fmedia%2Fextra", "", nil)
 		if err != nil {
 			return err
 		}
@@ -135,11 +137,6 @@ func TestPlex(t *testing.T) {
 		}
 		return nil
 	})
-	deleteReady, err := http.NewRequest(http.MethodDelete, plex.url()+"/library/sections/1", nil)
-	require.NoError(t, err)
-	resp, err := http.DefaultClient.Do(deleteReady)
-	require.NoError(t, err)
-	_ = resp.Body.Close()
 	proxy := newRecordingProxy(t, plex.url())
 
 	checkCompat(t, compatCase{
@@ -162,13 +159,20 @@ func TestPlex(t *testing.T) {
 			defer func() { _ = resp.Body.Close() }()
 			var sections struct {
 				MediaContainer struct {
-					Directory []struct{ Title string } `json:"Directory"`
+					Directory []struct {
+						Title    string
+						Location []struct{ Path string } `json:"Location"`
+					} `json:"Directory"`
 				} `json:"MediaContainer"`
 			}
 			require.NoError(t, jsonDecode(resp, &sections))
 			titles := make([]string, 0, len(sections.MediaContainer.Directory))
 			for _, d := range sections.MediaContainer.Directory {
 				titles = append(titles, d.Title)
+				if d.Title == "Movies" {
+					require.Len(t, d.Location, 1, "the folder the resource leaves out was not removed")
+					assert.Equal(t, "/media/movies", d.Location[0].Path)
+				}
 			}
 			assert.ElementsMatch(t, []string{"Movies", "TV Shows"}, titles)
 

@@ -136,3 +136,17 @@ func (c *Client) CreateLibrary(ctx context.Context, name, libType, agent, scanne
 	_, err := c.hc.DoRaw(ctx, http.MethodPost, "/library/sections?"+params.Encode(), nil, "")
 	return err
 }
+
+// UpdateLibrary sets a library's agent, scanner, language and folders. Plex
+// rejects an edit without the agent, and the folders replace the ones it has.
+func (c *Client) UpdateLibrary(ctx context.Context, key, agent, scanner, language string, paths []string) error {
+	params := url.Values{}
+	params.Set("agent", agent)
+	params.Set("scanner", scanner)
+	params.Set("language", language)
+	for _, p := range paths {
+		params.Add("location", p)
+	}
+	_, err := c.hc.DoRaw(ctx, http.MethodPut, "/library/sections/"+url.PathEscape(key)+"?"+params.Encode(), nil, "")
+	return err
+}

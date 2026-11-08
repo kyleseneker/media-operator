@@ -84,6 +84,8 @@ func (r *PlexConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 // reconcilePlexLibraries creates the declared libraries Plex does not have.
 // Libraries are create-only: an existing one is never changed.
+// reconcilePlexLibraries creates each declared library, or keeps an existing
+// one's agent, scanner, language and folders as declared.
 func reconcilePlexLibraries(
 	ctx context.Context, pc *plexclient.Client, w *engine.Writes, libraries []mediaserversv1alpha1.PlexLibrary,
 ) []string {
@@ -94,26 +96,66 @@ func reconcilePlexLibraries(
 	if err != nil {
 		return []string{fmt.Sprintf("listLibraries: %v", err)}
 	}
-	existingNames := make(map[string]bool)
-	for _, lib := range existing {
-		if name, ok := lib["title"].(string); ok {
-			existingNames[name] = true
-		}
-	}
 	var syncErrors []string
 	for _, lib := range libraries {
-		if existingNames[lib.Name] {
-			continue
+		var current map[string]any
+		for _, e := range existing {
+			if e["title"] == lib.Name {
+				current = e
+			}
 		}
-		agent, scanner, lang := plexLibraryDefaults(lib)
-		err := w.Apply("libraries", lib.Name, func() error {
-			return pc.CreateLibrary(ctx, lib.Name, lib.Type, agent, scanner, lang, lib.Paths)
-		})
+		var err error
+		if current == nil {
+			agent, scanner, lang := plexLibraryDefaults(lib)
+			err = w.Apply("libraries", lib.Name, func() error {
+				return pc.CreateLibrary(ctx, lib.Name, lib.Type, agent, scanner, lang, lib.Paths)
+			})
+		} else {
+			err = updatePlexLibrary(ctx, pc, w, lib, current)
+		}
 		if err != nil {
-			syncErrors = append(syncErrors, fmt.Sprintf("createLibrary(%s): %v", lib.Name, err))
+			syncErrors = append(syncErrors, fmt.Sprintf("library(%s): %v", lib.Name, err))
 		}
 	}
 	return syncErrors
+}
+
+// updatePlexLibrary edits a library that differs from its declaration. What
+// the spec leaves out keeps Plex's value, since an edit sends every setting.
+func updatePlexLibrary(
+	ctx context.Context, pc *plexclient.Client, w *engine.Writes, lib mediaserversv1alpha1.PlexLibrary, current map[string]any,
+) error {
+	if have, _ := current["type"].(string); have != lib.Type {
+		return fmt.Errorf("the library is a %s library in Plex; changing its type means recreating it", have)
+	}
+	setting := func(declared, key string) string {
+		if declared != "" {
+			return declared
+		}
+		have, _ := current[key].(string)
+		return have
+	}
+	agent, scanner, lang := setting(lib.Agent, "agent"), setting(lib.Scanner, "scanner"), setting(lib.Language, "language")
+	have, want := cleanPaths(plexLocations(current)), cleanPaths(lib.Paths)
+	if agent == current["agent"] && scanner == current["scanner"] && lang == current["language"] &&
+		slices.Equal(slices.Sorted(slices.Values(have)), slices.Sorted(slices.Values(want))) {
+		return nil
+	}
+	key, _ := current["key"].(string)
+	return w.Apply("libraries", lib.Name, func() error { return pc.UpdateLibrary(ctx, key, agent, scanner, lang, want) })
+}
+
+func plexLocations(library map[string]any) []string {
+	raw, _ := library["Location"].([]any)
+	paths := make([]string, 0, len(raw))
+	for _, l := range raw {
+		if location, ok := l.(map[string]any); ok {
+			if path, _ := location["path"].(string); path != "" {
+				paths = append(paths, path)
+			}
+		}
+	}
+	return paths
 }
 
 // plexLibraryDefaults fills in the agent, scanner and language Plex needs for a
